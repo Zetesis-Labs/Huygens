@@ -1,0 +1,55 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/workspace:cached
+      - node_modules:/workspace/node_modules:delegated
+      - claude_memory:/root/.claude
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: sleep infinity
+    environment:
+      # mongodb-atlas-local nombra el replica set con el hostname del container
+      # (aleatorio en cada recreación), así que conectamos en modo directo y
+      # nos saltamos el discovery del RS. Suficiente para lecturas, escrituras
+      # e índices; cuando necesitemos transacciones, fijar `hostname: mongo`
+      # en el servicio mongo y usar `replicaSet=mongo`.
+      DATABASE_URL: mongodb://mongo:27017/huygens?directConnection=true
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - default_network
+
+  mongo:
+    image: mongodb/mongodb-atlas-local:latest
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - mongo_config:/data/configdb
+    networks:
+      - default_network
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - "db.adminCommand('ping').ok"
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+volumes:
+  node_modules:
+  claude_memory:
+  mongo_data:
+  mongo_config:
+
+networks:
+  default_network:
+    driver: bridge

@@ -1,0 +1,48 @@
+{
+  "name": "Huygens",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "runServices": ["app", "mongo"],
+  "workspaceFolder": "/workspace",
+  "forwardPorts": [3030, 27017],
+  "portsAttributes": {
+    "3030": {
+      "label": "MCP server",
+      "onAutoForward": "notify"
+    },
+    "27017": {
+      "label": "MongoDB (Atlas Local)",
+      "onAutoForward": "ignore"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode-remote.remote-containers",
+        "biomejs.biome",
+        "ms-azuretools.vscode-docker",
+        "Prisma.prisma",
+        "mongodb.mongodb-vscode"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "biomejs.biome",
+        "editor.codeActionsOnSave": {
+          "quickfix.biome": "always",
+          "source.organizeImports.biome": "always"
+        },
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "biome.lspBin": "./node_modules/.bin/biome"
+      }
+    }
+  },
+  "postCreateCommand": "bun install && cd apps/mcp && bunx prisma generate",
+  "shutdownAction": "stopCompose",
+  "overrideCommand": false,
+  "remoteEnv": {
+    "EDITOR": "cursor"
+  },
+  "containerEnv": {
+    "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}"
+  }
+}

@@ -1,0 +1,124 @@
+// Huygens — esquema de datos.
+//
+// Todo gira alrededor de una única colección `Note`: cada registro es markdown
+// más una clasificación (un Type del árbol editable `NoteType`, cero o más
+// Pillares estratégicos) y un estado del ciclo GTD. Lo tipo-específico (campos
+// de Report, Person, Routine, Reference, ...) va en `metadata Json` para
+// mantener una sola entidad uniforme.
+//
+// La búsqueda vectorial no vive en `Note`: vive en `NoteChunk`, regenerados a
+// partir de `Note.content`. El índice `$vectorSearch` se crea aparte contra
+// mongot (no lo gestiona Prisma).
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// ── Dimensiones de Perspectiva ───────────────────────────────────────────
+// Pilares estratégicos. Una Note puede tocar varios (son dimensiones
+// ortogonales, no una clasificación excluyente).
+enum Pillar {
+  PATHOS_SOMA
+  ETHOS
+  TELOS
+  SOPHIA
+}
+
+// Ciclo de vida GTD de la Note.
+enum NoteState {
+  INBOX
+  CLARIFIED
+  ACTIVE
+  WAITING
+  SOMEDAY
+  DONE
+  ARCHIVED
+}
+
+// ── Árbol de Types ───────────────────────────────────────────────────────
+// Editable en runtime. El agente o el usuario añaden/anidan/borran según
+// haga falta. Una Note apunta a exactamente un Type.
+model NoteType {
+  id          String     @id @default(auto()) @map("_id") @db.ObjectId
+  slug        String     @unique
+  name        String
+  description String?
+  parentId    String?    @db.ObjectId
+  parent      NoteType?  @relation("NoteTypeTree", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children    NoteType[] @relation("NoteTypeTree")
+  notes       Note[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+// ── Note: la entidad central ─────────────────────────────────────────────
+model Note {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  title   String
+  content String
+
+  // typeId opcional: una nota capturada todavía no está categorizada.
+  // Capture = { typeId: null, state: INBOX }. La transición a CLARIFIED
+  // implica asignar un typeId (trabajo del agente o del usuario).
+  typeId  String?   @db.ObjectId
+  type    NoteType? @relation(fields: [typeId], references: [id])
+  pillars Pillar[]
+
+  state NoteState @default(INBOX)
+
+  parentNoteId String? @db.ObjectId
+  parent       Note?   @relation("NoteHierarchy", fields: [parentNoteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children     Note[]  @relation("NoteHierarchy")
+
+  relatedNoteIds String[] @db.ObjectId
+
+  // Bag tipo-específico. Ejemplos:
+  //   Report   → { periodStart, periodEnd, coversNoteIds, sections }
+  //   Person   → { email, role, contact }
+  //   Routine  → { rrule, streakCount }   (futuro)
+  //   Reference→ { url, sourceKind: 'yt' | 'article' | 'pdf' | 'book' }
+  metadata Json?
+
+  sourceKind String?
+  sourceRef  String?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  lastReviewedAt DateTime?
+
+  chunks NoteChunk[]
+
+  @@index([state])
+  @@index([typeId])
+  @@index([updatedAt])
+  @@index([lastReviewedAt])
+}
+
+// ── NoteChunk: payload de búsqueda vectorial ─────────────────────────────
+// Generados a partir de `Note.content` cuando éste cambia. El índice
+// `$vectorSearch` se crea con `db.NoteChunk.createSearchIndex(...)`; este
+// modelo solo describe la forma del documento, no el índice.
+model NoteChunk {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  noteId String @db.ObjectId
+  note   Note   @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  chunkIndex Int
+  content    String
+
+  embedding      Float[]
+  embeddingModel String
+  dimensions     Int
+
+  createdAt DateTime @default(now())
+
+  @@index([noteId])
+}
