@@ -1,11 +1,11 @@
 import { StringRecordId } from 'surrealdb'
+import { closeDb, getDb } from '../src/surreal'
 import { captureImpl } from '../src/tools/capture'
 import { chunkMarkdownImpl } from '../src/tools/chunk-markdown'
 import { commitClarifyImpl } from '../src/tools/commit-clarify'
 import { embedTextImpl } from '../src/tools/embed-text'
 import { indexBlockImpl } from '../src/tools/index-block'
 import { vectorSearchImpl } from '../src/tools/vector-search'
-import { closeDb, getDb } from '../src/surreal'
 
 const db = await getDb()
 
@@ -42,8 +42,14 @@ const commit = await commitClarifyImpl({
         type_slug: 'note',
         state: 'CLARIFIED',
         blocks: [
-          { content: '## Functores aplicativos\n\nEstructura que permite aplicar funciones envueltas a valores envueltos. Generaliza el patrón builder.' },
-          { content: '### Notación\n\n`pure :: a -> f a` y `<*> :: f (a -> b) -> f a -> f b`. El operador `<*>` es la clave.' }
+          {
+            content:
+              '## Functores aplicativos\n\nEstructura que permite aplicar funciones envueltas a valores envueltos. Generaliza el patrón builder.'
+          },
+          {
+            content:
+              '### Notación\n\n`pure :: a -> f a` y `<*> :: f (a -> b) -> f a -> f b`. El operador `<*>` es la clave.'
+          }
         ],
         transformation: 'extracted',
         internal_refs: []
@@ -53,7 +59,10 @@ const commit = await commitClarifyImpl({
         type_slug: 'note',
         state: 'CLARIFIED',
         blocks: [
-          { content: '## Builder pattern\n\nEncadena llamadas que devuelven el receptor para configurar un objeto paso a paso. Misma idea que applicative pero sin types higher-kinded.' }
+          {
+            content:
+              '## Builder pattern\n\nEncadena llamadas que devuelven el receptor para configurar un objeto paso a paso. Misma idea que applicative pero sin types higher-kinded.'
+          }
         ],
         transformation: 'extracted',
         internal_refs: [{ kind: 'mentions', to_note_index: 0 }]

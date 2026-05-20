@@ -23,11 +23,18 @@
       "cwd": "${workspaceFolder}/apps/mcp"
     },
     {
-      "name": "Smoke (tools)",
+      "name": "Test (TS)",
       "type": "node-terminal",
       "request": "launch",
-      "command": "bun run scripts/smoke-tools.ts",
+      "command": "bun test",
       "cwd": "${workspaceFolder}/apps/mcp"
+    },
+    {
+      "name": "Test (Py)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "uv sync && uv run pytest",
+      "cwd": "${workspaceFolder}/backend/huygens-worker"
     },
     {
       "name": "Smoke (embeddings)",
@@ -85,7 +92,9 @@
         "Lint fix (Py)",
         "Typecheck (TS)",
         "Typecheck (Py mypy)",
-        "Typecheck (Py pyright)"
+        "Typecheck (Py pyright)",
+        "Test (TS)",
+        "Test (Py)"
       ],
       "stopAll": true
     }

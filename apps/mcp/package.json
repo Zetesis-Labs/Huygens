@@ -8,6 +8,7 @@
     "dev": "MCP_PORT=3030 bun --watch src/index.ts",
     "start": "bun src/index.ts",
     "typecheck": "node --max-old-space-size=8192 ./node_modules/typescript/bin/tsc --noEmit",
+    "test": "bun test test/",
     "db:apply": "bun run scripts/apply-schema.ts",
     "db:smoke": "bun run scripts/smoke.ts"
   },
