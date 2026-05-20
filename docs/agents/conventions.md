@@ -142,7 +142,56 @@ Si una operación del MCP falla (validación de schema, edge inválido, etc.):
 
 El usuario prefiere ser interrumpido que descubrir basura en la BBDD una semana después.
 
-## 13. Lecturas obligatorias antes de operar
+## 13. Emisión de eventos: trazabilidad obligatoria
+
+Cada agente (worker autónomo, agente conversacional, futuros) DEBE emitir eventos en `agent_event` por cada decisión interpretativa o acción significativa. Esto es no-negociable: sin eventos no hay debugging, sin debugging no hay mejora del sistema.
+
+Ver ADR-0019 para el contexto completo.
+
+### Patrón básico
+
+Al inicio de una sesión de procesamiento (capturar un raw, clarificar, generar un report, etc.) genera un `session_id` único con UUIDv7. Todos los eventos de esa sesión comparten ese `session_id`.
+
+```ts
+import { uuidv7 } from 'uuidv7'
+const session_id = uuidv7()
+```
+
+### Eventos a emitir (mínimos por sesión de procesamiento)
+
+| Cuándo | Kind | Payload típico |
+|---|---|---|
+| Picas un raw para procesar | `raw_claimed` | `subject=raw:xyz` |
+| Comienzas el LLM call | `analysis_started` | `model='claude-opus-4-7'` |
+| Recibes resultados de find_related | `related_context_fetched` | `{ matches_count, top_score }` |
+| El LLM devuelve estructura | `decomposition_proposed` | `{ notes_count, edges_count }` + `confidence` + `reasoning_summary` + `tokens_used` + `duration_ms` |
+| Decides ceder al humano | `human_review_requested` | `{ reason }` |
+| Vas a escribir en BBDD | `commit_attempted` | — |
+| Escritura OK | `commit_succeeded` | `{ notes_ids, edges_ids }` |
+| Escritura falló | `commit_failed` | `{ error, retry_count }` |
+
+### Reglas
+
+1. **`session_id` es UUIDv7** — ordenable por tiempo. Usa la librería `uuidv7` (npm/pip) — NO inventes el formato.
+2. **`actor`** es siempre uno de: `'worker' | 'conversational' | 'user' | 'system'`. No inventes nuevos valores sin proponer cambio de schema (ADR).
+3. **`subject`** apunta al record principal del evento (el raw que se está procesando, la nota que se está creando, etc.). Opcional cuando el evento no tiene subject concreto (e.g. `worker_yielded` por timeout global).
+4. **`reasoning_summary`** es humano-legible. El LLM lo redacta. **No es opcional para `decomposition_proposed`** — necesitamos saber por qué se decompuso así.
+5. **`tokens_used`** se rellena si se hizo una llamada LLM. Si no, déjalo NONE.
+6. **NO duplicar** — un mismo session_id NO debe tener dos `commit_succeeded`. Si reintentas, emite `commit_attempted` extra pero solo un `commit_succeeded`/`commit_failed` final.
+
+### Query de debugging típica
+
+Cuando algo va mal, reconstruir la decisión:
+
+```surql
+SELECT * FROM agent_event
+WHERE session_id = $sid
+ORDER BY created_at ASC;
+```
+
+Eso te da la cadena completa: qué se pidió, qué se respondió, con qué confidence, qué se intentó escribir, qué falló.
+
+## 14. Lecturas obligatorias antes de operar
 
 Si es tu primera sesión sobre Huygens:
 

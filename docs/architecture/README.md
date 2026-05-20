@@ -58,6 +58,9 @@ NO se añade ADR para:
 | [0015](./0015-bge-m3-via-deepinfra.md) | BGE-M3 vía DeepInfra para embeddings | Accepted | architecture |
 | [0016](./0016-agent-knowledge-in-docs-agents.md) | Conocimiento del agente en `docs/agents/` | Accepted | agent |
 | [0017](./0017-raw-capture-separation-and-derived-from.md) | Separación raw_capture / Notes + edge derived_from | Accepted | data-model |
+| [0018](./0018-autonomous-worker-with-agno.md) | Worker autónomo con Agno + LIVE query | Accepted | architecture, agent |
+| [0019](./0019-event-sourcing-of-agent-decisions.md) | Event sourcing de decisiones agénticas (agent_event) | Accepted | architecture, agent, data-model |
+| [0020](./0020-changefeed-for-state-diff-audit.md) | CHANGEFEED para state-diff audit | Accepted | data-model, database, agent |
 
 ## Status legend
 

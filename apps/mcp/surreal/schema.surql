@@ -7,8 +7,9 @@
 --      Es topología procesada — todo lo que aquí vive ya pasó el clarify.
 --
 -- La transición entre planos es el `clarify` (procesamiento): el agente lee
--- raw_captures pendientes (processed_at IS NONE), genera Notes/Blocks/Edges
--- y marca el raw_capture como procesado con `processed_into`.
+-- raw_captures pendientes (processed_at IS NONE), genera Notes/Blocks/Edges,
+-- crea edges `derived_from` (note|block → raw_capture) para trazar la procedencia,
+-- y marca el raw_capture como procesado (`processed_at = time::now()`).
 --
 -- Una Note es composición ordenada de Blocks (markdown auto-contenido).
 -- La topología (edges) puede apuntar a notes o a blocks indistintamente —
@@ -22,7 +23,7 @@
 -- El verdadero inbox vive aquí, no en notes.
 -- ─────────────────────────────────────────────────────────────────────────
 
-DEFINE TABLE OVERWRITE raw_capture SCHEMAFULL;
+DEFINE TABLE OVERWRITE raw_capture SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE content      ON raw_capture TYPE string;
 DEFINE FIELD OVERWRITE source_kind  ON raw_capture TYPE string
   ASSERT $value INSIDE ['chat', 'voice', 'manual', 'import', 'agent-self'];
@@ -60,7 +61,7 @@ DEFINE INDEX OVERWRITE note_type_slug_unique ON note_type FIELDS slug UNIQUE;
 -- Ya NO tiene `content`: el contenido vive en blocks y se renderiza vía block_order.
 -- ─────────────────────────────────────────────────────────────────────────
 
-DEFINE TABLE OVERWRITE note SCHEMAFULL;
+DEFINE TABLE OVERWRITE note SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE title       ON note TYPE string;
 DEFINE FIELD OVERWRITE type        ON note TYPE option<record<note_type>>;
 DEFINE FIELD OVERWRITE pillars     ON note TYPE array<string>
@@ -75,8 +76,8 @@ DEFINE FIELD OVERWRITE block_order ON note TYPE array<record<block>> DEFAULT [];
 DEFINE FIELD OVERWRITE metadata    ON note TYPE option<object>;
 -- source_kind y source_ref se mantienen para notas que NO vienen de raw_capture
 -- (e.g. notas que el agente crea como meta-memoria, reports generados, etc.).
--- Para notas derivadas de un raw_capture, la procedencia se traza vía el array
--- `processed_into` en raw_capture, no aquí.
+-- Para notas derivadas de un raw_capture, la procedencia se traza vía el edge
+-- `derived_from` (ver más abajo), no por estos campos.
 DEFINE FIELD OVERWRITE source_kind ON note TYPE option<string>;
 DEFINE FIELD OVERWRITE source_ref  ON note TYPE option<string>;
 DEFINE FIELD OVERWRITE created_at  ON note TYPE datetime DEFAULT time::now() READONLY;
@@ -93,7 +94,7 @@ DEFINE INDEX OVERWRITE note_reviewed ON note FIELDS last_reviewed_at;
 -- Cada bloque pertenece a una note. El orden lo dicta note.block_order.
 -- ─────────────────────────────────────────────────────────────────────────
 
-DEFINE TABLE OVERWRITE block SCHEMAFULL;
+DEFINE TABLE OVERWRITE block SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE note            ON block TYPE record<note>;
 DEFINE FIELD OVERWRITE content         ON block TYPE string;
 DEFINE FIELD OVERWRITE pillars         ON block TYPE array<string>
@@ -128,46 +129,101 @@ DEFINE INDEX OVERWRITE block_embedding ON block
 -- ─────────────────────────────────────────────────────────────────────────
 
 -- part_of: jerarquía macro (Area → Project → Task). Solo entre notes.
-DEFINE TABLE OVERWRITE part_of TYPE RELATION FROM note TO note SCHEMAFULL;
+DEFINE TABLE OVERWRITE part_of TYPE RELATION FROM note TO note SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE created_at ON part_of TYPE datetime DEFAULT time::now() READONLY;
 DEFINE INDEX OVERWRITE part_of_unique ON part_of FIELDS in, out UNIQUE;
 
 -- blocked_by: una task/proyecto bloqueado por algo concreto (puede ser un bloque).
-DEFINE TABLE OVERWRITE blocked_by TYPE RELATION FROM note TO note | block SCHEMAFULL;
+DEFINE TABLE OVERWRITE blocked_by TYPE RELATION FROM note TO note | block SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE since  ON blocked_by TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE reason ON blocked_by TYPE option<string>;
 DEFINE INDEX OVERWRITE blocked_by_unique ON blocked_by FIELDS in, out UNIQUE;
 
 -- mentions: referencia narrativa cualquier-a-cualquier.
-DEFINE TABLE OVERWRITE mentions TYPE RELATION FROM note | block TO note | block SCHEMAFULL;
+DEFINE TABLE OVERWRITE mentions TYPE RELATION FROM note | block TO note | block SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE created_at ON mentions TYPE datetime DEFAULT time::now() READONLY;
 DEFINE INDEX OVERWRITE mentions_unique ON mentions FIELDS in, out UNIQUE;
 
 -- supports: respaldo argumentativo. Zettel-trails clásicos.
-DEFINE TABLE OVERWRITE supports TYPE RELATION FROM note | block TO note | block SCHEMAFULL;
+DEFINE TABLE OVERWRITE supports TYPE RELATION FROM note | block TO note | block SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE created_at ON supports TYPE datetime DEFAULT time::now() READONLY;
 DEFINE INDEX OVERWRITE supports_unique ON supports FIELDS in, out UNIQUE;
 
 -- refutes: contradicción argumentativa.
-DEFINE TABLE OVERWRITE refutes TYPE RELATION FROM note | block TO note | block SCHEMAFULL;
+DEFINE TABLE OVERWRITE refutes TYPE RELATION FROM note | block TO note | block SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE created_at ON refutes TYPE datetime DEFAULT time::now() READONLY;
 DEFINE INDEX OVERWRITE refutes_unique ON refutes FIELDS in, out UNIQUE;
 
 -- about: un Report cubre estos blocks/notes citados.
-DEFINE TABLE OVERWRITE about TYPE RELATION FROM note TO note | block SCHEMAFULL;
+DEFINE TABLE OVERWRITE about TYPE RELATION FROM note TO note | block SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE created_at ON about TYPE datetime DEFAULT time::now() READONLY;
 DEFINE INDEX OVERWRITE about_unique ON about FIELDS in, out UNIQUE;
 
 -- authored_by: atribución a Persons (que son notes con type=person).
-DEFINE TABLE OVERWRITE authored_by TYPE RELATION FROM note | block TO note SCHEMAFULL;
+DEFINE TABLE OVERWRITE authored_by TYPE RELATION FROM note | block TO note SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE created_at ON authored_by TYPE datetime DEFAULT time::now() READONLY;
 DEFINE INDEX OVERWRITE authored_by_unique ON authored_by FIELDS in, out UNIQUE;
 
 -- derived_from: procedencia desde raw_capture. La auditabilidad cruda → estructurado.
 -- Granularidad: note O block (un block específico puede ser verbatim de un raw concreto).
 -- `transformation` permite al agente anotar cómo derivó (verbatim, extracted, summarized, inferred).
-DEFINE TABLE OVERWRITE derived_from TYPE RELATION FROM note | block TO raw_capture SCHEMAFULL;
+DEFINE TABLE OVERWRITE derived_from TYPE RELATION FROM note | block TO raw_capture SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE created_at     ON derived_from TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE transformation ON derived_from TYPE option<string>
   ASSERT $value IS NONE OR $value INSIDE ['verbatim', 'extracted', 'summarized', 'inferred'];
 DEFINE INDEX OVERWRITE derived_from_unique ON derived_from FIELDS in, out UNIQUE;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- agent_event: trazabilidad de las decisiones del agente (worker + conversacional).
+-- Cada decisión emite un evento estructurado con metadata (reasoning, confidence,
+-- model, tokens, duration, etc.). Ver ADR-0019.
+-- ─────────────────────────────────────────────────────────────────────────
+
+DEFINE TABLE OVERWRITE agent_event SCHEMAFULL;
+DEFINE FIELD OVERWRITE kind ON agent_event TYPE string
+  ASSERT $value INSIDE [
+    'raw_received', 'raw_claimed',
+    'analysis_started', 'related_context_fetched',
+    'decomposition_proposed', 'human_review_requested',
+    'commit_attempted', 'commit_succeeded', 'commit_failed',
+    'worker_yielded'
+  ];
+DEFINE FIELD OVERWRITE actor ON agent_event TYPE string
+  ASSERT $value INSIDE ['worker', 'conversational', 'user', 'system'];
+DEFINE FIELD OVERWRITE session_id ON agent_event TYPE string;
+DEFINE FIELD OVERWRITE subject ON agent_event TYPE option<record>;
+DEFINE FIELD OVERWRITE payload ON agent_event TYPE option<object>;
+DEFINE FIELD OVERWRITE confidence ON agent_event TYPE option<float>
+  ASSERT $value IS NONE OR ($value >= 0 AND $value <= 1);
+DEFINE FIELD OVERWRITE reasoning_summary ON agent_event TYPE option<string>;
+DEFINE FIELD OVERWRITE model ON agent_event TYPE option<string>;
+DEFINE FIELD OVERWRITE tokens_used ON agent_event TYPE option<object>;
+DEFINE FIELD OVERWRITE duration_ms ON agent_event TYPE option<int>;
+DEFINE FIELD OVERWRITE created_at ON agent_event TYPE datetime DEFAULT time::now() READONLY;
+
+DEFINE INDEX OVERWRITE agent_event_kind_time ON agent_event FIELDS kind, created_at;
+DEFINE INDEX OVERWRITE agent_event_session   ON agent_event FIELDS session_id;
+DEFINE INDEX OVERWRITE agent_event_subject   ON agent_event FIELDS subject;
+DEFINE INDEX OVERWRITE agent_event_actor     ON agent_event FIELDS actor;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- CHANGEFEED: state-diff audit trail sobre tablas críticas (ADR-0020).
+-- Retention de 10y = efectivamente ilimitado para uso personal.
+-- Permite queries históricas: `SHOW CHANGES FOR TABLE x SINCE $t`
+-- y time-travel: `SELECT * FROM note:abc AT d'YYYY-MM-DD'`.
+--
+-- La cláusula `CHANGEFEED 10y` está incrustada en el `DEFINE TABLE OVERWRITE`
+-- de cada tabla auditada — buscar en este fichero. Esto se debe a que la
+-- sintaxis standalone `DEFINE TABLE x CHANGEFEED 10y` colisiona con la tabla
+-- ya definida (`AlreadyExists`) en este driver; al incrustarla en la propia
+-- definición `OVERWRITE` el cambio es idempotente y atómico.
+--
+-- Tablas con CHANGEFEED 10y activo:
+--   - raw_capture, note, block
+--   - derived_from, part_of, blocked_by, mentions, supports, refutes,
+--     about, authored_by
+--
+-- Tablas SIN CHANGEFEED (deliberado):
+--   - note_type   (taxonomía editable, baja cardinalidad, sin valor histórico)
+--   - agent_event (ya es el audit log — append-only por construcción)
+-- ─────────────────────────────────────────────────────────────────────────
