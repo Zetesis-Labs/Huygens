@@ -68,6 +68,8 @@ services:
       context: ../backend/huygens-worker
       dockerfile: Dockerfile
     restart: unless-stopped
+    env_file:
+      - ../backend/huygens-worker/.env
     environment:
       SURREAL_URL: ws://surrealdb:8000/rpc
       SURREAL_NS: huygens
@@ -75,6 +77,7 @@ services:
       SURREAL_USER: root
       SURREAL_PASS: root
       POLL_INTERVAL_SECONDS: "2"
+      CLARIFY_MODEL: gpt-4o-mini
     depends_on:
       surrealdb:
         condition: service_healthy

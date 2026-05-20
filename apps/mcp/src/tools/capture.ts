@@ -17,18 +17,12 @@ export type CaptureInput = z.infer<typeof captureSchema>
 
 export async function captureImpl(input: CaptureInput): Promise<{ raw_id: string }> {
   const db = await getDb()
-  const [created] = await db.query<[{ id: RecordId }[]]>(
-    `CREATE raw_capture CONTENT {
-      content: $content,
-      source_kind: $source_kind,
-      source_ref: $source_ref
-    } RETURN AFTER`,
-    {
-      content: input.content,
-      source_kind: input.source_kind,
-      source_ref: input.source_ref ?? null
-    }
-  )
+  const data: Record<string, unknown> = {
+    content: input.content,
+    source_kind: input.source_kind
+  }
+  if (input.source_ref != null) data.source_ref = input.source_ref
+  const [created] = await db.query<[{ id: RecordId }[]]>('CREATE raw_capture CONTENT $data RETURN AFTER', { data })
   const raw = created[0]
   if (!raw) throw new Error('capture: insert returned no record')
 

@@ -13,5 +13,8 @@ class Settings(BaseSettings):
     poll_interval_seconds: float = 2.0
     actor: str = "worker"
 
+    openai_api_key: str = ""
+    clarify_model: str = "gpt-4o-mini"
+
 
 settings = Settings()
