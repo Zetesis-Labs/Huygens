@@ -73,7 +73,7 @@ DEFINE FIELD OVERWRITE state       ON note TYPE string
   DEFAULT 'CLARIFIED'
   ASSERT $value INSIDE ['CLARIFIED', 'ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED'];
 DEFINE FIELD OVERWRITE block_order ON note TYPE array<record<block>> DEFAULT [];
-DEFINE FIELD OVERWRITE metadata    ON note TYPE option<object>;
+DEFINE FIELD OVERWRITE metadata    ON note TYPE option<object> FLEXIBLE;
 -- source_kind y source_ref se mantienen para notas que NO vienen de raw_capture
 -- (e.g. notas que el agente crea como meta-memoria, reports generados, etc.).
 -- Para notas derivadas de un raw_capture, la procedencia se traza vía el edge
@@ -195,12 +195,12 @@ DEFINE FIELD OVERWRITE actor ON agent_event TYPE string
   ASSERT $value INSIDE ['worker', 'conversational', 'user', 'system'];
 DEFINE FIELD OVERWRITE session_id ON agent_event TYPE string;
 DEFINE FIELD OVERWRITE subject ON agent_event TYPE option<record>;
-DEFINE FIELD OVERWRITE payload ON agent_event TYPE option<object>;
+DEFINE FIELD OVERWRITE payload ON agent_event TYPE option<object> FLEXIBLE;
 DEFINE FIELD OVERWRITE confidence ON agent_event TYPE option<float>
   ASSERT $value IS NONE OR ($value >= 0 AND $value <= 1);
 DEFINE FIELD OVERWRITE reasoning_summary ON agent_event TYPE option<string>;
 DEFINE FIELD OVERWRITE model ON agent_event TYPE option<string>;
-DEFINE FIELD OVERWRITE tokens_used ON agent_event TYPE option<object>;
+DEFINE FIELD OVERWRITE tokens_used ON agent_event TYPE option<object> FLEXIBLE;
 DEFINE FIELD OVERWRITE duration_ms ON agent_event TYPE option<int>;
 DEFINE FIELD OVERWRITE created_at ON agent_event TYPE datetime DEFAULT time::now() READONLY;
 

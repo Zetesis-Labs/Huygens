@@ -1,0 +1,58 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { RecordId } from 'surrealdb'
+import { z } from 'zod'
+import { emitEvent, newSessionId } from '../events'
+import { getDb } from '../surreal'
+
+const SourceKind = z.enum(['chat', 'voice', 'manual', 'import', 'agent-self'])
+
+export const captureShape = {
+  content: z.string().min(1).describe('The literal user input — no interpretation, no segmentation'),
+  source_kind: SourceKind.describe('Where the input originated'),
+  source_ref: z.string().optional().describe('Optional identifier (session id, file path, URL, etc.)')
+}
+
+const captureSchema = z.object(captureShape)
+export type CaptureInput = z.infer<typeof captureSchema>
+
+export async function captureImpl(input: CaptureInput): Promise<{ raw_id: string }> {
+  const db = await getDb()
+  const [created] = await db.query<[{ id: RecordId }[]]>(
+    `CREATE raw_capture CONTENT {
+      content: $content,
+      source_kind: $source_kind,
+      source_ref: $source_ref
+    } RETURN AFTER`,
+    {
+      content: input.content,
+      source_kind: input.source_kind,
+      source_ref: input.source_ref ?? null
+    }
+  )
+  const raw = created[0]
+  if (!raw) throw new Error('capture: insert returned no record')
+
+  await emitEvent({
+    kind: 'raw_received',
+    actor: 'conversational',
+    session_id: newSessionId(),
+    subject: raw.id,
+    payload: { source_kind: input.source_kind, content_length: input.content.length }
+  })
+
+  return { raw_id: String(raw.id) }
+}
+
+export function registerCapture(server: McpServer): void {
+  server.tool(
+    'capture',
+    'Persist a raw user input as a raw_capture (Plane 1: evidence). No interpretation, no segmentation. The raw stays in the inbox until clarify is run.',
+    captureShape,
+    async args => {
+      const { raw_id } = await captureImpl(args)
+      return {
+        content: [{ type: 'text', text: `Captured: ${raw_id}` }]
+      }
+    }
+  )
+}
