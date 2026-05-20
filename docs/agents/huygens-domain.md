@@ -198,9 +198,13 @@ Es deliberadamente mínimo. La captura debería ser tan barata cognitivamente qu
    - Crea las Notes correspondientes (con type y state apropiados — state default `CLARIFIED`)
    - Crea los Blocks dentro de cada Note + actualiza `block_order`
    - Crea los Edges semánticos (`mentions`, `supports`, `part_of`, etc.)
+   - **Crea edges `derived_from`** desde cada nota/block generado hacia el raw, con el `transformation` correspondiente (`verbatim` para una nota que preserva el texto literal; `extracted` para una task identificada dentro del raw; `summarized` o `inferred` cuando el agente reinterpreta):
+     ```surql
+     RELATE $note->derived_from->$raw CONTENT { transformation: 'extracted' };
+     ```
    - **Marca el raw como procesado**:
      ```surql
-     UPDATE $raw SET processed_at = time::now(), processed_into = $note_ids
+     UPDATE $raw SET processed_at = time::now();
      ```
 3. **Reporta al usuario** la decomposición — qué notas se generaron, qué edges, qué quedó pendiente
 

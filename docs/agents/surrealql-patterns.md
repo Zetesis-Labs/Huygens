@@ -41,18 +41,28 @@ ORDER BY created_at ASC;
 
 ### Marcar un raw como procesado
 
+Dos pasos: crear los edges `derived_from` desde cada nota/block generado hacia el raw, y marcar el raw con `processed_at`.
+
 ```surql
-UPDATE $raw SET
-  processed_at = time::now(),
-  processed_into = $note_ids;   -- array<record<note>>
+-- Por cada nota generada (transformation: verbatim | extracted | summarized | inferred):
+RELATE $note->derived_from->$raw CONTENT { transformation: 'extracted' };
+
+-- Cerrar el ciclo:
+UPDATE $raw SET processed_at = time::now();
 ```
 
 ### Localizar la procedencia de una Note
 
 ```surql
--- Encontrar el raw_capture que generó esta nota
-SELECT id, content, source_kind FROM raw_capture
-WHERE $note IN processed_into;
+-- ¿De qué raw_capture proviene esta nota?
+SELECT VALUE out FROM derived_from WHERE in = $note;
+
+-- O con datos del raw:
+SELECT id, content, source_kind, source_ref FROM raw_capture
+WHERE id IN (SELECT VALUE out FROM derived_from WHERE in = $note);
+
+-- ¿Qué notas/blocks salieron de este raw?
+SELECT VALUE in FROM derived_from WHERE out = $raw;
 ```
 
 ## Procesamiento (clarify: raw → notes)

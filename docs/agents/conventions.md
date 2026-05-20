@@ -27,7 +27,7 @@ CREATE raw_capture CONTENT {
 
 El "inbox real" del usuario es: `SELECT * FROM raw_capture WHERE processed_at IS NONE`.
 
-Cuando proceses, marca el raw como `processed_at = time::now()` + `processed_into = [array de note ids generadas]`. Nunca borres el raw — es la fuente de verdad.
+Cuando proceses, marca el raw como `processed_at = time::now()` Y crea edges `derived_from` desde cada nota/block generado hacia el raw (con `transformation: verbatim | extracted | summarized | inferred` según corresponda). La procedencia vive en el edge, no en un campo del raw. Nunca borres el raw — es la fuente de verdad.
 
 ## 3. Trazabilidad
 
