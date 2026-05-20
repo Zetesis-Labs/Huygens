@@ -18,12 +18,14 @@ import { ErrorCode as JsonRpcCode, McpError } from '@modelcontextprotocol/sdk/ty
 export type ErrorCode =
   | 'RAW_NOT_FOUND'
   | 'RAW_ALREADY_PROCESSED'
+  | 'NOTE_NOT_FOUND'
   | 'BLOCK_NOT_FOUND'
   | 'NOTE_TYPE_NOT_FOUND'
   | 'INTERNAL_REF_OUT_OF_BOUNDS'
   | 'EXTERNAL_REF_OUT_OF_BOUNDS'
   | 'EMBEDDING_DIMENSION_MISMATCH'
   | 'EMBEDDING_PROVIDER_ERROR'
+  | 'LLM_PROVIDER_ERROR'
   | 'CONFIG_MISSING'
 
 export abstract class HuygensError extends Error {
@@ -48,6 +50,13 @@ export class RawAlreadyProcessedError extends HuygensError {
   readonly code = 'RAW_ALREADY_PROCESSED' as const
   constructor(raw_id: string) {
     super(`raw_capture already processed: ${raw_id}`, { raw_id })
+  }
+}
+
+export class NoteNotFoundError extends HuygensError {
+  readonly code = 'NOTE_NOT_FOUND' as const
+  constructor(note_id: string) {
+    super(`note not found: ${note_id}`, { note_id })
   }
 }
 
@@ -87,6 +96,13 @@ export class EmbeddingDimensionMismatchError extends HuygensError {
 
 export class EmbeddingProviderError extends HuygensError {
   readonly code = 'EMBEDDING_PROVIDER_ERROR' as const
+  constructor(provider: string, status: number, body: string) {
+    super(`${provider} ${status}: ${body.slice(0, 300)}`, { provider, status })
+  }
+}
+
+export class LlmProviderError extends HuygensError {
+  readonly code = 'LLM_PROVIDER_ERROR' as const
   constructor(provider: string, status: number, body: string) {
     super(`${provider} ${status}: ${body.slice(0, 300)}`, { provider, status })
   }

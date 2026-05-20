@@ -39,6 +39,7 @@ export const SourceKindSchema = z.enum(SOURCE_KINDS)
 // ─── Identifier shapes ──────────────────────────────────────────────────
 
 export const RAW_CAPTURE_ID_RE = /^raw_capture:[A-Za-z0-9_-]+$/
+export const NOTE_ID_RE = /^note:[A-Za-z0-9_-]+$/
 export const BLOCK_ID_RE = /^block:[A-Za-z0-9_-]+$/
 export const RECORD_ID_RE = /^[a-z_]+:[A-Za-z0-9_-]+$/i
 
