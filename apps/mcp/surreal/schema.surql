@@ -1,19 +1,45 @@
 -- Huygens — schema de datos en SurrealDB.
 --
--- Modelo: cada Note es composición ordenada de Blocks (markdown auto-contenido).
--- La topología (edges) puede apuntar a notes o a blocks indistintamente — esto
+-- Modelo en dos planos:
+--   1. raw_capture: lo que el usuario dijo literalmente (evidencia inmutable).
+--      Es el verdadero "inbox" — sin procesar, sin clasificar, sin segmentar.
+--   2. note + block + edges: la interpretación del agente sobre los raw_captures.
+--      Es topología procesada — todo lo que aquí vive ya pasó el clarify.
+--
+-- La transición entre planos es el `clarify` (procesamiento): el agente lee
+-- raw_captures pendientes (processed_at IS NONE), genera Notes/Blocks/Edges
+-- y marca el raw_capture como procesado con `processed_into`.
+--
+-- Una Note es composición ordenada de Blocks (markdown auto-contenido).
+-- La topología (edges) puede apuntar a notes o a blocks indistintamente —
 -- permite Zettelkasten-trails y referencias granulares sin pasar a un modelo
 -- de bloques atómicos tipo Notion.
 --
 -- Idempotente: usa OVERWRITE para que aplicar varias veces sea seguro.
--- Las cleanups (REMOVE) al inicio toleran que la BBDD esté vacía.
 
 -- ─────────────────────────────────────────────────────────────────────────
--- Cleanup de la versión anterior (note.content + note_chunk eliminados)
+-- raw_capture: lo que el usuario dijo literalmente, sin procesar.
+-- El verdadero inbox vive aquí, no en notes.
 -- ─────────────────────────────────────────────────────────────────────────
 
-REMOVE TABLE IF EXISTS note_chunk;
-REMOVE FIELD IF EXISTS content ON TABLE note;
+DEFINE TABLE OVERWRITE raw_capture SCHEMAFULL;
+DEFINE FIELD OVERWRITE content      ON raw_capture TYPE string;
+DEFINE FIELD OVERWRITE source_kind  ON raw_capture TYPE string
+  ASSERT $value INSIDE ['chat', 'voice', 'manual', 'import', 'agent-self'];
+DEFINE FIELD OVERWRITE source_ref   ON raw_capture TYPE option<string>;
+DEFINE FIELD OVERWRITE created_at   ON raw_capture TYPE datetime DEFAULT time::now() READONLY;
+-- processed_at: NONE = pendiente; datetime = ya procesado.
+-- La procedencia (qué notes/blocks salieron de aquí) NO vive en este campo:
+-- vive en el edge `derived_from` (ver más abajo).
+DEFINE FIELD OVERWRITE processed_at ON raw_capture TYPE option<datetime>;
+
+-- Cleanup: la versión anterior usaba un array<record<note>> en este campo.
+-- Ahora la procedencia es un edge `derived_from`.
+REMOVE FIELD IF EXISTS processed_into ON TABLE raw_capture;
+
+-- Índice para "dame el inbox real" en una query: WHERE processed_at IS NONE
+DEFINE INDEX OVERWRITE raw_capture_unprocessed ON raw_capture FIELDS processed_at;
+DEFINE INDEX OVERWRITE raw_capture_created     ON raw_capture FIELDS created_at;
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- NoteType: árbol editable de tipos
@@ -40,11 +66,17 @@ DEFINE FIELD OVERWRITE type        ON note TYPE option<record<note_type>>;
 DEFINE FIELD OVERWRITE pillars     ON note TYPE array<string>
   DEFAULT []
   ASSERT $value ALLINSIDE ['PATHOS_SOMA', 'ETHOS', 'TELOS', 'SOPHIA'];
+-- INBOX ya no es estado de note: una Note existe porque ya fue procesada
+-- desde un raw_capture. El "estar pendiente" ahora vive en raw_capture.
 DEFINE FIELD OVERWRITE state       ON note TYPE string
-  DEFAULT 'INBOX'
-  ASSERT $value INSIDE ['INBOX', 'CLARIFIED', 'ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED'];
+  DEFAULT 'CLARIFIED'
+  ASSERT $value INSIDE ['CLARIFIED', 'ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED'];
 DEFINE FIELD OVERWRITE block_order ON note TYPE array<record<block>> DEFAULT [];
 DEFINE FIELD OVERWRITE metadata    ON note TYPE option<object>;
+-- source_kind y source_ref se mantienen para notas que NO vienen de raw_capture
+-- (e.g. notas que el agente crea como meta-memoria, reports generados, etc.).
+-- Para notas derivadas de un raw_capture, la procedencia se traza vía el array
+-- `processed_into` en raw_capture, no aquí.
 DEFINE FIELD OVERWRITE source_kind ON note TYPE option<string>;
 DEFINE FIELD OVERWRITE source_ref  ON note TYPE option<string>;
 DEFINE FIELD OVERWRITE created_at  ON note TYPE datetime DEFAULT time::now() READONLY;
@@ -130,3 +162,12 @@ DEFINE INDEX OVERWRITE about_unique ON about FIELDS in, out UNIQUE;
 DEFINE TABLE OVERWRITE authored_by TYPE RELATION FROM note | block TO note SCHEMAFULL;
 DEFINE FIELD OVERWRITE created_at ON authored_by TYPE datetime DEFAULT time::now() READONLY;
 DEFINE INDEX OVERWRITE authored_by_unique ON authored_by FIELDS in, out UNIQUE;
+
+-- derived_from: procedencia desde raw_capture. La auditabilidad cruda → estructurado.
+-- Granularidad: note O block (un block específico puede ser verbatim de un raw concreto).
+-- `transformation` permite al agente anotar cómo derivó (verbatim, extracted, summarized, inferred).
+DEFINE TABLE OVERWRITE derived_from TYPE RELATION FROM note | block TO raw_capture SCHEMAFULL;
+DEFINE FIELD OVERWRITE created_at     ON derived_from TYPE datetime DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE transformation ON derived_from TYPE option<string>
+  ASSERT $value IS NONE OR $value INSIDE ['verbatim', 'extracted', 'summarized', 'inferred'];
+DEFINE INDEX OVERWRITE derived_from_unique ON derived_from FIELDS in, out UNIQUE;

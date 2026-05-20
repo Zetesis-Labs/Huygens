@@ -1,6 +1,15 @@
 import type { RecordId } from 'surrealdb'
 import { closeDb, getDb } from '../src/surreal'
 
+type RawCapture = {
+  id: RecordId
+  content: string
+  source_kind: string
+  source_ref: string | null
+  created_at: Date
+  processed_at: Date | null
+}
+
 type Block = {
   id: RecordId
   note: RecordId
@@ -16,95 +25,153 @@ type Note = {
   state: string
   block_order: RecordId[]
   source_kind: string | null
-  created_at: Date
-  updated_at: Date
 }
 
 const db = await getDb()
 
-// 1. Capture sin tipo: nota recién creada, sin blocks aún.
-const [createNoteResult] = await db.query<[Note[]]>(
-  `CREATE note CONTENT {
-    title: $title,
-    pillars: $pillars,
-    source_kind: $source_kind
+// ─── Plano 1: captura cruda ─────────────────────────────────────────────
+// Simula que el usuario dictó un tocho de voz que se transcribió.
+const RAW_TEXT = `Ana me dijo ayer que su fisio de Bilbao es muy bueno para
+cervicales, debería probarlo. Me recordó que tengo que renovar el carnet en
+agosto. Y por cierto, anoche leyendo Milewski me di cuenta de que los
+functores aplicativos son justo lo que necesito para componer las queries del
+agente — explorar mañana.`
+
+const [createRawResult] = await db.query<[RawCapture[]]>(
+  `CREATE raw_capture CONTENT {
+    content: $content,
+    source_kind: 'voice',
+    source_ref: $session_ref
   } RETURN AFTER`,
-  {
-    title: 'smoke test — tocho fragmentado',
-    pillars: ['ETHOS', 'SOPHIA'],
-    source_kind: 'manual'
-  }
+  { content: RAW_TEXT, session_ref: 'voice-session-abc' }
 )
-const note = createNoteResult[0]
-if (!note) throw new Error('note create failed')
+const raw = createRawResult[0]
+if (!raw) throw new Error('raw_capture create failed')
 
-// 2. Crear 3 blocks asociados a la note (INSERT acepta array; CREATE no).
-const [blocks] = await db.query<[Block[]]>(
-  `INSERT INTO block [
-    { note: $note, content: $b1, pillars: ['ETHOS'] },
-    { note: $note, content: $b2, pillars: ['SOPHIA'] },
-    { note: $note, content: $b3, pillars: ['ETHOS', 'SOPHIA'] }
-  ]`,
-  {
-    note: note.id,
-    b1: '## Captura inicial\n\nNotas sueltas que entran al inbox.',
-    b2: '## Idea de fondo\n\nReflexión sobre programación funcional y meditación.',
-    b3: '## Próxima acción\n\nLeer el capítulo 3 de Milewski.'
-  }
+// El inbox real: raw_captures sin procesar
+const [unprocessed] = await db.query<[RawCapture[]]>(
+  'SELECT id, source_kind, created_at FROM raw_capture WHERE processed_at IS NONE'
 )
-if (blocks.length !== 3) throw new Error(`expected 3 blocks, got ${blocks.length}`)
 
-// 3. Establecer el orden de blocks en la note.
-await db.query<[Note]>('UPDATE $note SET block_order = $order', {
-  note: note.id,
-  order: blocks.map(b => b.id)
+// ─── Plano 2: procesamiento (lo que en runtime hace el agente) ─────────
+// El agente decide:
+// - 1 Note "captura sesión voz" tipo=NONE (conserva sesión cruda como contexto)
+// - 1 Note tipo=task "Probar fisio recomendado por Ana en Bilbao"
+// - 1 Note tipo=task "Renovar carnet de conducir antes de agosto"
+// - 1 Note tipo=note "Idea: applicative functors para composición de queries del agente"
+// Cada una con su block markdown.
+
+// 1. Note contenedora (sesión original como referencia)
+const [container] = await db.query<[Note[]]>(
+  `CREATE note CONTENT {
+    title: 'Sesión de voz — fisio, DNI, applicative functors',
+    state: 'CLARIFIED'
+  } RETURN AFTER`
+)
+const containerNote = container[0]!
+const [containerBlock] = await db.query<[Block[]]>('INSERT INTO block { note: $note, content: $content }', {
+  note: containerNote.id,
+  content: RAW_TEXT
+})
+await db.query('UPDATE $id SET block_order = $order', {
+  id: containerNote.id,
+  order: [containerBlock[0]!.id]
 })
 
-// 4. Crear un edge `mentions` de bloque a bloque (zettel-trail).
-await db.query('RELATE $from->mentions->$to', {
-  from: blocks[0].id,
-  to: blocks[2].id
+// 2. Tasks y note específicas extraídas
+const [extracted] = await db.query<[Note[]]>(
+  `INSERT INTO note [
+    {
+      title: 'Probar fisio recomendado por Ana en Bilbao',
+      type: note_type:task,
+      pillars: ['PATHOS_SOMA'],
+      state: 'CLARIFIED'
+    },
+    {
+      title: 'Renovar carnet de conducir antes de agosto',
+      type: note_type:task,
+      pillars: [],
+      state: 'CLARIFIED'
+    },
+    {
+      title: 'Applicative functors para composición de queries del agente',
+      type: note_type:note,
+      pillars: ['SOPHIA'],
+      state: 'CLARIFIED'
+    }
+  ]`
+)
+
+// Crear blocks para cada nota extraída
+for (const n of extracted) {
+  await db.query<[Block[]]>('INSERT INTO block { note: $note, content: $content }', {
+    note: n.id,
+    content: `## ${n.title}\n\nExtraído de la sesión de voz.`
+  })
+}
+
+// Edges `mentions` desde cada nota extraída hacia el container (procedencia)
+for (const n of extracted) {
+  await db.query('RELATE $from->mentions->$to', {
+    from: n.id,
+    to: containerNote.id
+  })
+}
+
+// 3. Edges derived_from: procedencia de cada nota hacia el raw.
+//    El container es verbatim (preserva el texto literal); las extraídas son 'extracted'.
+await db.query('RELATE $from->derived_from->$raw CONTENT { transformation: "verbatim" }', {
+  from: containerNote.id,
+  raw: raw.id
 })
+for (const n of extracted) {
+  await db.query('RELATE $from->derived_from->$raw CONTENT { transformation: "extracted" }', {
+    from: n.id,
+    raw: raw.id
+  })
+}
 
-// 5. Releer la note con sus blocks ordenados.
-const [rereadNote] = await db.query<[Note[]]>('SELECT * FROM note WHERE id = $id', { id: note.id })
-const reread = rereadNote[0]
-if (!reread) throw new Error('readback failed')
+// 4. Cerrar el ciclo: marcar el raw_capture como procesado.
+const allNotes = [containerNote.id, ...extracted.map(n => n.id)]
+await db.query('UPDATE $raw SET processed_at = time::now()', { raw: raw.id })
 
-// 6. Recuperar el markdown completo respetando block_order.
-//    Fetch + sort en TS (más fiable que array::find_index dentro de ORDER BY).
-const [fetchedBlocks] = await db.query<[Block[]]>('SELECT id, content, pillars FROM block WHERE id IN $ids', {
-  ids: reread.block_order
+// ─── Verificación ───────────────────────────────────────────────────────
+const [rawAfter] = await db.query<[RawCapture[]]>('SELECT * FROM raw_capture WHERE id = $id', {
+  id: raw.id
 })
-const blockById = new Map(fetchedBlocks.map(b => [String(b.id), b]))
-const orderedBlocks = reread.block_order.map(id => blockById.get(String(id))).filter((b): b is Block => Boolean(b))
+const [unprocessedAfter] = await db.query<[RawCapture[]]>('SELECT id FROM raw_capture WHERE processed_at IS NONE')
+const [mentionsCount] = await db.query<[{ count: number }[]]>(
+  'SELECT count() AS count FROM mentions WHERE out = $container GROUP ALL',
+  { container: containerNote.id }
+)
 
-// 7. Verificar que el edge mentions existe.
-const [mentionsResult] = await db.query<[{ id: RecordId; in: RecordId; out: RecordId }[]]>(
-  'SELECT id, in, out FROM mentions WHERE in = $from',
-  { from: blocks[0].id }
+// Procedencia inversa: qué notes derivan de este raw
+const [derivedNotes] = await db.query<[{ in: RecordId; transformation: string | null }[]]>(
+  'SELECT in, transformation FROM derived_from WHERE out = $raw',
+  { raw: raw.id }
 )
 
 console.log(
   JSON.stringify(
     {
-      note: {
-        id: String(reread.id),
-        title: reread.title,
-        pillars: reread.pillars,
-        state: reread.state,
-        block_count: reread.block_order.length
-      },
-      rendered_markdown: orderedBlocks.map(b => b.content).join('\n\n---\n\n'),
-      block_pillars: orderedBlocks.map(b => b.pillars),
-      mentions_edges: mentionsResult.length
+      raw_capture_created: String(raw.id),
+      inbox_before_processing: unprocessed.length,
+      notes_produced: allNotes.map(String),
+      mentions_to_container: mentionsCount[0]?.count ?? 0,
+      raw_capture_processed_at: rawAfter[0]?.processed_at ?? null,
+      derived_from_edges: derivedNotes.map(d => ({
+        note: String(d.in),
+        transformation: d.transformation
+      })),
+      inbox_after_processing: unprocessedAfter.length
     },
     null,
     2
   )
 )
 
-// Cleanup: blocks primero (referencian a note), después la note.
-for (const b of blocks) await db.query('DELETE $id', { id: b.id })
-await db.query('DELETE $id', { id: note.id })
+// Cleanup
+for (const n of extracted) await db.query('DELETE $id', { id: n.id })
+await db.query('DELETE $id', { id: containerNote.id })
+await db.query('DELETE $id', { id: raw.id })
 await closeDb()

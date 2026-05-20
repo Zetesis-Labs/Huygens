@@ -14,20 +14,48 @@ SURREAL_USER=root
 SURREAL_PASS=root
 ```
 
-## Captura
+## Captura (raw_capture)
 
-### Crear una Note sin tipo (captura cruda al inbox)
+### Guardar evidencia cruda
 
 ```surql
-CREATE note CONTENT {
-  title: $title,
-  pillars: $pillars,        -- array, puede estar vacío
-  source_kind: 'chat',
-  source_ref: $session_id   -- opcional
+CREATE raw_capture CONTENT {
+  content: $text,
+  source_kind: 'voice',           -- 'chat' | 'voice' | 'manual' | 'import' | 'agent-self'
+  source_ref: $session_ref        -- opcional, e.g. id de sesión de chat
 };
 ```
 
-`state` defaultea a `'INBOX'`, `type` a NONE, timestamps al motor.
+**Nota**: `$session` es palabra reservada en SurrealDB. Usar `$session_ref` u otro nombre.
+
+`processed_at` defaultea a NONE — el raw queda en el inbox.
+
+### Listar el inbox real (raws pendientes)
+
+```surql
+SELECT id, content, source_kind, source_ref, created_at
+FROM raw_capture
+WHERE processed_at IS NONE
+ORDER BY created_at ASC;
+```
+
+### Marcar un raw como procesado
+
+```surql
+UPDATE $raw SET
+  processed_at = time::now(),
+  processed_into = $note_ids;   -- array<record<note>>
+```
+
+### Localizar la procedencia de una Note
+
+```surql
+-- Encontrar el raw_capture que generó esta nota
+SELECT id, content, source_kind FROM raw_capture
+WHERE $note IN processed_into;
+```
+
+## Procesamiento (clarify: raw → notes)
 
 ### Insertar varios blocks de golpe
 
@@ -72,13 +100,16 @@ const ordered = note.block_order
   .filter(Boolean)
 ```
 
-### Listar el inbox (notas pendientes de clarificar)
+### Listar notas pendientes de revisar (no es el inbox del usuario)
 
 ```surql
-SELECT id, title, pillars, created_at FROM note
-WHERE state = 'INBOX'
-ORDER BY created_at ASC;
+SELECT id, title, pillars, state, updated_at FROM note
+WHERE state IN ['CLARIFIED', 'ACTIVE']
+  AND (last_reviewed_at IS NONE OR last_reviewed_at < time::now() - 7d)
+ORDER BY updated_at DESC;
 ```
+
+El "inbox del usuario" es `raw_capture WHERE processed_at IS NONE` — ver sección anterior.
 
 ### Listar lo activo tocado recientemente (weekly review insight)
 

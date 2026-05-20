@@ -57,6 +57,7 @@ NO se añade ADR para:
 | [0014](./0014-three-layer-mcp-architecture.md) | Arquitectura MCP de tres capas | Accepted | architecture |
 | [0015](./0015-bge-m3-via-deepinfra.md) | BGE-M3 vía DeepInfra para embeddings | Accepted | architecture |
 | [0016](./0016-agent-knowledge-in-docs-agents.md) | Conocimiento del agente en `docs/agents/` | Accepted | agent |
+| [0017](./0017-raw-capture-separation-and-derived-from.md) | Separación raw_capture / Notes + edge derived_from | Accepted | data-model |
 
 ## Status legend
 

@@ -26,11 +26,13 @@ DEFINE FIELD pillars ON note TYPE array<string>
   ASSERT $value ALLINSIDE ['PATHOS_SOMA', 'ETHOS', 'TELOS', 'SOPHIA'];
 
 DEFINE FIELD state ON note TYPE string
-  DEFAULT 'INBOX'
-  ASSERT $value INSIDE ['INBOX', 'CLARIFIED', 'ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED'];
+  DEFAULT 'CLARIFIED'
+  ASSERT $value INSIDE ['CLARIFIED', 'ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED'];
 ```
 
-`pillars` es array (una nota puede tocar varios pilares; son ortogonales, no excluyentes). `state` es escalar con default `'INBOX'`.
+`pillars` es array (una nota puede tocar varios pilares; son ortogonales, no excluyentes). `state` es escalar con default `'CLARIFIED'`.
+
+**Nota — INBOX removido del enum**: cuando se introdujo `raw_capture` como tabla separada (ADR-0017), el "estar pendiente de procesar" pasó a vivir en `raw_capture.processed_at IS NONE`, no como un valor de `note.state`. Una `note` existe porque ya fue procesada desde un raw; nace por defecto en `CLARIFIED`.
 
 ## Consequences
 

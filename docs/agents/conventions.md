@@ -11,14 +11,23 @@ Todas las operaciones del agente deben ser **re-ejecutables sin efectos colatera
 - Al promover un block a nota, verifica primero si ya existe esa nota promovida (vía edge `mentions` desde la nueva hacia el origen).
 - Aplicar el schema (`schema.surql`) varias veces es seguro — usa `OVERWRITE` y `IF NOT EXISTS`.
 
-## 2. Captura es no-categorizada
+## 2. Captura es solo evidencia — no Notes
 
-Lo recién capturado vive con:
-- `type = NONE`
-- `state = 'INBOX'`
-- `pillars` opcional (pon los que detectes con confianza, deja vacío si no estás seguro)
+La captura crea un `raw_capture`, NO una `note`. Es texto literal con procedencia:
 
-**No asignes tipo prematuramente.** Es la transición a CLARIFIED quien hace ese trabajo. Capturar primero, clarificar después.
+```surql
+CREATE raw_capture CONTENT {
+  content: $text,
+  source_kind: 'voice',  -- o 'chat', 'manual', etc.
+  source_ref: $session_id
+}
+```
+
+**No segmentes, no clasifiques, no crees notes** en este paso. La estructura del grafo es trabajo del clarify (Plano 1 → Plano 2). Capturar primero, clarificar después.
+
+El "inbox real" del usuario es: `SELECT * FROM raw_capture WHERE processed_at IS NONE`.
+
+Cuando proceses, marca el raw como `processed_at = time::now()` + `processed_into = [array de note ids generadas]`. Nunca borres el raw — es la fuente de verdad.
 
 ## 3. Trazabilidad
 

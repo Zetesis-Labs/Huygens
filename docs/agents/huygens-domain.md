@@ -8,7 +8,28 @@ Una memoria estructurada **personal y única** para Rubén — no es un second-b
 
 El input principal es el chat con el usuario (texto corto, notas de voz transcritas, tochos largos). El output son notas markdown clasificadas + informes narrativos + búsqueda sobre el corpus.
 
-## Las cinco entidades
+## El modelo en dos planos
+
+Huygens distingue **dos ontologías distintas**:
+
+**Plano 1 — Captura cruda (`raw_capture`)**: lo que el usuario dijo literalmente. Sin clasificar, sin segmentar, sin interpretación. Es **evidencia inmutable**. El verdadero "inbox" vive aquí.
+
+**Plano 2 — Procesado (`note` + `block` + edges)**: la interpretación del agente sobre esos raws. Estructurado en el grafo. Reescribible — puedes mejorar la interpretación sin destruir la evidencia original.
+
+La transición entre planos se llama **clarify** (procesamiento): el agente lee `raw_capture`s pendientes, genera Notes/Blocks/Edges, y marca el raw como procesado. El raw nunca se borra — queda como audit trail.
+
+## Las entidades
+
+### raw_capture
+La unidad de **evidencia**. Cada raw_capture tiene:
+- `content: string` — el texto literal, intacto
+- `source_kind: string` — `'chat' | 'voice' | 'manual' | 'import' | 'agent-self'` (validado)
+- `source_ref: option<string>` — id de sesión / path de audio / etc.
+- `created_at: datetime`
+- `processed_at: option<datetime>` — NONE = aún en inbox; valor = ya procesado
+- `processed_into: option<array<record<note>>>` — qué notes se generaron
+
+**El inbox real**: `SELECT * FROM raw_capture WHERE processed_at IS NONE`. Eso es lo que el agente tiene que procesar.
 
 ### Note
 La unidad-contenedor. Cada Note tiene:
@@ -34,9 +55,9 @@ La unidad **direccionable y vectorizable**. Markdown auto-contenido (un Zettel).
 Árbol editable de tipos. Los 8 seedeados: `task`, `project`, `area`, `routine`, `note`, `report`, `person`, `reference`. **Puedes crear tipos nuevos** cuando el dominio lo pida y el usuario apruebe — pero NO multipliques tipos para clasificaciones que ya cubre `pillars` o `metadata`.
 
 ### NoteState (enum)
-Estado del ciclo GTD:
-- `INBOX` — capturada, sin procesar
-- `CLARIFIED` — el agente o el usuario decidieron qué es y qué hacer
+Estado del ciclo GTD. **Nota**: `INBOX` NO está en estos valores — el "estar pendiente de procesar" vive en `raw_capture.processed_at IS NONE`, no en `note.state`. Una Note existe porque ya fue procesada desde un raw, por tanto nace en `CLARIFIED` o más allá.
+
+- `CLARIFIED` — procesada, decisión tomada (default al crear desde raw)
 - `ACTIVE` — en marcha
 - `WAITING` — bloqueada por algo externo (chequea quincenalmente)
 - `SOMEDAY` — no ahora, quizá luego
@@ -45,8 +66,8 @@ Estado del ciclo GTD:
 
 Transiciones típicas:
 ```
-INBOX → CLARIFIED → ACTIVE → (DONE | WAITING)
-                  ↘ SOMEDAY
+(raw_capture) → CLARIFIED → ACTIVE → (DONE | WAITING)
+                          ↘ SOMEDAY
 DONE → ARCHIVED (con el tiempo)
 WAITING ↔ ACTIVE (cuando se desbloquea)
 ```
@@ -122,31 +143,36 @@ Sé conservador con `supports`/`refutes`. Son edges con carga semántica fuerte;
 - **Un pilar**: la nota toca claramente una dimensión.
 - **Varios pilares**: la nota cruza dimensiones. Esto es lo más valioso a largo plazo porque permite informes que cosen pilares — pero no fuerces interpretaciones.
 
-## Flujo de captura típico
+## Flujo de captura (Plano 1)
 
-1. **Recibes input del usuario** (texto, transcripción de voz, lo que sea)
-2. **Crea una Note nueva** con:
-   - `title` — síntesis corta que tú generas del input
-   - `type` — NONE si todavía no clasificas
-   - `state` — INBOX por defecto
-   - `pillars` — los que detectas con confianza, o vacío
-   - `source_kind` y `source_ref` — para trazabilidad
-3. **Crea los Blocks** segmentando el input si es largo (un solo block si es corto)
-4. **Actualiza `note.block_order`** con los IDs en orden
-5. **Detecta menciones** en el texto del usuario (mentions `[[note:X]]` o `@person:Y` si las hay) y crea los edges correspondientes
-6. **Termina con un breve resumen** al usuario de lo que capturaste
+**Captura es solo guardar la evidencia**. Sin procesamiento, sin clasificación.
 
-## Flujo de clarificación
+1. **Recibes input del usuario** (texto chat, transcripción de voz, dump manual)
+2. **Crea un `raw_capture`** con:
+   - `content` — el texto literal, sin tocar
+   - `source_kind` — `'chat'` | `'voice'` | `'manual'` | `'import'`
+   - `source_ref` — id de sesión / path / lo que sea identificable
+3. **Confirmas al usuario que se capturó**. NO clasificas en este paso. NO creas Notes. NO segmentas en blocks.
 
-Cuando el usuario pide clarificar inbox, o tú decides hacerlo:
+Es deliberadamente mínimo. La captura debería ser tan barata cognitivamente que el usuario no dude en hacerla.
 
-1. Listar notas en `state=INBOX` ordenadas por antigüedad
-2. Para cada una:
-   - Decide su `type` (o pregunta al usuario si dudas)
-   - Asigna `pillars` definitivos
-   - Crea edges hacia notas existentes si aplica (`part_of` un Project, `mentions` una Person, etc.)
-   - Transiciona a `state=CLARIFIED` (o `ACTIVE` si se va a empezar ya, `SOMEDAY` si se aparca)
-3. Reporta lo procesado al usuario
+## Flujo de clarificación (Plano 1 → Plano 2)
+
+**Clarify es la transición entre planos**. Es donde el agente hace el trabajo de interpretación.
+
+1. **Lista raw_captures sin procesar**: `SELECT * FROM raw_capture WHERE processed_at IS NONE ORDER BY created_at ASC`
+2. **Para cada raw_capture**:
+   - Analiza el contenido y decide la decomposición (1 nota, varias, container + extraídas, etc.)
+   - Crea las Notes correspondientes (con type, pillars, state apropiados — state default `CLARIFIED`)
+   - Crea los Blocks dentro de cada Note + actualiza `block_order`
+   - Crea los Edges semánticos (`mentions`, `supports`, `part_of`, etc.)
+   - **Marca el raw como procesado**:
+     ```surql
+     UPDATE $raw SET processed_at = time::now(), processed_into = $note_ids
+     ```
+3. **Reporta al usuario** la decomposición — qué notas se generaron, qué edges, qué quedó pendiente
+
+**Importante**: el raw_capture NUNCA se borra. Es la fuente de verdad. Si en el futuro descubres que decomposiste mal, puedes re-procesar el raw (creando notas nuevas que sustituyen a las anteriores).
 
 ## Flujo de generación de Report
 
