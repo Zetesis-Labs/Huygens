@@ -21,8 +21,8 @@ import time
 from dataclasses import dataclass, field
 
 from .clarify import clarify
-from .commit import commit_clarify
 from .events import emit_event, new_session_id
+from .mcp_client import commit_clarify_via_mcp
 from .settings import settings
 from .surreal_client import DB, Row, query_rows
 
@@ -103,8 +103,7 @@ class InboxWatcher:
                 },
             )
 
-            result = await commit_clarify(
-                self.db,
+            result = await commit_clarify_via_mcp(
                 raw_id,
                 decomposition,
                 session_id=session_id,

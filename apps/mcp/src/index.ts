@@ -12,6 +12,13 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
 }
 
 const httpServer = createHttpServer(async (req, res) => {
+  if (req.url === '/healthz') {
+    res.statusCode = 200
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ ok: true }))
+    return
+  }
+
   if (!req.url?.startsWith('/mcp')) {
     res.statusCode = 404
     res.setHeader('content-type', 'application/json')

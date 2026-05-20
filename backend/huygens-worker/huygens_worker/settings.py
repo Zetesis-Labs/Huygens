@@ -18,5 +18,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     clarify_model: str = "gpt-4o-mini"
 
+    mcp_url: str = "http://huygens-mcp:3030/mcp"
+
 
 settings = Settings()
