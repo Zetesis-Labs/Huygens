@@ -6,27 +6,14 @@ Mirrors apps/mcp/src/events.ts. Observability must not break the parent op.
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal, NotRequired, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 from uuid_extensions import uuid7
 
-from .settings import Actor
+from .domain import Actor, EventKind
 from .surreal_client import DB, execute
 
 log = logging.getLogger(__name__)
-
-EventKind = Literal[
-    "raw_received",
-    "raw_claimed",
-    "analysis_started",
-    "related_context_fetched",
-    "decomposition_proposed",
-    "human_review_requested",
-    "commit_attempted",
-    "commit_succeeded",
-    "commit_failed",
-    "worker_yielded",
-]
 
 
 class EmitInput(TypedDict):

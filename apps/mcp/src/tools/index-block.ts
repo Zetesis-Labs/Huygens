@@ -1,12 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StringRecordId } from 'surrealdb'
 import { z } from 'zod'
+import { BLOCK_ID_RE } from '../domain'
 import { embedTexts } from '../embeddings'
 import { getDb } from '../surreal'
 
 export const indexBlockShape = {
   block_ids: z
-    .array(z.string().regex(/^block:[A-Za-z0-9_-]+$/, 'Must be a block record id'))
+    .array(z.string().regex(BLOCK_ID_RE, 'Must be a block record id'))
     .min(1)
     .max(64)
     .describe('1..64 block record ids to embed and index')

@@ -1,14 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { RecordId } from 'surrealdb'
 import { z } from 'zod'
+import { SourceKindSchema } from '../domain'
 import { emitEvent, newSessionId } from '../events'
 import { getDb } from '../surreal'
 
-const SourceKind = z.enum(['chat', 'voice', 'manual', 'import', 'agent-self'])
-
 export const captureShape = {
   content: z.string().min(1).describe('The literal user input — no interpretation, no segmentation'),
-  source_kind: SourceKind.describe('Where the input originated'),
+  source_kind: SourceKindSchema.describe('Where the input originated'),
   source_ref: z.string().optional().describe('Optional identifier (session id, file path, URL, etc.)')
 }
 

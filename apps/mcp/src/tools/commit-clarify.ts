@@ -1,14 +1,16 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { type RecordId, StringRecordId, type Surreal } from 'surrealdb'
 import { z } from 'zod'
+import {
+  EdgeKindSchema,
+  NoteStateSchema,
+  NoteTypeSlugSchema,
+  RAW_CAPTURE_ID_RE,
+  RECORD_ID_RE,
+  TransformationSchema
+} from '../domain'
 import { emitEvent, newSessionId } from '../events'
 import { getDb } from '../surreal'
-
-const NoteState = z.enum(['CLARIFIED', 'ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED'])
-
-const EdgeKind = z.enum(['mentions', 'supports', 'refutes', 'part_of', 'blocked_by', 'about', 'authored_by'])
-
-const Transformation = z.enum(['verbatim', 'extracted', 'summarized', 'inferred'])
 
 const BlockProposal = z.object({
   content: z.string().min(1).describe('Markdown content of the block')
@@ -16,19 +18,16 @@ const BlockProposal = z.object({
 
 const NoteProposal = z.object({
   title: z.string().min(1).describe('Concise title of the note'),
-  type_slug: z
-    .string()
-    .optional()
-    .describe('Slug of note_type (e.g. "task", "project", "objetivo", "idea"). Omit for type=NONE.'),
-  state: NoteState.default('CLARIFIED'),
+  type_slug: NoteTypeSlugSchema.optional().describe('Slug of note_type. Omit for type=NONE.'),
+  state: NoteStateSchema.default('CLARIFIED'),
   metadata: z.record(z.string(), z.unknown()).optional().describe('Type-specific metadata bag'),
   mit_for: z.string().datetime().optional().describe('ISO datetime; if set, this note is a MIT for that day'),
   blocks: z.array(BlockProposal).min(1).describe('Ordered markdown blocks that compose the note'),
-  transformation: Transformation.describe('How this note relates to the raw source'),
+  transformation: TransformationSchema.describe('How this note relates to the raw source'),
   internal_refs: z
     .array(
       z.object({
-        kind: EdgeKind,
+        kind: EdgeKindSchema,
         to_note_index: z.number().int().nonnegative().describe('Index of target in this `notes` array')
       })
     )
@@ -38,17 +37,17 @@ const NoteProposal = z.object({
 
 const ExternalRef = z.object({
   from_note_index: z.number().int().nonnegative(),
-  kind: EdgeKind,
+  kind: EdgeKindSchema,
   to_external_id: z
     .string()
-    .regex(/^[a-z_]+:[A-Za-z0-9_-]+$/i, 'Record id format')
+    .regex(RECORD_ID_RE, 'Record id format')
     .describe('Existing record id (e.g. "note:abc", "person:rubén")')
 })
 
 export const commitClarifyShape = {
   raw_id: z
     .string()
-    .regex(/^raw_capture:[A-Za-z0-9_-]+$/, 'Must be a raw_capture record id')
+    .regex(RAW_CAPTURE_ID_RE, 'Must be a raw_capture record id')
     .describe('The raw_capture being clarified'),
   decomposition: z.object({
     notes: z.array(NoteProposal).min(1),

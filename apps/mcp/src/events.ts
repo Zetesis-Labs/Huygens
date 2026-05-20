@@ -1,20 +1,9 @@
 import type { RecordId, StringRecordId } from 'surrealdb'
 import { uuidv7 } from 'uuidv7'
+import type { Actor, EventKind } from './domain'
 import { getDb } from './surreal'
 
-export type EventKind =
-  | 'raw_received'
-  | 'raw_claimed'
-  | 'analysis_started'
-  | 'related_context_fetched'
-  | 'decomposition_proposed'
-  | 'human_review_requested'
-  | 'commit_attempted'
-  | 'commit_succeeded'
-  | 'commit_failed'
-  | 'worker_yielded'
-
-export type Actor = 'worker' | 'conversational' | 'user' | 'system'
+export type { Actor, EventKind }
 
 export type EmitEventInput = {
   kind: EventKind

@@ -1,12 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { type RecordId, StringRecordId } from 'surrealdb'
 import { z } from 'zod'
+import { RAW_CAPTURE_ID_RE } from '../domain'
 import { getDb } from '../surreal'
 
 export const getRawShape = {
   raw_id: z
     .string()
-    .regex(/^raw_capture:[A-Za-z0-9_-]+$/, 'Must be a record id like "raw_capture:abc123"')
+    .regex(RAW_CAPTURE_ID_RE, 'Must be a record id like "raw_capture:abc123"')
     .describe('The raw_capture id (e.g. raw_capture:abc123)')
 }
 

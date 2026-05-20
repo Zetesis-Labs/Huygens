@@ -1,14 +1,12 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { RecordId } from 'surrealdb'
 import { z } from 'zod'
+import { SourceKindSchema } from '../domain'
 import { getDb } from '../surreal'
 
 export const listInboxShape = {
   limit: z.number().int().positive().max(100).default(20).describe('Maximum raws to return'),
-  source_kind: z
-    .enum(['chat', 'voice', 'manual', 'import', 'agent-self'])
-    .optional()
-    .describe('Optional filter by source kind')
+  source_kind: SourceKindSchema.optional().describe('Optional filter by source kind')
 }
 
 const listInboxSchema = z.object(listInboxShape)

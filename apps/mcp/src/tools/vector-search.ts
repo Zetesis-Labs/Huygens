@@ -1,10 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { RecordId } from 'surrealdb'
 import { z } from 'zod'
+import { NoteStateSchema } from '../domain'
 import { embedTexts } from '../embeddings'
 import { getDb } from '../surreal'
-
-const NoteState = z.enum(['CLARIFIED', 'ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED'])
 
 export const vectorSearchShape = {
   query: z.string().min(1).describe('Natural-language query to embed and search'),
@@ -22,7 +21,10 @@ export const vectorSearchShape = {
     .max(1)
     .optional()
     .describe('Optional cosine-similarity floor (0..1). Higher = stricter.'),
-  state_in: z.array(NoteState).optional().describe('Filter by parent note state. Omit to search across all states.'),
+  state_in: z
+    .array(NoteStateSchema)
+    .optional()
+    .describe('Filter by parent note state. Omit to search across all states.'),
   type_slugs: z.array(z.string()).optional().describe('Filter by parent note type slug (e.g. ["task","project"])'),
   updated_since: z
     .string()

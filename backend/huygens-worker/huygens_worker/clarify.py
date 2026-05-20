@@ -9,33 +9,15 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Literal
 
 from agno.agent import Agent
 from agno.models.openai import OpenAIChat
 from pydantic import BaseModel, Field
 
+from .domain import EdgeKind, NoteState, NoteTypeSlug, Transformation
 from .settings import settings
 
 log = logging.getLogger(__name__)
-
-NoteState = Literal["CLARIFIED", "ACTIVE", "WAITING", "SOMEDAY", "DONE", "ARCHIVED"]
-NoteTypeSlug = Literal[
-    "task",
-    "project",
-    "area",
-    "routine",
-    "note",
-    "report",
-    "person",
-    "reference",
-    "objetivo",
-    "idea",
-]
-EdgeKind = Literal[
-    "mentions", "supports", "refutes", "part_of", "blocked_by", "about", "authored_by"
-]
-Transformation = Literal["verbatim", "extracted", "summarized", "inferred"]
 
 
 class BlockProposal(BaseModel):
