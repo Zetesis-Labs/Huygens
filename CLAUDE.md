@@ -1,5 +1,12 @@
 # CLAUDE.md
 
+> **Lecturas obligatorias al inicio de sesión** (en este orden):
+> 1. [`docs/agents/huygens-domain.md`](./docs/agents/huygens-domain.md) — qué es Huygens, entidades, pilares, edges, flujos
+> 2. [`docs/agents/surrealql-patterns.md`](./docs/agents/surrealql-patterns.md) — queries SurrealQL para Huygens
+> 3. [`docs/agents/conventions.md`](./docs/agents/conventions.md) — reglas operativas obligatorias
+>
+> Este fichero (`CLAUDE.md`) contiene **convenciones del repo + comandos**. El conocimiento del dominio vive en `docs/agents/`.
+
 ## Proyecto
 
 Monorepo TypeScript con **Bun** + **SurrealDB** + **MCP** en `apps/mcp`. Una sola app por ahora, pero la raíz declara workspaces (`apps/*`) para crecer.
