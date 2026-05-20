@@ -3,7 +3,7 @@ import { StringRecordId } from 'surrealdb'
 import { z } from 'zod'
 import { BLOCK_ID_RE } from '../domain'
 import { embedTexts } from '../embeddings'
-import { BlockNotFoundError } from '../errors'
+import { BlockNotFoundError, HuygensError, huygensErrorToToolResult, toMcpError } from '../errors'
 import { getDb } from '../surreal'
 
 export const indexBlockShape = {
@@ -70,12 +70,17 @@ export function registerIndexBlock(server: McpServer): void {
     'Embed the content of 1..64 blocks with BGE-M3 and persist embedding/embedding_model/dimensions on each block. The HNSW index updates automatically.',
     indexBlockShape,
     async args => {
-      const result = await indexBlockImpl(args)
-      return {
-        content: [
-          { type: 'text', text: `Indexed ${result.indexed.length} block(s) with ${result.model}` },
-          { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(result, null, 2)}` }
-        ]
+      try {
+        const result = await indexBlockImpl(args)
+        return {
+          content: [
+            { type: 'text', text: `Indexed ${result.indexed.length} block(s) with ${result.model}` },
+            { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(result, null, 2)}` }
+          ]
+        }
+      } catch (err) {
+        if (err instanceof HuygensError) return huygensErrorToToolResult(err)
+        throw toMcpError(err)
       }
     }
   )

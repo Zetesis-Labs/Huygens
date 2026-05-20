@@ -3,6 +3,7 @@ import type { RecordId } from 'surrealdb'
 import { z } from 'zod'
 import { NoteStateSchema } from '../domain'
 import { embedTexts } from '../embeddings'
+import { HuygensError, huygensErrorToToolResult, toMcpError } from '../errors'
 import { getDb } from '../surreal'
 
 export const vectorSearchShape = {
@@ -112,21 +113,26 @@ export function registerVectorSearch(server: McpServer): void {
     'Embed the query with BGE-M3 and find the K nearest blocks via HNSW (cosine). Optional filters by note state, type slug, and updated-since.',
     vectorSearchShape,
     async args => {
-      const hits = await vectorSearchImpl(args)
-      const summary =
-        hits.length === 0
-          ? 'No matches.'
-          : hits
-              .map(
-                h =>
-                  `- [${h.score.toFixed(3)}] ${h.note_title} (${h.note_state}) :: ${h.content.slice(0, 100).replace(/\n/g, ' ')}${h.content.length > 100 ? '…' : ''}`
-              )
-              .join('\n')
-      return {
-        content: [
-          { type: 'text', text: summary },
-          { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(hits, null, 2)}` }
-        ]
+      try {
+        const hits = await vectorSearchImpl(args)
+        const summary =
+          hits.length === 0
+            ? 'No matches.'
+            : hits
+                .map(
+                  h =>
+                    `- [${h.score.toFixed(3)}] ${h.note_title} (${h.note_state}) :: ${h.content.slice(0, 100).replace(/\n/g, ' ')}${h.content.length > 100 ? '…' : ''}`
+                )
+                .join('\n')
+        return {
+          content: [
+            { type: 'text', text: summary },
+            { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(hits, null, 2)}` }
+          ]
+        }
+      } catch (err) {
+        if (err instanceof HuygensError) return huygensErrorToToolResult(err)
+        throw toMcpError(err)
       }
     }
   )

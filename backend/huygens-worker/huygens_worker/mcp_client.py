@@ -14,8 +14,10 @@ from typing import Any
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+from mcp.shared.exceptions import McpError
 
 from .clarify import Decomposition
+from .errors import HuygensError, huygens_error_from_mcp, huygens_error_from_structured
 from .settings import settings
 
 log = logging.getLogger(__name__)
@@ -72,14 +74,41 @@ async def commit_clarify_via_mcp(
     if model is not None:
         arguments["model"] = model
 
-    async with (
-        streamablehttp_client(settings.mcp_url) as (read, write, _),
-        ClientSession(read, write) as session,
-    ):
-        await session.initialize()
-        result = await session.call_tool("commit_clarify", arguments=arguments)
-        if result.isError:
-            detail = " | ".join(getattr(b, "text", str(b)) for b in result.content)
-            raise RuntimeError(f"MCP commit_clarify error: {detail}")
-        text_blocks = [getattr(b, "text", "") for b in result.content if hasattr(b, "text")]
-        return _extract_json_block(text_blocks)
+    try:
+        async with (
+            streamablehttp_client(settings.mcp_url) as (read, write, _),
+            ClientSession(read, write) as session,
+        ):
+            await session.initialize()
+            result = await session.call_tool("commit_clarify", arguments=arguments)
+            if result.isError:
+                # The TS server packs the discriminator into
+                # structuredContent.error = {code, message, details}.
+                # Fall back to text scraping if structuredContent is absent
+                # (e.g. SDK-level input validation errors).
+                typed = huygens_error_from_structured(result.structuredContent)
+                if typed is not None:
+                    raise typed
+                detail = " | ".join(getattr(b, "text", str(b)) for b in result.content)
+                raise HuygensError(f"MCP commit_clarify: {detail}")
+            text_blocks = [getattr(b, "text", "") for b in result.content if hasattr(b, "text")]
+            return _extract_json_block(text_blocks)
+    except BaseExceptionGroup as eg:
+        # anyio task groups wrap escaping exceptions into (possibly nested)
+        # ExceptionGroups. Flatten and translate the first interesting one.
+        for leaf in _flatten_exception_group(eg):
+            if isinstance(leaf, McpError):
+                raise huygens_error_from_mcp(leaf) from eg
+            if isinstance(leaf, HuygensError):
+                raise leaf from eg
+        raise
+
+
+def _flatten_exception_group(eg: BaseException) -> list[BaseException]:
+    out: list[BaseException] = []
+    if isinstance(eg, BaseExceptionGroup):
+        for exc in eg.exceptions:
+            out.extend(_flatten_exception_group(exc))
+    else:
+        out.append(eg)
+    return out

@@ -11,9 +11,12 @@ import {
 } from '../domain'
 import {
   ExternalRefOutOfBoundsError,
+  HuygensError,
+  huygensErrorToToolResult,
   InternalRefOutOfBoundsError,
   RawAlreadyProcessedError,
-  RawNotFoundError
+  RawNotFoundError,
+  toMcpError
 } from '../errors'
 import { emitEvent, newSessionId } from '../events'
 import { getDb } from '../surreal'
@@ -251,15 +254,20 @@ export function registerCommitClarify(server: McpServer): void {
     'Atomically commit a clarify decomposition: create notes + blocks + edges + derived_from links + mark raw_capture as processed. Emits agent_event for traceability.',
     commitClarifyShape,
     async args => {
-      const result = await commitClarifyImpl(args)
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Clarified ${args.raw_id} → ${result.notes_created.length} notes, ${result.blocks_created.length} blocks, ${result.edges_created} edges. session=${result.session_id}`
-          },
-          { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(result, null, 2)}` }
-        ]
+      try {
+        const result = await commitClarifyImpl(args)
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Clarified ${args.raw_id} → ${result.notes_created.length} notes, ${result.blocks_created.length} blocks, ${result.edges_created} edges. session=${result.session_id}`
+            },
+            { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(result, null, 2)}` }
+          ]
+        }
+      } catch (err) {
+        if (err instanceof HuygensError) return huygensErrorToToolResult(err)
+        throw toMcpError(err)
       }
     }
   )

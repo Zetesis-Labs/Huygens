@@ -12,11 +12,23 @@ from datetime import UTC, datetime
 
 from agno.agent import Agent
 from agno.models.openai import OpenAIChat
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .domain import EdgeKind, NoteState, NoteTypeSlug, Transformation
 from .errors import ConfigMissingError
 from .settings import settings
+
+
+def _normalize_iso_datetime(value: str) -> str:
+    """Accept the loose forms the LLM tends to emit and normalize to a Z-suffixed
+    UTC ISO 8601 string that Zod's strict `.datetime()` will accept."""
+    # Bare date → start-of-day UTC
+    if len(value) == 10 and value[4] == "-" and value[7] == "-":
+        value = f"{value}T00:00:00Z"
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 log = logging.getLogger(__name__)
 
@@ -40,8 +52,21 @@ class NoteProposal(BaseModel):
     state: NoteState = Field(default="CLARIFIED", description="ZTD state. Default CLARIFIED.")
     mit_for: str | None = Field(
         default=None,
-        description="ISO 8601 datetime if this is a Most Important Task for a specific day, else null",
+        description=(
+            "ISO 8601 datetime with Z suffix (UTC) if this is a Most Important Task "
+            "for a specific day, else null. Example: 2026-05-21T00:00:00Z"
+        ),
     )
+
+    @field_validator("mit_for", mode="before")
+    @classmethod
+    def _normalize(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return None
+        try:
+            return _normalize_iso_datetime(value)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"invalid mit_for {value!r}: {exc}") from exc
     blocks: list[BlockProposal] = Field(
         min_length=1, description="Markdown blocks composing this note, in order"
     )
@@ -113,7 +138,7 @@ def get_agent() -> Agent:
     if _agent is not None:
         return _agent
     if not settings.openai_api_key:
-        raise ConfigMissingError("OPENAI_API_KEY")
+        raise ConfigMissingError("OPENAI_API_KEY env var not set", {"name": "OPENAI_API_KEY"})
     _agent = Agent(
         model=OpenAIChat(id=settings.clarify_model, api_key=settings.openai_api_key),
         instructions=SYSTEM_PROMPT,

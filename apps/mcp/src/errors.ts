@@ -6,8 +6,14 @@
  * `instanceof` or `error.code`, never on message text — messages are for
  * humans and may change.
  *
+ * Across the MCP boundary the error is repackaged as an `McpError` whose
+ * `data` carries `{ code, details }`. Remote callers (the Python worker)
+ * reconstruct a typed exception from that payload.
+ *
  * KEEP IN SYNC with backend/huygens-worker/huygens_worker/errors.py.
  */
+
+import { ErrorCode as JsonRpcCode, McpError } from '@modelcontextprotocol/sdk/types.js'
 
 export type ErrorCode =
   | 'RAW_NOT_FOUND'
@@ -91,4 +97,30 @@ export class ConfigMissingError extends HuygensError {
   constructor(name: string) {
     super(`required config missing: ${name}`, { name })
   }
+}
+
+// ─── MCP boundary ───────────────────────────────────────────────────────
+// The SDK serializes McpError throws as `isError: true` content (not as a
+// JSON-RPC error), so we can't rely on `error.data` reaching the wire.
+// Instead we ship the discriminator in `structuredContent.error` which the
+// Python client reads.
+
+export type ToolErrorResult = {
+  isError: true
+  content: { type: 'text'; text: string }[]
+  structuredContent: { error: { code: ErrorCode; message: string; details: Record<string, unknown> } }
+}
+
+export function huygensErrorToToolResult(err: HuygensError): ToolErrorResult {
+  return {
+    isError: true,
+    content: [{ type: 'text', text: err.message }],
+    structuredContent: { error: { code: err.code, message: err.message, details: err.details } }
+  }
+}
+
+export function toMcpError(err: unknown): McpError {
+  if (err instanceof McpError) return err
+  const message = err instanceof Error ? err.message : String(err)
+  return new McpError(JsonRpcCode.InternalError, message)
 }

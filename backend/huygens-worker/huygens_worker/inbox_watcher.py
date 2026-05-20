@@ -21,6 +21,7 @@ import time
 from dataclasses import dataclass, field
 
 from .clarify import clarify
+from .errors import HuygensError, RawAlreadyProcessedError
 from .events import emit_event, new_session_id
 from .mcp_client import commit_clarify_via_mcp
 from .settings import settings
@@ -120,8 +121,18 @@ class InboxWatcher:
             self.seen_processed.add(raw_id)
             return True
 
+        except RawAlreadyProcessedError:
+            # Another worker (or a previous run after a restart) already
+            # committed this raw. Nothing to do — mark it seen so we stop
+            # re-attempting on every tick.
+            log.info("raw %s already processed — treating as done", raw_id)
+            self.seen_processed.add(raw_id)
+            return True
+        except HuygensError as err:
+            log.error("process %s failed: code=%s details=%s", raw_id, err.code, err.details)
+            return False
         except Exception as err:
-            log.error("process %s failed: %s", raw_id, err)
+            log.exception("process %s failed unexpectedly: %s", raw_id, err)
             return False
         finally:
             self.in_flight.discard(raw_id)
