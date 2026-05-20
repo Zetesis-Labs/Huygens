@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { StringRecordId } from 'surrealdb'
 import type { ChatComplete, ChatMessage } from '../src/chat'
 import type { NoteTypeSlug } from '../src/domain'
 import { captureImpl } from '../src/tools/capture'
@@ -121,11 +122,89 @@ describe('generateReportImpl', () => {
       {
         period_start: '1970-01-01T00:00:00Z',
         period_end: '2999-01-01T00:00:00Z',
-        style: 'narrative'
+        style: 'narrative',
+        persist: false
       },
       fn
     )
     expect(result.tokens_used).toEqual({ input: 10, output: 20 })
     expect(result.duration_ms).toBeGreaterThanOrEqual(0)
+  })
+
+  test('persists the report as a note of type=report with blocks + about edges', async () => {
+    const noteA = await seedNote('applicative functors', 'compose effects')
+    const noteB = await seedNote('builder pattern', 'fluent step-by-step')
+
+    const reportMd = '# Resumen\n\nGran semana.\n\n## Lo interesante\n\nFuntores aplicativos.'
+    const { fn } = makeFakeChat(reportMd)
+    const result = await generateReportImpl(
+      {
+        period_start: '1970-01-01T00:00:00Z',
+        period_end: '2999-01-01T00:00:00Z',
+        style: 'narrative',
+        persist: true
+      },
+      fn
+    )
+
+    expect(result.report_id).toMatch(/^note:[A-Za-z0-9]+$/)
+    expect(result.report_block_ids).toBeDefined()
+    expect((result.report_block_ids ?? []).length).toBeGreaterThan(0)
+
+    const reportRef = new StringRecordId(result.report_id ?? '')
+    const [reportRows] = await ctx.db.query<
+      [{ title: string; state: string; type_slug: string | null; metadata: Record<string, unknown> }[]]
+    >('SELECT title, state, type.slug AS type_slug, metadata FROM note WHERE id = $id', { id: reportRef })
+    expect(reportRows[0]?.type_slug).toBe('report')
+    expect(reportRows[0]?.state).toBe('CLARIFIED')
+    expect(reportRows[0]?.metadata).toMatchObject({ style: 'narrative' })
+
+    const [aboutRows] = await ctx.db.query<[{ count: number }[]]>(
+      'SELECT count() AS count FROM about WHERE in = $id GROUP ALL',
+      { id: reportRef }
+    )
+    expect(aboutRows[0]?.count).toBe(2)
+
+    expect(new Set(result.notes_covered)).toEqual(new Set([noteA, noteB]))
+  })
+
+  test('persist=false does not write the report to the graph', async () => {
+    await seedNote('keep', 'body')
+    const { fn } = makeFakeChat('# header\n\nbody')
+    const result = await generateReportImpl(
+      {
+        period_start: '1970-01-01T00:00:00Z',
+        period_end: '2999-01-01T00:00:00Z',
+        style: 'narrative',
+        persist: false
+      },
+      fn
+    )
+    expect(result.report_id).toBeUndefined()
+    expect(result.report_block_ids).toBeUndefined()
+
+    const [reportNotes] = await ctx.db.query<[{ id: string }[]]>(
+      "SELECT id FROM note WHERE type = note_type:report"
+    )
+    expect(reportNotes).toEqual([])
+  })
+
+  test('custom title is used verbatim', async () => {
+    await seedNote('something', 'body')
+    const { fn } = makeFakeChat('body')
+    const result = await generateReportImpl(
+      {
+        period_start: '1970-01-01T00:00:00Z',
+        period_end: '2999-01-01T00:00:00Z',
+        style: 'narrative',
+        persist: true,
+        title: 'My weekly review'
+      },
+      fn
+    )
+    const [rows] = await ctx.db.query<[{ title: string }[]]>('SELECT title FROM note WHERE id = $id', {
+      id: new StringRecordId(result.report_id ?? '')
+    })
+    expect(rows[0]?.title).toBe('My weekly review')
   })
 })

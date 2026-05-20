@@ -2,9 +2,11 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { type RecordId, StringRecordId } from 'surrealdb'
 import { z } from 'zod'
 import { type ChatComplete, chatComplete } from '../chat'
+import { chunkMarkdown } from '../chunk'
 import { NOTE_ID_RE, NoteStateSchema, NoteTypeSlugSchema } from '../domain'
 import { HuygensError, huygensErrorToToolResult, toMcpError } from '../errors'
 import { getDb } from '../surreal'
+import { indexBlockImpl } from './index-block'
 
 const STYLES = ['brief', 'narrative', 'bullets'] as const
 type Style = (typeof STYLES)[number]
@@ -19,7 +21,14 @@ export const generateReportShape = {
   type_slug: NoteTypeSlugSchema.optional().describe('Restrict to this note type'),
   state_in: z.array(NoteStateSchema).optional().describe('Restrict to these states'),
   style: z.enum(STYLES).default('narrative').describe('Output shape'),
-  model: z.string().optional().describe('LLM model override (default gpt-4o-mini)')
+  model: z.string().optional().describe('LLM model override (default gpt-4o-mini)'),
+  persist: z
+    .boolean()
+    .default(true)
+    .describe(
+      'Persist the report as a note of type=report with blocks + about edges to the covered notes, and auto-embed. Default true.'
+    ),
+  title: z.string().optional().describe('Override the generated title. Default: "Report (style) start_date → end_date"')
 }
 
 const generateReportSchema = z.object(generateReportShape)
@@ -31,6 +40,10 @@ export type GenerateReportResult = {
   model: string
   tokens_used: { input: number; output: number }
   duration_ms: number
+  /** Present when the report was persisted to the graph. */
+  report_id?: string
+  /** Block ids inserted under the report note, in order. */
+  report_block_ids?: string[]
 }
 
 type NoteRow = {
@@ -104,13 +117,76 @@ ${corpus}`
     { model: input.model, temperature: 0.6 }
   )
 
-  return {
+  const out: GenerateReportResult = {
     report_markdown: result.text,
     notes_covered: noteIds,
     model: result.model,
     tokens_used: result.tokens_used,
     duration_ms: Date.now() - t0
   }
+
+  if (input.persist ?? true) {
+    const { report_id, block_ids } = await persistReport(input, result.text, noteIds, db)
+    out.report_id = report_id
+    out.report_block_ids = block_ids
+  }
+
+  return out
+}
+
+async function persistReport(
+  input: GenerateReportInput,
+  markdown: string,
+  notesCovered: string[],
+  db: Awaited<ReturnType<typeof getDb>>
+): Promise<{ report_id: string; block_ids: string[] }> {
+  const title = input.title ?? defaultReportTitle(input)
+  const reportData = {
+    title,
+    type: new StringRecordId('note_type:report'),
+    state: 'CLARIFIED',
+    metadata: {
+      period_start: input.period_start,
+      period_end: input.period_end,
+      style: input.style ?? 'narrative',
+      model: input.model ?? 'gpt-4o-mini',
+      notes_covered_count: notesCovered.length
+    }
+  }
+  const [reportRows] = await db.query<[{ id: RecordId }[]]>('CREATE note CONTENT $data RETURN AFTER', {
+    data: reportData
+  })
+  const report = reportRows[0]
+  if (!report) throw new Error('persistReport: insert returned no record')
+
+  const chunks = chunkMarkdown(markdown)
+  const blockRowsInput = chunks.map(c => ({ note: report.id, content: c.content }))
+  const [blockRows] = await db.query<[{ id: RecordId }[]]>('INSERT INTO block $rows RETURN AFTER', {
+    rows: blockRowsInput
+  })
+  const blockIds = blockRows.map(b => b.id)
+  await db.query('UPDATE $note SET block_order = $order', { note: report.id, order: blockIds })
+
+  for (const coveredNoteId of notesCovered) {
+    await db.query('RELATE $report->about->$cov', {
+      report: report.id,
+      cov: new StringRecordId(coveredNoteId)
+    })
+  }
+
+  const blockIdStrings = blockIds.map(String)
+  if (blockIdStrings.length > 0) {
+    await indexBlockImpl({ block_ids: blockIdStrings })
+  }
+
+  return { report_id: String(report.id), block_ids: blockIdStrings }
+}
+
+function defaultReportTitle(input: GenerateReportInput): string {
+  const start = input.period_start.slice(0, 10)
+  const end = input.period_end.slice(0, 10)
+  const style = input.style ?? 'narrative'
+  return `Report (${style}) ${start} → ${end}`
 }
 
 async function fetchNotesForReport(
@@ -183,12 +259,15 @@ export function registerGenerateReport(server: McpServer): void {
     async args => {
       try {
         const result = await generateReportImpl(args)
+        const persistedNote = result.report_id
+          ? ` Persisted as ${result.report_id} (${result.report_block_ids?.length ?? 0} blocks, ${result.notes_covered.length} about edges).`
+          : ''
         return {
           content: [
             { type: 'text', text: result.report_markdown },
             {
               type: 'text',
-              text: `\n---\n_Notes covered: ${result.notes_covered.length}. Model: ${result.model}. Tokens: ${result.tokens_used.input} in / ${result.tokens_used.output} out. ${result.duration_ms}ms._`
+              text: `\n---\n_Notes covered: ${result.notes_covered.length}. Model: ${result.model}. Tokens: ${result.tokens_used.input} in / ${result.tokens_used.output} out. ${result.duration_ms}ms.${persistedNote}_`
             },
             { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(result, null, 2)}` }
           ]
