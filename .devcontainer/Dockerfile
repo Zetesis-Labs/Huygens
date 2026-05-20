@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     openssl \
     docker.io \
+    nodejs \
+    npm \
     python3 \
     python3-venv \
     && rm -rf /var/lib/apt/lists/*
@@ -18,8 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # uv (Python package manager) — same stack as the huygens-worker container
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
-# Coding agents (same UX as ZetesisPortal devcontainer)
-RUN curl -fsSL https://claude.ai/install.sh | bash && \
+# Coding agents — same pattern as IronTec/nixon (official Anthropic npm pkg
+# for Claude Code so we can pin/upgrade transparently) + opencode via curl.
+RUN npm install -g @anthropic-ai/claude-code && \
     curl -fsSL https://opencode.ai/install | bash
 
 WORKDIR /workspace
