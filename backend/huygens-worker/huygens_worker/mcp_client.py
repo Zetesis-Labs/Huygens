@@ -73,29 +73,37 @@ async def commit_clarify_via_mcp(
         arguments["reasoning_summary"] = reasoning_summary
     if model is not None:
         arguments["model"] = model
+    return await _call_mcp_tool("commit_clarify", arguments)
 
+
+async def index_block_via_mcp(block_ids: list[str]) -> dict[str, Any]:
+    """Embed the blocks just produced by a clarify and persist their vectors.
+
+    The MCP enforces a max of 64 ids per call. The worker chunks larger
+    batches before calling.
+    """
+    if not block_ids:
+        return {"indexed": [], "dimensions": 0, "input_tokens": 0}
+    return await _call_mcp_tool("index_block", {"block_ids": block_ids})
+
+
+async def _call_mcp_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     try:
         async with (
             streamablehttp_client(settings.mcp_url) as (read, write, _),
             ClientSession(read, write) as session,
         ):
             await session.initialize()
-            result = await session.call_tool("commit_clarify", arguments=arguments)
+            result = await session.call_tool(name, arguments=arguments)
             if result.isError:
-                # The TS server packs the discriminator into
-                # structuredContent.error = {code, message, details}.
-                # Fall back to text scraping if structuredContent is absent
-                # (e.g. SDK-level input validation errors).
                 typed = huygens_error_from_structured(result.structuredContent)
                 if typed is not None:
                     raise typed
                 detail = " | ".join(getattr(b, "text", str(b)) for b in result.content)
-                raise HuygensError(f"MCP commit_clarify: {detail}")
+                raise HuygensError(f"MCP {name}: {detail}")
             text_blocks = [getattr(b, "text", "") for b in result.content if hasattr(b, "text")]
             return _extract_json_block(text_blocks)
     except BaseExceptionGroup as eg:
-        # anyio task groups wrap escaping exceptions into (possibly nested)
-        # ExceptionGroups. Flatten and translate the first interesting one.
         for leaf in _flatten_exception_group(eg):
             if isinstance(leaf, McpError):
                 raise huygens_error_from_mcp(leaf) from eg

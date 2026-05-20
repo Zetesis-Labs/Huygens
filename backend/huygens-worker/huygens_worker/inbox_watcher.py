@@ -23,9 +23,11 @@ from dataclasses import dataclass, field
 from .clarify import clarify
 from .errors import HuygensError, RawAlreadyProcessedError
 from .events import emit_event, new_session_id
-from .mcp_client import commit_clarify_via_mcp
+from .mcp_client import commit_clarify_via_mcp, index_block_via_mcp
 from .settings import settings
 from .surreal_client import DB, Row, query_rows
+
+MCP_INDEX_BLOCK_MAX_BATCH = 64
 
 log = logging.getLogger(__name__)
 
@@ -118,6 +120,9 @@ class InboxWatcher:
                 len(result["blocks_created"]),
                 result["edges_created"],
             )
+
+            await self._index_blocks(result["blocks_created"], raw_id)
+
             self.seen_processed.add(raw_id)
             return True
 
@@ -136,6 +141,28 @@ class InboxWatcher:
             return False
         finally:
             self.in_flight.discard(raw_id)
+
+    async def _index_blocks(self, block_ids: list[str], raw_id: str) -> None:
+        """Embed the blocks the commit just produced so they become searchable.
+
+        Failures don't roll back the commit — the notes are already on disk,
+        the audit trail records the attempt, and a later iteration can
+        re-index missing embeddings. We just log and move on.
+        """
+        if not block_ids:
+            return
+        try:
+            for start in range(0, len(block_ids), MCP_INDEX_BLOCK_MAX_BATCH):
+                batch = block_ids[start : start + MCP_INDEX_BLOCK_MAX_BATCH]
+                await index_block_via_mcp(batch)
+            log.info("indexed %d block(s) from %s", len(block_ids), raw_id)
+        except HuygensError as err:
+            log.error(
+                "index_block failed for %s: code=%s details=%s — leaving blocks un-embedded",
+                raw_id,
+                err.code,
+                err.details,
+            )
 
     async def tick(self) -> int:
         rows = await self.fetch_pending()
