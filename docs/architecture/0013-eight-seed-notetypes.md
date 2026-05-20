@@ -1,9 +1,11 @@
 # ADR-0013: 8 NoteType genéricos como seed inicial
 
-**Status**: Accepted
+**Status**: Superseded by ADR-0022 (now 10 seed types, adds objetivo + idea)
 **Date**: 2026-05-20
 **Decision-makers**: Rubén, Claude (asistente IA en sesión de diseño)
 **Tags**: data-model
+
+> **Update 2026-05-20**: este ADR está **superseded by ADR-0022**. El seed inicial pasó de 8 a 10 NoteTypes con la adición de `objetivo` e `idea` como parte del pivote a ZTD (ADR-0021).
 
 ## Context
 

@@ -45,3 +45,13 @@ UPSERT note_type:reference SET
   slug = 'reference',
   name = 'Reference',
   description = 'Material de consulta sin acción asociada (URL, libro, paper, ...).';
+
+UPSERT note_type:objetivo SET
+  slug = 'objetivo',
+  name = 'Objetivo',
+  description = 'Meta estratégica a largo plazo. Puede tener target_date o target_range en metadata. Agrupa Projects via part_of.';
+
+UPSERT note_type:idea SET
+  slug = 'idea',
+  name = 'Idea',
+  description = 'Concepto generativo que puede nutrir Tasks/Projects/Objetivos vía edges mentions/supports. Distinto de note (registro libre).';

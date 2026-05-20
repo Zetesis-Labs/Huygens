@@ -1,9 +1,11 @@
 # ADR-0010: Pillars y NoteState como enums validados
 
-**Status**: Accepted
+**Status**: Superseded in part by ADR-0021 (Pilares dropped; NoteState enum still valid)
 **Date**: 2026-05-20
 **Decision-makers**: Rubén, Claude (asistente IA en sesión de diseño)
 **Tags**: data-model
+
+> **Update 2026-05-20**: la decisión sobre Pilares está **superseded by ADR-0021** (adopción de ZTD, drop de Pilares). La parte de NoteState (enum validado con ASSERT) sigue vigente. Ver ADR-0021 para el contexto del pivote y la "Opción C" como futura reintroducción posible.
 
 ## Context
 

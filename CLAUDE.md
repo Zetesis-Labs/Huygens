@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 > **Lecturas obligatorias al inicio de sesión** (en este orden):
-> 1. [`docs/agents/huygens-domain.md`](./docs/agents/huygens-domain.md) — qué es Huygens, entidades, pilares, edges, flujos
+> 1. [`docs/agents/huygens-domain.md`](./docs/agents/huygens-domain.md) — qué es Huygens, entidades, edges, flujos
 > 2. [`docs/agents/surrealql-patterns.md`](./docs/agents/surrealql-patterns.md) — queries SurrealQL para Huygens
 > 3. [`docs/agents/conventions.md`](./docs/agents/conventions.md) — reglas operativas obligatorias
 >
@@ -10,6 +10,8 @@
 ## Proyecto
 
 Monorepo TypeScript con **Bun** + **SurrealDB** + **MCP** en `apps/mcp`. Una sola app por ahora, pero la raíz declara workspaces (`apps/*`) para crecer.
+
+Filosofía operativa: **Zen to Done (ZTD)** — capturar, procesar, planificar (MITs), hacer. Detalle en `docs/agents/huygens-domain.md`.
 
 ## Convenciones
 
@@ -22,7 +24,7 @@ Monorepo TypeScript con **Bun** + **SurrealDB** + **MCP** en `apps/mcp`. Una sol
 
 ## Devcontainer
 
-Tres servicios: `app` (Bun), `surrealdb` (BBDD principal), `surrealdb-init` (one-shot, chown del volumen para que SurrealDB corra rootless como uid 65532).
+Tres servicios: `app` (Bun), `surrealdb` (BBDD principal), `surrealdb-init` (one-shot, chown del volumen para que SurrealDB corra rootless como uid 65532). A futuro: `huygens-worker` (Python + Agno) para procesamiento autónomo del inbox (ver ADR-0018).
 
 Nombres de contenedor (Docker Compose, project name `devcontainer`):
 
@@ -61,56 +63,63 @@ bun run db:smoke       # smoke test contra SurrealDB
 - Endpoint: `POST /mcp` en el puerto `MCP_PORT` (default `3030`)
 - Stateless por defecto (`sessionIdGenerator: undefined`) — cada request crea su transport efímero
 
-## Modelo de datos (SurrealDB)
+## Modelo de datos (SurrealDB) — resumen
 
-Cada `note` es composición ordenada de `block`s (markdown auto-contenido). La topología (edges) puede apuntar a notes **o** blocks indistintamente — permite Zettelkasten-trails y referencias granulares sin pagar el coste de un block model atómico tipo Notion.
+Modelo en dos planos (ver `docs/agents/huygens-domain.md` para el detalle):
 
-Tablas (`apps/mcp/surreal/schema.surql`):
+1. **Plano 1 — `raw_capture`**: lo que el usuario dijo literalmente. Evidencia inmutable. El verdadero inbox.
+2. **Plano 2 — `note` + `block` + edges**: interpretación del agente. Topología procesada.
+
+Tablas principales (`apps/mcp/surreal/schema.surql`):
 
 | Tabla | Rol |
 |---|---|
-| `note` | Contenedor. `title`, `type` (opcional), `pillars`, `state`, `block_order` (array ordenado de records), `metadata`, `source_kind`+`source_ref`, timestamps |
-| `block` | Unidad direccionable + vectorizable. `note` (ref), `content` (markdown), `pillars` propios, `embedding` (1024 dims), timestamps. Vector HNSW index aquí |
-| `note_type` | Árbol editable de tipos. Slug único, `parent` opcional, `featured_fields` (UX hint). Una Note tiene cero o un Type |
+| `raw_capture` | Evidencia cruda. `content`, `source_kind`, `source_ref`, `processed_at` (NONE = pendiente). El "inbox real" |
+| `note` | Contenedor procesado. `title`, `type` opcional, `state` (ciclo ZTD), `block_order`, `metadata`, `mit_for` (Most Important Task) |
+| `block` | Unidad direccionable + vectorizable. `note` (ref), `content` (markdown), `embedding` (1024 dims). Vector HNSW index aquí |
+| `note_type` | Árbol editable de tipos (10 seedeados). Slug único, `parent` opcional, `featured_fields` |
+| `agent_event` | Trazabilidad de decisiones del agente (ver ADR-0019) |
 
 Edges schemafull (`TYPE RELATION FROM X TO Y`). Los semánticos admiten `note | block` en ambas puntas:
 
-- `part_of` — jerarquía macro (Area→Project→Task). Solo `note → note`
+- `part_of` — jerarquía macro (Objetivo→Project→Task). Solo `note → note`
 - `blocked_by` — `note → note | block` (con `since`, `reason`)
-- `mentions` — `note | block → note | block`
-- `supports` — `note | block → note | block` (Zettel-trail clásico)
-- `refutes` — `note | block → note | block`
+- `mentions`, `supports`, `refutes` — `note | block → note | block`
 - `about` — `note → note | block` (Report cubre estos elementos)
 - `authored_by` — `note | block → note` (Persons son notes con type=person)
+- `derived_from` — `note | block → raw_capture` (con `transformation`: verbatim/extracted/summarized/inferred)
 
 Validaciones del motor:
-- `pillars: array<string>` con `ASSERT $value ALLINSIDE ['PATHOS_SOMA','ETHOS','TELOS','SOPHIA']`
-- `state: string` con `ASSERT $value INSIDE ['INBOX','CLARIFIED','ACTIVE','WAITING','SOMEDAY','DONE','ARCHIVED']`
-- Todos los edges con `FROM/TO` enforced por SurrealDB
+- `state: string` con `ASSERT $value INSIDE ['CLARIFIED','ACTIVE','WAITING','SOMEDAY','DONE','ARCHIVED']`
+- `source_kind` en `raw_capture` con `ASSERT $value INSIDE ['chat','voice','manual','import','agent-self']`
+- Todos los edges con `FROM/TO` y `UNIQUE(in, out)` enforced
 
-**Capture = nota sin tipo.** Una nota recién capturada se crea con `type = NONE` + `state = 'INBOX'`. El agente clarifica asignando un type y moviendo el estado a `CLARIFIED`.
+**NoteTypes seedeados** (10): `task`, `project`, `area`, `routine`, `note`, `report`, `person`, `reference`, `objetivo`, `idea`. Detalle de cuándo usar cada uno: `docs/agents/huygens-domain.md`.
 
-Seed inicial (`bun run db:apply` desde `apps/mcp`): 8 NoteType genéricos con IDs legibles (`note_type:task`, `note_type:project`, ...). Editables después.
+**Captura ≠ Note.** Una captura cruda crea un `raw_capture`, no una `note`. Las notes existen porque el agente ya procesó (clarify) un raw — nacen con `state = 'CLARIFIED'` por defecto.
 
-**Embeddings**: DeepInfra hospeda `BAAI/bge-m3` (1024 dims, contexto 8192 tokens, multilingüe). API key via `DEEPINFRA_API_KEY`. El campo `note_chunk.embedding_model` guarda `'BAAI/bge-m3'`; `note_chunk.dimensions` guarda `1024`.
+**Embeddings**: DeepInfra hospeda `BAAI/bge-m3` (1024 dims, contexto 8192 tokens, multilingüe). API key via `DEEPINFRA_API_KEY`. Los campos `block.embedding_model` guarda `'BAAI/bge-m3'`; `block.dimensions` guarda `1024`.
 
 ## Búsqueda vectorial
 
-Índice HNSW nativo directamente sobre `block` (1024 dims, BGE-M3, cosine). Sin tabla `note_chunk` separada — el block ES el chunk.
+Índice HNSW nativo directamente sobre `block` (1024 dims, BGE-M3, cosine). El block ES el chunk.
 
 ```surql
 DEFINE INDEX block_embedding ON block
-  FIELDS embedding HNSW DIMENSION 1024 DIST COSINE;
+  FIELDS embedding HNSW DIMENSION 1024 DIST COSINE
+  TYPE F32 EFC 150 M 12 M0 24;
 ```
 
-Query K-NN:
+Query K-NN con threshold (patrón kaig-inspired):
 
 ```surql
-SELECT id, content, note,
-       vector::distance::cosine(embedding, $query) AS score
-FROM block
-WHERE embedding <|10|> $query
-ORDER BY score ASC;
+SELECT *, score FROM (
+  SELECT id, content, note, (1 - vector::distance::knn()) AS score
+  FROM block
+  WHERE embedding <|10|> $query_embedding
+)
+WHERE score >= $threshold
+ORDER BY score DESC;
 ```
 
 Hybrid (vector + filtro de note + temporal):
@@ -128,11 +137,11 @@ LIMIT 10;
 
 ## Renderizado de una page completa
 
-`note` ya no tiene `content`. Para reconstruir el markdown completo de una nota:
+`note` no tiene `content`. Para reconstruir el markdown completo:
 
 ```ts
-const [rerread] = await db.query<[Note[]]>('SELECT * FROM note WHERE id = $id', { id })
-const note = rerread[0]
+const [reread] = await db.query<[Note[]]>('SELECT * FROM note WHERE id = $id', { id })
+const note = reread[0]
 const [blocks] = await db.query<[Block[]]>(
   'SELECT id, content FROM block WHERE id IN $ids',
   { ids: note.block_order }
@@ -144,15 +153,33 @@ const markdown = note.block_order
   .join('\n\n---\n\n')
 ```
 
-## Arquitectura MCP (tres capas)
+## Arquitectura MCP (cuatro componentes hermanos)
 
 ```
-Agente (prompt = dominio GTD)
-  │
-  ├─ surrealmcp oficial  →  CRUD + RELATE + queries genéricas
-  └─ Huygens MCP (pequeño, este repo)  →  embed, chunk, vector_search, generate_report
-       │
-       └─ driver surrealdb JS  →  SurrealDB
+                      Agente (prompt = dominio ZTD)
+                       │                         │
+                       ├─ surrealmcp oficial     ├─ Huygens MCP (TS, pequeño)
+                       │  CRUD + RELATE + query  │  embed, chunk, vector_search, report
+                       │                         │
+                       └────────────┬────────────┘
+                                    ▼
+                              SurrealDB ←── LIVE query ──→ huygens-worker
+                                                          (Python + Agno, ver ADR-0018)
 ```
 
-surrealmcp y Huygens MCP son **hermanos**, no padre-hijo. Detalle en `docs/research/02-architecture/mcp-three-layer-architecture.md`.
+Cuatro componentes hermanos:
+- **Agente principal** (Claude/Codex/Hermes) — interactúa con el usuario
+- **surrealmcp** (oficial de SurrealDB) — CRUD + RELATE genérico vía MCP
+- **Huygens MCP** (este repo) — tools de infraestructura específicas (embed, chunk, vector_search, etc.)
+- **huygens-worker** (Python + Agno, planeado) — procesa el inbox autónomamente vía LIVE query
+
+Detalle: `docs/research/02-architecture/mcp-three-layer-architecture.md` y ADR-0014/0018.
+
+## Observabilidad
+
+Dos capas complementarias (ver ADR-0019 y ADR-0020):
+
+- **`agent_event`**: cada decisión del agente (worker o conversacional) emite un evento con `kind`, `actor`, `session_id` (UUIDv7), `confidence`, `reasoning_summary`, `tokens_used`, etc. Retention ilimitado.
+- **CHANGEFEED 10y** sobre tablas críticas (raw_capture, note, block, edges): time-travel queries y reconstrucción histórica del estado.
+
+Reglas para emitir eventos: `docs/agents/conventions.md` sección 14.

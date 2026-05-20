@@ -50,10 +50,10 @@ NO se añade ADR para:
 | [0007](./0007-hnsw-production-params-and-unique-edges.md) | HNSW con parámetros explícitos + UNIQUE en edges | Accepted | database |
 | [0008](./0008-topology-as-primary.md) | Topología como primaria | Accepted | data-model |
 | [0009](./0009-block-composed-notes.md) | Notes compuestas de Blocks markdown | Accepted | data-model |
-| [0010](./0010-pillars-and-state-as-enums.md) | Pillars y NoteState como enums | Accepted | data-model |
+| [0010](./0010-pillars-and-state-as-enums.md) | Pillars y NoteState como enums | Superseded in part by ADR-0021 | data-model |
 | [0011](./0011-schemafull-edges-with-note-or-block.md) | Edges schemafull con `note \| block` | Accepted | data-model |
 | [0012](./0012-capture-is-uncategorized.md) | Captura es no-categorizada (typeId opcional) | Accepted | data-model |
-| [0013](./0013-eight-seed-notetypes.md) | 8 NoteType genéricos como seed inicial | Accepted | data-model |
+| [0013](./0013-eight-seed-notetypes.md) | 8 NoteType genéricos como seed inicial | Superseded by ADR-0022 | data-model |
 | [0014](./0014-three-layer-mcp-architecture.md) | Arquitectura MCP de tres capas | Accepted | architecture |
 | [0015](./0015-bge-m3-via-deepinfra.md) | BGE-M3 vía DeepInfra para embeddings | Accepted | architecture |
 | [0016](./0016-agent-knowledge-in-docs-agents.md) | Conocimiento del agente en `docs/agents/` | Accepted | agent |
@@ -61,10 +61,14 @@ NO se añade ADR para:
 | [0018](./0018-autonomous-worker-with-agno.md) | Worker autónomo con Agno + LIVE query | Accepted | architecture, agent |
 | [0019](./0019-event-sourcing-of-agent-decisions.md) | Event sourcing de decisiones agénticas (agent_event) | Accepted | architecture, agent, data-model |
 | [0020](./0020-changefeed-for-state-diff-audit.md) | CHANGEFEED para state-diff audit | Accepted | data-model, database, agent |
+| [0021](./0021-adopt-ztd-drop-pillars.md) | Adopción de ZTD + drop de Pilares | Accepted | vision, data-model |
+| [0022](./0022-objetivo-and-idea-types.md) | Tipos Objetivo e Idea | Accepted | data-model |
+| [0023](./0023-mit-field-on-note.md) | Campo MIT en note (Most Important Task) | Accepted | data-model |
 
 ## Status legend
 
 - **Accepted**: decisión vigente
 - **Superseded by ADR-NNNN**: reemplazada por una decisión posterior
+- **Superseded in part by ADR-NNNN**: parte de la decisión sigue vigente, otra parte queda obsoleta
 - **Deprecated**: ya no aplica, pero no fue reemplazada formalmente
 - **Proposed**: en discusión, no se ha aplicado todavía

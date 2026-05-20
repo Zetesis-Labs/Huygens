@@ -64,9 +64,9 @@ DEFINE INDEX OVERWRITE note_type_slug_unique ON note_type FIELDS slug UNIQUE;
 DEFINE TABLE OVERWRITE note SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE title       ON note TYPE string;
 DEFINE FIELD OVERWRITE type        ON note TYPE option<record<note_type>>;
-DEFINE FIELD OVERWRITE pillars     ON note TYPE array<string>
-  DEFAULT []
-  ASSERT $value ALLINSIDE ['PATHOS_SOMA', 'ETHOS', 'TELOS', 'SOPHIA'];
+-- Pilares Estratégicos dropeados al adoptar ZTD (ADR-0021). La función estratégica
+-- la cubren ahora los Objetivos (ADR-0022). Limpieza del campo legacy.
+REMOVE FIELD IF EXISTS pillars ON TABLE note;
 -- INBOX ya no es estado de note: una Note existe porque ya fue procesada
 -- desde un raw_capture. El "estar pendiente" ahora vive en raw_capture.
 DEFINE FIELD OVERWRITE state       ON note TYPE string
@@ -83,11 +83,15 @@ DEFINE FIELD OVERWRITE source_ref  ON note TYPE option<string>;
 DEFINE FIELD OVERWRITE created_at  ON note TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE updated_at  ON note TYPE datetime VALUE time::now();
 DEFINE FIELD OVERWRITE last_reviewed_at ON note TYPE option<datetime>;
+-- mit_for: si está set, esta task es MIT (Most Important Task) para ese día.
+-- Convención ZTD: 1-3 MITs por día, decididos por el usuario (ADR-0023).
+DEFINE FIELD OVERWRITE mit_for ON note TYPE option<datetime>;
 
 DEFINE INDEX OVERWRITE note_state    ON note FIELDS state;
 DEFINE INDEX OVERWRITE note_type_idx ON note FIELDS type;
 DEFINE INDEX OVERWRITE note_updated  ON note FIELDS updated_at;
 DEFINE INDEX OVERWRITE note_reviewed ON note FIELDS last_reviewed_at;
+DEFINE INDEX OVERWRITE note_mit_for  ON note FIELDS mit_for;
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- Block: unidad direccionable y vectorizable. Markdown auto-contenido.
@@ -97,9 +101,8 @@ DEFINE INDEX OVERWRITE note_reviewed ON note FIELDS last_reviewed_at;
 DEFINE TABLE OVERWRITE block SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE note            ON block TYPE record<note>;
 DEFINE FIELD OVERWRITE content         ON block TYPE string;
-DEFINE FIELD OVERWRITE pillars         ON block TYPE array<string>
-  DEFAULT []
-  ASSERT $value ALLINSIDE ['PATHOS_SOMA', 'ETHOS', 'TELOS', 'SOPHIA'];
+-- Pilares Estratégicos dropeados al adoptar ZTD (ADR-0021). Limpieza del campo legacy.
+REMOVE FIELD IF EXISTS pillars ON TABLE block;
 DEFINE FIELD OVERWRITE embedding       ON block TYPE option<array<float>>;
 DEFINE FIELD OVERWRITE embedding_model ON block TYPE option<string>;
 DEFINE FIELD OVERWRITE dimensions      ON block TYPE option<int>;

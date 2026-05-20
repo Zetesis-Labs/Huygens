@@ -4,7 +4,7 @@
 
 ## ¿Qué es Huygens?
 
-Una memoria estructurada **personal y única** para Rubén — no es un second-brain de conocimiento general, no es un sistema multi-usuario. Sirve a un único humano (creativo, caótico, fuerte en estrategia, débil en operativa) para que tú (el agente) hagas con él una parte importante del trabajo GTD: capturar entradas, clarificarlas, relacionarlas, generar narrativa.
+Una memoria estructurada **personal y única** para Rubén — no es un second-brain de conocimiento general, no es un sistema multi-usuario. Sirve a un único humano (creativo, caótico, fuerte en estrategia, débil en operativa) para que tú (el agente) hagas con él una parte importante del trabajo ZTD (Zen to Done — la simplificación de GTD que Huygens adopta tras ADR-0021): capturar entradas, clarificarlas, relacionarlas, planificar lo importante del día, generar narrativa.
 
 El input principal es el chat con el usuario (texto corto, notas de voz transcritas, tochos largos). El output son notas markdown clasificadas + informes narrativos + búsqueda sobre el corpus.
 
@@ -27,7 +27,8 @@ La unidad de **evidencia**. Cada raw_capture tiene:
 - `source_ref: option<string>` — id de sesión / path de audio / etc.
 - `created_at: datetime`
 - `processed_at: option<datetime>` — NONE = aún en inbox; valor = ya procesado
-- `processed_into: option<array<record<note>>>` — qué notes se generaron
+
+La procedencia (qué notes/blocks salieron de este raw) se traza vía el edge `derived_from` (con `transformation: verbatim|extracted|summarized|inferred`), no como campo del raw_capture. Ver ADR-0017.
 
 **El inbox real**: `SELECT * FROM raw_capture WHERE processed_at IS NONE`. Eso es lo que el agente tiene que procesar.
 
@@ -35,10 +36,10 @@ La unidad de **evidencia**. Cada raw_capture tiene:
 La unidad-contenedor. Cada Note tiene:
 - `title: string` — síntesis corta
 - `type: option<record<note_type>>` — opcional. **Una nota capturada sin clarificar todavía vive con `type = NONE`**. Asignarle tipo es el primer paso de clarificación.
-- `pillars: array<string>` — ver sección Pilares
 - `state: string` — ciclo GTD (ver NoteState)
+- `mit_for: option<datetime>` — marca de Most Important Task: si está set, la nota es MIT para ese día (ver ADR-0023 y sección "Filosofía operativa" más abajo)
 - `block_order: array<record<block>>` — el contenido vive en blocks, no en un campo `content` de la note
-- `metadata: option<object>` — bag tipo-específico (campos de Report, Person, etc.)
+- `metadata: option<object>` — bag tipo-específico (campos de Report, Person, Objetivo, etc.)
 - `source_kind`, `source_ref` — trazabilidad (chat / voice / agent / manual / import)
 - timestamps + `last_reviewed_at`
 
@@ -46,13 +47,44 @@ La unidad-contenedor. Cada Note tiene:
 La unidad **direccionable y vectorizable**. Markdown auto-contenido (un Zettel). Cada Block:
 - `note: record<note>` — pertenece a una nota
 - `content: string` — el markdown del bloque
-- `pillars: array<string>` — pilares específicos del bloque (pueden diferir de los de la nota)
 - `embedding`, `embedding_model`, `dimensions` — para vector search
 
 **Importante**: una Note no tiene contenido propio. Su contenido emerge de concatenar sus blocks en el orden dado por `note.block_order`. Para reconstruir el markdown completo de una nota: fetch sus blocks, ordénalos según `block_order`, concatena con `\n\n---\n\n` o como prefieras.
 
 ### NoteType
-Árbol editable de tipos. Los 8 seedeados: `task`, `project`, `area`, `routine`, `note`, `report`, `person`, `reference`. **Puedes crear tipos nuevos** cuando el dominio lo pida y el usuario apruebe — pero NO multipliques tipos para clasificaciones que ya cubre `pillars` o `metadata`.
+Árbol editable de tipos. Los **10 seedeados**:
+
+- `task` — acción concreta, accionable
+- `project` — resultado con múltiples tasks
+- `area` — esfera de responsabilidad permanente
+- `routine` — hábito o ritual recurrente
+- `note` — pensamiento libre, registro, observación
+- `report` — informe generado (semanal, sobre proyecto, etc.)
+- `person` — persona con la que se relaciona el usuario
+- `reference` — material estable consultable
+- `objetivo` — meta estratégica a largo plazo (ver subsección "Objetivos" abajo)
+- `idea` — concepto generativo que nutre Tasks/Projects/Objetivos via edges (ver "Idea vs Note" abajo)
+
+**Puedes crear tipos nuevos** cuando el dominio lo pida y el usuario apruebe — pero NO multipliques tipos para clasificaciones que ya cubre `metadata`.
+
+#### Idea vs Note — cuándo usar cada una
+
+- **`idea`**: el contenido tiene cualidad generativa. Contiene una insight, una hipótesis, una conexión interesante. Está pensada para nutrir a otras notas (Tasks, Projects, Objetivos) vía edges `mentions`/`supports`. Una idea es un nodo del que se tira hilo.
+- **`note`**: registro libre, reflexión, observación que no necesariamente genera nada. Existe por su propio valor como evidencia o memoria. Una note es un punto en el mapa.
+
+Ante la duda, prefiere `note`. Promover una `note` a `idea` cuando emerge su potencial generativo es trivial; degradar una `idea` que no produce nada es psicológicamente costoso.
+
+#### Objetivos
+
+Los Objetivos son aspiracionales, opcionalmente con horizonte temporal. Son el eje estratégico del usuario tras el drop de los Pilares (ver ADR-0021).
+
+- Pueden tener sub-Objetivos: jerárquicos entre sí vía edge `part_of` (sub-Objetivo `part_of` Objetivo).
+- Los Projects se enlazan a Objetivos vía `part_of` (Project `part_of` Objetivo).
+- Tasks bajo Projects que están bajo Objetivos forman la cadena operativa → estratégica.
+- Convención de `metadata` para Objetivos (no enforced por schema):
+  ```
+  { target_date?: datetime, target_range?: { start: datetime, end: datetime } }
+  ```
 
 ### NoteState (enum)
 Estado del ciclo GTD. **Nota**: `INBOX` NO está en estos valores — el "estar pendiente de procesar" vive en `raw_capture.processed_at IS NONE`, no en `note.state`. Una Note existe porque ya fue procesada desde un raw, por tanto nace en `CLARIFIED` o más allá.
@@ -72,17 +104,13 @@ DONE → ARCHIVED (con el tiempo)
 WAITING ↔ ACTIVE (cuando se desbloquea)
 ```
 
-### Pillar (enum, 4 valores)
-Las **dimensiones estratégicas** del usuario. Una nota puede tocar VARIOS pilares simultáneamente — son ejes ortogonales, no categorías excluyentes. Una nota sobre "programación funcional aplicada a meditación" es `Sophia + Pathos`.
+### Pilares Estratégicos (deprecated)
 
-| Pilar | Qué cubre |
-|---|---|
-| `PATHOS_SOMA` | Salud mental + física, fisioterapia, nutrición, emociones, meditación, estado budista. Lo corpóreo + afectivo. |
-| `ETHOS` | Hábito, productividad, GTD, disciplina, rutinas, metodología, gestión del tiempo |
-| `TELOS` | Propósito, metas, visión, OKRs, proyecciones comerciales, libertad financiera |
-| `SOPHIA` | Conocimiento, filosofía, teoría de categorías, programación funcional, estudios |
+Los Pilares Estratégicos (PATHOS_SOMA, ETHOS, TELOS, SOPHIA) **ya no forman parte del modelo activo**. Fueron parte del marco GTD original. Tras adoptar ZTD (ver ADR-0021), su función estratégica se absorbe en Objetivos.
 
-**Regla pragmática**: si una nota no encaja claramente en ningún pilar (e.g. lista de la compra), deja `pillars` vacío. No fuerces. El usuario lo agradecerá.
+**El agente NO debe asignar pillars a ninguna nota**. El campo se eliminó de note y block.
+
+Si en el futuro se reintroducen, la forma planeada está sketcheada en ADR-0021 ("Opción C": pillars como tabla + edge `belongs_to_pillar` desde Objetivos).
 
 ## Los 7 edge types autorizados
 
@@ -137,11 +165,15 @@ Si no, usa un type existente + `metadata` para distinguir.
 
 Sé conservador con `supports`/`refutes`. Son edges con carga semántica fuerte; reservar para casos donde la relación argumentativa es explícita.
 
-### Cuándo asignar pilares
+### Cuándo enlazar a un Objetivo
 
-- **Cero pilares**: la nota es operativa pura (compra, recordatorio mecánico). OK.
-- **Un pilar**: la nota toca claramente una dimensión.
-- **Varios pilares**: la nota cruza dimensiones. Esto es lo más valioso a largo plazo porque permite informes que cosen pilares — pero no fuerces interpretaciones.
+Los Objetivos sustituyen a los Pilares como eje estratégico. La regla:
+
+- **Sin Objetivo**: la nota es operativa pura (compra, recordatorio mecánico) o un registro libre sin proyección estratégica. OK.
+- **Un Objetivo**: el Project/Task contribuye claramente a un Objetivo activo. Crea `part_of` desde la nota hacia el Objetivo.
+- **Varios Objetivos**: una misma Task/Project puede `part_of` a más de un Objetivo cuando contribuye a varios — son ejes ortogonales como antes lo eran los pilares, pero ahora con semántica explícita.
+
+No fuerces el enlace: si una task no se alinea con ningún Objetivo activo, déjala sin `part_of` y considera si el Objetivo debería existir o si la task no debería existir.
 
 ## Flujo de captura (Plano 1)
 
@@ -163,7 +195,7 @@ Es deliberadamente mínimo. La captura debería ser tan barata cognitivamente qu
 1. **Lista raw_captures sin procesar**: `SELECT * FROM raw_capture WHERE processed_at IS NONE ORDER BY created_at ASC`
 2. **Para cada raw_capture**:
    - Analiza el contenido y decide la decomposición (1 nota, varias, container + extraídas, etc.)
-   - Crea las Notes correspondientes (con type, pillars, state apropiados — state default `CLARIFIED`)
+   - Crea las Notes correspondientes (con type y state apropiados — state default `CLARIFIED`)
    - Crea los Blocks dentro de cada Note + actualiza `block_order`
    - Crea los Edges semánticos (`mentions`, `supports`, `part_of`, etc.)
    - **Marca el raw como procesado**:
@@ -176,21 +208,62 @@ Es deliberadamente mínimo. La captura debería ser tan barata cognitivamente qu
 
 ## Flujo de generación de Report
 
-Cuando el usuario pide un informe (semanal, mensual, sobre un proyecto, sobre un pilar):
+Cuando el usuario pide un informe (semanal, mensual, sobre un proyecto, sobre un Objetivo):
 
-1. Define el alcance temporal y/o por pilar/proyecto
+1. Define el alcance temporal y/o por Objetivo/proyecto
 2. Recupera las notas/blocks relevantes vía queries SurrealQL (ver `surrealql-patterns.md`)
 3. Genera el informe como una **nueva Note con `type = report`**
 4. **Crea edges `about`** desde el Report hacia las notas/blocks que citas — esto asegura trazabilidad
 5. Si el informe debe llevar metadata (periodo cubierto, etc.), úsala en `note.metadata`
 
+## Filosofía operativa: Zen to Done (ZTD)
+
+Huygens sigue ZTD (Leo Babauta, 2007) — simplificación de GTD orientada a hábitos. El agente debe interiorizar y aplicar:
+
+1. **Capturar** todo inmediatamente — sin filtro, sin clasificación. Va a `raw_capture` con `processed_at=NONE`.
+2. **Procesar** la inbox a diario (clarify). Cada raw se transforma en notes/blocks/edges. Ver flow detallado arriba.
+3. **Planificar** con MITs (Most Important Tasks): 1-3 por día como máximo. Decisión humana, no autónoma — el agente propone, el usuario aprueba.
+4. **Hacer** con foco — el agente facilita esto preservando contexto, no interrumpiendo, archivando rápido lo no esencial.
+
+### MITs (Most Important Tasks)
+
+Campo `note.mit_for: option<datetime>`. Si una task tiene `mit_for = <fecha>`, está marcada como MIT para ese día.
+
+Convención:
+- Máximo 3 MITs por día
+- Al menos 1 MIT debe estar relacionado con un Objetivo activo (vía `part_of`)
+- El agente NO marca MITs autónomamente — el usuario decide; el agente sugiere candidatos
+- Una vez pasado el día, el campo `mit_for` queda como rastro histórico (no se borra automáticamente)
+
+Queries útiles del agente:
+
+```surql
+-- MITs de hoy
+SELECT * FROM note WHERE mit_for >= time::group(time::now(), 'day') AND mit_for < time::group(time::now() + 1d, 'day');
+
+-- MITs no completados de días anteriores
+SELECT * FROM note WHERE mit_for IS NOT NONE AND mit_for < time::group(time::now(), 'day') AND state IN ['CLARIFIED', 'ACTIVE', 'WAITING'];
+```
+
+### Listas básicas ZTD
+
+ZTD tiene 5 listas conceptuales que el agente debería entender (no son tablas, son vistas/queries):
+
+| Lista ZTD | Cómo se expresa en Huygens |
+|---|---|
+| Bandeja de Entrada | `raw_capture WHERE processed_at IS NONE` |
+| Tareas Diarias (MITs) | `note WHERE mit_for = $today` |
+| Proyectos | `note WHERE type = note_type:project AND state IN ['CLARIFIED','ACTIVE']` |
+| Ideas (en lugar de "Algún día / Tal vez") | `note WHERE type = note_type:idea` |
+| A la espera | `note WHERE state = 'WAITING'` |
+
 ## Lo que NO debes hacer
 
-- ❌ Inventar pillar names nuevos
+- ❌ Asignar `pillars` a cualquier nota — el campo se eliminó del modelo (ADR-0021)
 - ❌ Inventar edge types nuevos sin proponer schema change
 - ❌ Borrar notas sin que el usuario lo pida explícitamente
 - ❌ Cambiar `state` sin razón clara (e.g. mover de ACTIVE a SOMEDAY sin contexto)
-- ❌ Forzar pilares cuando la nota no encaja
+- ❌ Marcar MITs autónomamente — los decide el usuario (ver "Filosofía operativa" abajo)
 - ❌ Duplicar info que ya cubre `metadata`
 - ❌ Crear blocks de un párrafo cada uno (over-chunking) o un único block para un tocho de 5000 palabras (under-chunking)
 - ❌ Asumir que recordarás contexto entre sesiones — guárdalo como notas con `source_kind='agent-self'` (ver `conventions.md`)
@@ -202,6 +275,7 @@ Lecturas en `docs/research/` ordenadas por relevancia inmediata:
 - `03-data-model/topology-as-primary.md` — el principio fundacional
 - `03-data-model/note-model.md` — anatomía detallada de Note
 - `03-data-model/relations-and-edges.md` — semántica completa de edges
-- `03-data-model/pillars-and-states.md` — más detalle sobre enums
-- `01-vision/strategic-pillars.md` — origen filosófico de los 4 Pilares
+- `03-data-model/pillars-and-states.md` — sobre los States (la parte de Pilares es histórica, ver ADR-0021)
+- `01-vision/strategic-pillars.md` — origen filosófico de los 4 Pilares (histórico, deprecated)
 - `01-vision/user-context.md` — quién es Rubén y cómo trabaja
+- ADR-0021, ADR-0022, ADR-0023 — pivote a ZTD, tipos Objetivo/Idea, campo MIT

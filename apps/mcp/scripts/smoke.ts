@@ -14,17 +14,16 @@ type Block = {
   id: RecordId
   note: RecordId
   content: string
-  pillars: string[]
 }
 
 type Note = {
   id: RecordId
   title: string
   type: RecordId | null
-  pillars: string[]
   state: string
   block_order: RecordId[]
   source_kind: string | null
+  mit_for: Date | null
 }
 
 const db = await getDb()
@@ -78,28 +77,31 @@ await db.query('UPDATE $id SET block_order = $order', {
   order: [containerBlock[0]!.id]
 })
 
-// 2. Tasks y note específicas extraídas
+// 2. Tasks y note específicas extraídas.
+//    La primera task se marca como MIT de hoy (ADR-0023) para demostrar el campo.
+const today = new Date()
+today.setUTCHours(0, 0, 0, 0)
+
 const [extracted] = await db.query<[Note[]]>(
   `INSERT INTO note [
     {
       title: 'Probar fisio recomendado por Ana en Bilbao',
       type: note_type:task,
-      pillars: ['PATHOS_SOMA'],
-      state: 'CLARIFIED'
+      state: 'CLARIFIED',
+      mit_for: $today
     },
     {
       title: 'Renovar carnet de conducir antes de agosto',
       type: note_type:task,
-      pillars: [],
       state: 'CLARIFIED'
     },
     {
       title: 'Applicative functors para composición de queries del agente',
       type: note_type:note,
-      pillars: ['SOPHIA'],
       state: 'CLARIFIED'
     }
-  ]`
+  ]`,
+  { today }
 )
 
 // Crear blocks para cada nota extraída
@@ -151,6 +153,16 @@ const [derivedNotes] = await db.query<[{ in: RecordId; transformation: string | 
   { raw: raw.id }
 )
 
+// MITs de hoy: demuestra el índice mit_for (ADR-0023).
+const [mitsToday] = await db.query<[{ id: RecordId; title: string; mit_for: Date }[]]>(
+  `SELECT id, title, mit_for FROM note
+   WHERE mit_for >= $today AND mit_for < $tomorrow`,
+  {
+    today,
+    tomorrow: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+  }
+)
+
 console.log(
   JSON.stringify(
     {
@@ -163,6 +175,7 @@ console.log(
         note: String(d.in),
         transformation: d.transformation
       })),
+      mits_today: mitsToday.map(n => ({ id: String(n.id), title: n.title })),
       inbox_after_processing: unprocessedAfter.length
     },
     null,

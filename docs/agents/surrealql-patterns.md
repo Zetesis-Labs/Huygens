@@ -61,9 +61,9 @@ WHERE $note IN processed_into;
 
 ```surql
 INSERT INTO block [
-  { note: $note, content: $b1, pillars: ['ETHOS'] },
-  { note: $note, content: $b2, pillars: [] },
-  { note: $note, content: $b3, pillars: ['SOPHIA'] }
+  { note: $note, content: $b1 },
+  { note: $note, content: $b2 },
+  { note: $note, content: $b3 }
 ];
 ```
 
@@ -88,7 +88,7 @@ Patrón en dos pasos (más fiable que un único join):
 SELECT * FROM note WHERE id = $id;
 
 -- Paso 2: get blocks (fetched in any order)
-SELECT id, content, pillars FROM block WHERE id IN $note.block_order;
+SELECT id, content FROM block WHERE id IN $note.block_order;
 ```
 
 Luego ordena los blocks en TS/Python según el orden de `note.block_order`:
@@ -103,7 +103,7 @@ const ordered = note.block_order
 ### Listar notas pendientes de revisar (no es el inbox del usuario)
 
 ```surql
-SELECT id, title, pillars, state, updated_at FROM note
+SELECT id, title, state, updated_at FROM note
 WHERE state IN ['CLARIFIED', 'ACTIVE']
   AND (last_reviewed_at IS NONE OR last_reviewed_at < time::now() - 7d)
 ORDER BY updated_at DESC;
@@ -114,17 +114,103 @@ El "inbox del usuario" es `raw_capture WHERE processed_at IS NONE` — ver secci
 ### Listar lo activo tocado recientemente (weekly review insight)
 
 ```surql
-SELECT id, title, state, type.slug AS type_slug, pillars, updated_at
+SELECT id, title, state, type.slug AS type_slug, updated_at
 FROM note
 WHERE state IN ['ACTIVE', 'WAITING']
   AND updated_at > $since
 ORDER BY updated_at DESC;
 ```
 
-### Notas que tocan un pilar concreto
+### Notas de un tipo concreto
 
 ```surql
-SELECT id, title FROM note WHERE $pillar IN pillars;
+SELECT id, title FROM note WHERE type = $note_type;
+-- e.g. type = note_type:task
+```
+
+### Notas bajo un Objetivo (1 hop) o todo el subárbol estratégico
+
+```surql
+-- Directos: notas con part_of → $objetivo
+SELECT id, title, type.slug AS type_slug FROM note
+WHERE id IN (SELECT VALUE in FROM part_of WHERE out = $objetivo);
+
+-- Subárbol completo (Tasks bajo Projects bajo Objetivo)
+SELECT id, title FROM note
+WHERE id IN (
+  SELECT VALUE in FROM part_of
+  WHERE out IN (SELECT VALUE in FROM part_of WHERE out = $objetivo)
+);
+```
+
+### MITs (Most Important Tasks)
+
+```surql
+-- Crear/marcar una task como MIT de hoy
+UPDATE $task SET mit_for = time::group(time::now(), 'day');
+
+-- MITs de hoy
+SELECT * FROM note WHERE mit_for >= time::group(time::now(), 'day') AND mit_for < time::group(time::now() + 1d, 'day');
+
+-- MITs pendientes de días pasados (no completados)
+SELECT * FROM note
+WHERE mit_for IS NOT NONE
+  AND mit_for < time::group(time::now(), 'day')
+  AND state IN ['CLARIFIED', 'ACTIVE', 'WAITING'];
+
+-- Histórico: MITs completados en los últimos 30 días
+SELECT id, title, mit_for, state FROM note
+WHERE mit_for IS NOT NONE
+  AND mit_for > time::now() - 30d
+  AND state = 'DONE'
+ORDER BY mit_for DESC;
+```
+
+### Objetivos
+
+```surql
+-- Crear un Objetivo
+CREATE note CONTENT {
+  title: $title,
+  type: note_type:objetivo,
+  state: 'CLARIFIED',
+  metadata: {
+    target_date: d'2026-12-31'  -- o target_range: { start: ..., end: ... }
+  }
+};
+
+-- Listar Objetivos activos
+SELECT id, title, metadata.target_date AS target FROM note
+WHERE type = note_type:objetivo AND state IN ['CLARIFIED', 'ACTIVE']
+ORDER BY metadata.target_date ASC;
+
+-- Projects bajo un Objetivo
+SELECT * FROM note
+WHERE type = note_type:project AND id IN (
+  SELECT VALUE in FROM part_of WHERE out = $objetivo
+);
+
+-- Tasks (incluyendo MITs) bajo un Objetivo (multi-hop)
+SELECT * FROM note
+WHERE type = note_type:task AND <-part_of<-note<-part_of<-note = $objetivo;
+```
+
+### Ideas (nutren cualquier nota)
+
+```surql
+-- Crear una Idea
+CREATE note CONTENT {
+  title: $title,
+  type: note_type:idea,
+  state: 'CLARIFIED'
+};
+
+-- Idea que menciona/respalda otra nota (Task, Project, Objetivo, etc.)
+RELATE $idea->mentions->$target;     -- referencia narrativa
+RELATE $idea->supports->$target;     -- respaldo argumentativo
+
+-- Listar Ideas vinculadas a un Project
+SELECT VALUE in FROM mentions WHERE out = $project AND in.type = note_type:idea;
 ```
 
 ### Una Person y todas las notas que la mencionan
@@ -153,7 +239,7 @@ UPDATE $note SET type = $type;  -- $type es record<note_type>, e.g. note_type:ta
 ### Añadir un block a una note existente
 
 ```surql
-LET $new = (INSERT INTO block { note: $note, content: $content, pillars: $pillars });
+LET $new = (INSERT INTO block { note: $note, content: $content });
 UPDATE $note SET block_order = array::append(block_order, $new.id);
 ```
 
@@ -163,7 +249,6 @@ UPDATE $note SET block_order = array::append(block_order, $new.id);
 -- 1. Crear la nueva note
 LET $new_note = (CREATE note CONTENT {
   title: $new_title,
-  pillars: $block.pillars,
   state: 'CLARIFIED'
 });
 
@@ -308,7 +393,6 @@ Esto combina similitud semántica + filtro por estado de la nota + filtro tempor
 LET $report = (CREATE note CONTENT {
   title: $title,
   type: note_type:report,
-  pillars: $pillars,
   state: 'CLARIFIED',
   metadata: {
     period_start: $period_start,

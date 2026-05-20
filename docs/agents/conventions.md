@@ -43,7 +43,6 @@ Cuando tú (el agente) necesites recordar algo entre sesiones — preferencias d
 
 - `type = note_type:note` (o `note_type:reference` si es algo estable)
 - `source_kind = 'agent-self'`
-- `pillars` que correspondan
 - Un title claro: `"Preferencias de Rubén sobre tono de informes"`, `"Aprendizajes sobre el contexto Govoy"`
 
 **NO inventes un sistema de filesystem virtual** (otros agentes como kaig lo hacen, nosotros NO — preferimos uniformidad con el resto del modelo).
@@ -70,16 +69,15 @@ Sin citaciones, el Report es opinión sin base — útil pero no auditable.
 
 ## 6. No inventes vocabulario
 
-- **Pilares**: solo los 4 existentes (`PATHOS_SOMA`, `ETHOS`, `TELOS`, `SOPHIA`). Si descubres que algo no encaja, NO inventes un quinto — déjalo sin pilares y avísale al usuario en el próximo intercambio.
+- **Pilares**: ya NO existen como concepto activo (ver ADR-0021). NO los uses. Si el contenido sugiere "esto es muy Pathos / Telos", NO lo etiquetes — usa Objetivos para el eje estratégico.
 - **Edges**: solo los 7 autorizados. Si necesitas expresar una relación que no encaja, **proponle al usuario añadir un edge type nuevo** (cambio de schema) en lugar de meter info en `metadata` ad-hoc.
-- **NoteTypes**: puedes crear nuevos, pero solo si ≥3 notas lo necesitarían y los existentes no encajan.
-- **States**: los 7 enumerados. No más.
+- **NoteTypes**: ahora hay **10** seedeados (`task`, `project`, `area`, `routine`, `note`, `report`, `person`, `reference`, `objetivo`, `idea`). Puedes crear nuevos solo si ≥3 notas lo necesitarían y los existentes no encajan.
+- **States**: los 6 enumerados (INBOX se quitó hace tiempo, ver ADR-0017): `CLARIFIED`, `ACTIVE`, `WAITING`, `SOMEDAY`, `DONE`, `ARCHIVED`.
 
 ## 7. Transitions de estado deben tener razón
 
-No muevas notas entre estados arbitrariamente.
+No muevas notas entre estados arbitrariamente. Una Note nace ya en `CLARIFIED` (INBOX no es estado — el inbox real son `raw_capture WHERE processed_at IS NONE`).
 
-- `INBOX → CLARIFIED`: porque has procesado y asignado type + pillars
 - `CLARIFIED → ACTIVE`: porque se ha empezado a trabajar
 - `ACTIVE → WAITING`: porque hay dependencia externa (anota `blocked_by` para identificar qué)
 - `WAITING → ACTIVE`: porque la dependencia se resolvió
@@ -91,10 +89,10 @@ Si haces una transición, **deja un comentario en la nota** (un block nuevo o en
 
 ## 8. Ante la duda, pregunta
 
-Si una captura es ambigua y no puedes decidir su `type`, sus `pillars`, o cómo segmentar en blocks **con razonable confianza**, **pregunta al usuario** antes de comprometer la decisión.
+Si una captura es ambigua y no puedes decidir su `type` o cómo segmentar en blocks **con razonable confianza**, **pregunta al usuario** antes de comprometer la decisión.
 
 Excepciones donde puedes decidir sin preguntar:
-- `type=NONE`, `state=INBOX`, `pillars` vacíos — la captura no compromete nada
+- Dejar el `raw_capture` sin procesar (en su inbox) — no compromete nada
 - Crear un único block con todo el input si el segmenting no está claro
 
 Es mejor capturar sin clarificar que clarificar mal.
@@ -137,12 +135,24 @@ Nunca modifiques el schema en silencio. Las decisiones ontológicas (qué existe
 Si una operación del MCP falla (validación de schema, edge inválido, etc.):
 
 - Reporta al usuario qué intentó hacer y qué falló
-- Si puedes corregir y reintentar (e.g. ASSERT falló porque un pilar estaba mal escrito), corrige y avísale
+- Si puedes corregir y reintentar (e.g. ASSERT falló porque un valor de enum estaba mal escrito), corrige y avísale
 - Si no puedes corregir solo, pide ayuda — no abandones la operación en silencio
 
 El usuario prefiere ser interrumpido que descubrir basura en la BBDD una semana después.
 
-## 13. Emisión de eventos: trazabilidad obligatoria
+## 13. MITs los decide el usuario, no tú
+
+Marcar una task como MIT (`mit_for = $date`) es una decisión estratégica del usuario, no del agente.
+
+Convención:
+- Si el usuario dice "marca esto como MIT de hoy", o equivalente, marcas
+- Si vas a generar un report o sugerencia, puedes proponer candidatos a MIT, pero NO los marcas sin confirmación
+- Máximo 3 MITs por día — si el usuario quiere marcar más, le avisas que ZTD recomienda no más de 3
+- Idealmente, al menos 1 MIT del día tiene relación con un Objetivo activo (`part_of`) — si no, sugiéreselo al usuario
+
+Cuando termine el día, los MITs no completados quedan con `mit_for` apuntando al día pasado. NO los limpies automáticamente — son rastro histórico útil para retrospectiva.
+
+## 14. Emisión de eventos: trazabilidad obligatoria
 
 Cada agente (worker autónomo, agente conversacional, futuros) DEBE emitir eventos en `agent_event` por cada decisión interpretativa o acción significativa. Esto es no-negociable: sin eventos no hay debugging, sin debugging no hay mejora del sistema.
 
@@ -191,7 +201,7 @@ ORDER BY created_at ASC;
 
 Eso te da la cadena completa: qué se pidió, qué se respondió, con qué confidence, qué se intentó escribir, qué falló.
 
-## 14. Lecturas obligatorias antes de operar
+## 15. Lecturas obligatorias antes de operar
 
 Si es tu primera sesión sobre Huygens:
 
