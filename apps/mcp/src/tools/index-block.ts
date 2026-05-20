@@ -3,6 +3,7 @@ import { StringRecordId } from 'surrealdb'
 import { z } from 'zod'
 import { BLOCK_ID_RE } from '../domain'
 import { embedTexts } from '../embeddings'
+import { BlockNotFoundError } from '../errors'
 import { getDb } from '../surreal'
 
 export const indexBlockShape = {
@@ -34,7 +35,7 @@ export async function indexBlockImpl(input: IndexBlockInput): Promise<IndexBlock
   if (rows.length !== input.block_ids.length) {
     const found = new Set(rows.map(r => String(r.id)))
     const missing = input.block_ids.filter(id => !found.has(id))
-    throw new Error(`block(s) not found: ${missing.join(', ')}`)
+    throw new BlockNotFoundError(missing)
   }
 
   const byId = new Map(rows.map(r => [String(r.id), r.content]))

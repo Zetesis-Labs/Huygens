@@ -15,6 +15,11 @@ from typing import Any, cast
 from surrealdb import RecordID
 
 from .clarify import Decomposition, NoteProposal
+from .errors import (
+    InternalRefOutOfBoundsError,
+    RawAlreadyProcessedError,
+    RawNotFoundError,
+)
 from .events import EmitInput, emit_event
 from .settings import settings
 from .surreal_client import DB, execute, query_rows
@@ -42,9 +47,9 @@ async def _assert_raw_not_processed(db: DB, raw_ref: RecordID) -> None:
         db, "SELECT processed_at FROM raw_capture WHERE id = $id", {"id": raw_ref}
     )
     if not rows:
-        raise RuntimeError(f"raw_capture not found: {raw_ref}")
+        raise RawNotFoundError(str(raw_ref))
     if rows[0].get("processed_at") is not None:
-        raise RuntimeError(f"raw_capture already processed: {raw_ref}")
+        raise RawAlreadyProcessedError(str(raw_ref))
 
 
 def _build_note_data(proposal: NoteProposal) -> dict[str, Any]:
@@ -93,7 +98,7 @@ async def _create_internal_refs(
         from_id = notes_created[i]
         for ref in proposal.internal_refs:
             if ref.to_note_index >= len(notes_created):
-                raise RuntimeError(f"internal_ref to_note_index out of bounds: {ref.to_note_index}")
+                raise InternalRefOutOfBoundsError(ref.to_note_index, len(notes_created))
             to_id = notes_created[ref.to_note_index]
             await execute(db, f"RELATE $from->{ref.kind}->$to", {"from": from_id, "to": to_id})
             edges += 1

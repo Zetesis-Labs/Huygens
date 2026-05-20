@@ -15,6 +15,7 @@ from agno.models.openai import OpenAIChat
 from pydantic import BaseModel, Field
 
 from .domain import EdgeKind, NoteState, NoteTypeSlug, Transformation
+from .errors import ConfigMissingError
 from .settings import settings
 
 log = logging.getLogger(__name__)
@@ -112,7 +113,7 @@ def get_agent() -> Agent:
     if _agent is not None:
         return _agent
     if not settings.openai_api_key:
-        raise RuntimeError("OPENAI_API_KEY not set — clarify agent cannot run")
+        raise ConfigMissingError("OPENAI_API_KEY")
     _agent = Agent(
         model=OpenAIChat(id=settings.clarify_model, api_key=settings.openai_api_key),
         instructions=SYSTEM_PROMPT,

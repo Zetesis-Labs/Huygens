@@ -9,6 +9,12 @@ import {
   RECORD_ID_RE,
   TransformationSchema
 } from '../domain'
+import {
+  ExternalRefOutOfBoundsError,
+  InternalRefOutOfBoundsError,
+  RawAlreadyProcessedError,
+  RawNotFoundError
+} from '../errors'
 import { emitEvent, newSessionId } from '../events'
 import { getDb } from '../surreal'
 
@@ -85,8 +91,8 @@ async function assertRawNotProcessed(db: Surreal, raw_id: string): Promise<void>
     'SELECT processed_at FROM raw_capture WHERE id = $id',
     { id: new StringRecordId(raw_id) }
   )
-  if (!rows[0]) throw new Error(`raw_capture not found: ${raw_id}`)
-  if (rows[0].processed_at) throw new Error(`raw_capture already processed: ${raw_id}`)
+  if (!rows[0]) throw new RawNotFoundError(raw_id)
+  if (rows[0].processed_at) throw new RawAlreadyProcessedError(raw_id)
 }
 
 function buildNoteData(proposal: NoteProposalT): Record<string, unknown> {
@@ -139,7 +145,7 @@ async function createInternalRefs(db: Surreal, proposals: NoteProposalT[], notes
     if (!proposal || !fromId) continue
     for (const ref of proposal.internal_refs) {
       const toId = notesCreated[ref.to_note_index]
-      if (!toId) throw new Error(`internal_ref to_note_index out of bounds: ${ref.to_note_index}`)
+      if (!toId) throw new InternalRefOutOfBoundsError(ref.to_note_index, notesCreated.length)
       await db.query(`RELATE $from->${ref.kind}->$to`, { from: fromId, to: toId })
       edges++
     }
@@ -151,7 +157,7 @@ async function createExternalRefs(db: Surreal, refs: ExternalRefT[], notesCreate
   let edges = 0
   for (const ref of refs) {
     const fromId = notesCreated[ref.from_note_index]
-    if (!fromId) throw new Error(`external_ref from_note_index out of bounds: ${ref.from_note_index}`)
+    if (!fromId) throw new ExternalRefOutOfBoundsError(ref.from_note_index, notesCreated.length)
     await db.query(`RELATE $from->${ref.kind}->$to`, {
       from: fromId,
       to: new StringRecordId(ref.to_external_id)

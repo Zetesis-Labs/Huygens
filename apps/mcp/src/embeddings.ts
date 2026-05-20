@@ -1,3 +1,5 @@
+import { ConfigMissingError, EmbeddingDimensionMismatchError, EmbeddingProviderError } from './errors'
+
 const ENDPOINT = 'https://api.deepinfra.com/v1/inference/BAAI/bge-m3'
 export const EMBEDDING_MODEL = 'BAAI/bge-m3'
 export const EMBEDDING_DIMENSIONS = 1024
@@ -19,12 +21,12 @@ type DeepInfraResponse = {
 
 export async function embedTexts(inputs: string[], opts: { signal?: AbortSignal } = {}): Promise<EmbedResult> {
   const apiKey = process.env.DEEPINFRA_API_KEY
-  if (!apiKey) throw new Error('DEEPINFRA_API_KEY env var not set')
+  if (!apiKey) throw new ConfigMissingError('DEEPINFRA_API_KEY')
   if (inputs.length === 0) {
     return { embeddings: [], model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMENSIONS, input_tokens: 0 }
   }
   if (inputs.length > MAX_BATCH) {
-    throw new Error(`embedTexts: batch size ${inputs.length} exceeds max ${MAX_BATCH}`)
+    throw new EmbeddingProviderError('deepinfra', 400, `batch size ${inputs.length} exceeds max ${MAX_BATCH}`)
   }
 
   const res = await fetch(ENDPOINT, {
@@ -36,17 +38,17 @@ export async function embedTexts(inputs: string[], opts: { signal?: AbortSignal 
 
   if (!res.ok) {
     const body = await res.text()
-    throw new Error(`DeepInfra ${res.status}: ${body.slice(0, 500)}`)
+    throw new EmbeddingProviderError('deepinfra', res.status, body)
   }
 
   const data = (await res.json()) as DeepInfraResponse
   if (!data.embeddings || data.embeddings.length !== inputs.length) {
-    throw new Error(`DeepInfra: malformed response (expected ${inputs.length} embeddings)`)
+    throw new EmbeddingProviderError('deepinfra', 200, `malformed response (expected ${inputs.length} embeddings)`)
   }
 
   const first = data.embeddings[0]
   if (!first || first.length !== EMBEDDING_DIMENSIONS) {
-    throw new Error(`DeepInfra: unexpected dimensions (got ${first?.length}, want ${EMBEDDING_DIMENSIONS})`)
+    throw new EmbeddingDimensionMismatchError(first?.length, EMBEDDING_DIMENSIONS)
   }
 
   return {
