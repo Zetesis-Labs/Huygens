@@ -63,6 +63,24 @@ services:
       retries: 30
       start_period: 10s
 
+  huygens-worker:
+    build:
+      context: ../backend/huygens-worker
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      SURREAL_URL: ws://surrealdb:8000/rpc
+      SURREAL_NS: huygens
+      SURREAL_DB: main
+      SURREAL_USER: root
+      SURREAL_PASS: root
+      POLL_INTERVAL_SECONDS: "2"
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    networks:
+      - default_network
+
 volumes:
   node_modules:
   claude_memory:
