@@ -2,7 +2,7 @@
 
 ## Proyecto
 
-Monorepo TypeScript con **Bun** + **Prisma** + **MongoDB** (Atlas Local con vector search) + **MCP** en `apps/mcp`. Una sola app por ahora, pero la raíz declara workspaces (`apps/*`) para crecer.
+Monorepo TypeScript con **Bun** + **SurrealDB** + **MCP** en `apps/mcp`. Una sola app por ahora, pero la raíz declara workspaces (`apps/*`) para crecer.
 
 ## Convenciones
 
@@ -15,17 +15,24 @@ Monorepo TypeScript con **Bun** + **Prisma** + **MongoDB** (Atlas Local con vect
 
 ## Devcontainer
 
-Todo se ejecuta dentro del devcontainer (`docker-compose` con servicios `app` + `mongo`).
+Tres servicios: `app` (Bun), `surrealdb` (BBDD principal), `surrealdb-init` (one-shot, chown del volumen para que SurrealDB corra rootless como uid 65532).
+
+Nombres de contenedor (Docker Compose, project name `devcontainer`):
 
 ```bash
-# Desde fuera del devcontainer (host):
-docker exec huygens_devcontainer-app-1 bun install
-docker exec huygens_devcontainer-app-1 bun --filter '@huygens/mcp' typecheck
-docker exec huygens_devcontainer-app-1 bun lint
+docker exec devcontainer-app-1 bun install
+docker exec devcontainer-app-1 bun --filter '@huygens/mcp' typecheck
+docker exec devcontainer-app-1 bun lint
 
-# Conectividad a Mongo desde dentro:
-DATABASE_URL=mongodb://mongo:27017/huygens?replicaSet=rs0&directConnection=true
+# Conexión a SurrealDB desde dentro del app:
+SURREAL_URL=ws://surrealdb:8000/rpc
+SURREAL_NS=huygens
+SURREAL_DB=main
+SURREAL_USER=root
+SURREAL_PASS=root
 ```
+
+Si Cursor/Dev Containers usa otro project name (e.g. `huygens_devcontainer`), los nombres serán `huygens_devcontainer-*`. Ajustar comandos según `docker ps`.
 
 ## Comandos
 
@@ -37,8 +44,8 @@ bun typecheck          # raíz: tsc --noEmit en cada workspace
 
 cd apps/mcp
 bun dev                # MCP en :3030
-bunx prisma generate   # regenera el cliente
-bunx prisma db push    # aplica schema.prisma a MongoDB
+bun run db:apply       # ejecuta surreal/schema.surql + surreal/seed.surql
+bun run db:smoke       # smoke test contra SurrealDB
 ```
 
 ## MCP
@@ -47,48 +54,98 @@ bunx prisma db push    # aplica schema.prisma a MongoDB
 - Endpoint: `POST /mcp` en el puerto `MCP_PORT` (default `3030`)
 - Stateless por defecto (`sessionIdGenerator: undefined`) — cada request crea su transport efímero
 
-## Modelo de datos
+## Modelo de datos (SurrealDB)
 
-Una única colección central, `Note`. Cada documento es markdown + clasificación + estado GTD + relaciones + bag tipo-específico (`metadata Json`).
+Cada `note` es composición ordenada de `block`s (markdown auto-contenido). La topología (edges) puede apuntar a notes **o** blocks indistintamente — permite Zettelkasten-trails y referencias granulares sin pagar el coste de un block model atómico tipo Notion.
 
-| Modelo | Rol |
+Tablas (`apps/mcp/surreal/schema.surql`):
+
+| Tabla | Rol |
 |---|---|
-| `Note` | Entidad central. `title`, `content` (markdown), `typeId` (opcional), `pillars` (`Pillar[]`), `state` (`NoteState`), `parentNoteId`, `relatedNoteIds[]`, `metadata`, `sourceKind` + `sourceRef`, timestamps. |
-| `NoteType` | Árbol editable de tipos (slug único + parentId). Una Note tiene cero o un Type. |
-| `NoteChunk` | Chunks de la Note con embedding por chunk. La búsqueda vectorial se hace aquí. |
+| `note` | Contenedor. `title`, `type` (opcional), `pillars`, `state`, `block_order` (array ordenado de records), `metadata`, `source_kind`+`source_ref`, timestamps |
+| `block` | Unidad direccionable + vectorizable. `note` (ref), `content` (markdown), `pillars` propios, `embedding` (1024 dims), timestamps. Vector HNSW index aquí |
+| `note_type` | Árbol editable de tipos. Slug único, `parent` opcional, `featured_fields` (UX hint). Una Note tiene cero o un Type |
 
-Enums:
-- `Pillar`: `PATHOS_SOMA`, `ETHOS`, `TELOS`, `SOPHIA` — dimensiones ortogonales (una nota puede tocar varios).
-- `NoteState`: `INBOX`, `CLARIFIED`, `ACTIVE`, `WAITING`, `SOMEDAY`, `DONE`, `ARCHIVED`.
+Edges schemafull (`TYPE RELATION FROM X TO Y`). Los semánticos admiten `note | block` en ambas puntas:
 
-**Capture = nota sin tipo.** Cuando entra algo al inbox, se crea con `typeId=null` + `state=INBOX`. "Inbox" es un estado del workflow, no un tipo de cosa. El agente clarifica asignando un `typeId` y moviendo el estado a `CLARIFIED`.
+- `part_of` — jerarquía macro (Area→Project→Task). Solo `note → note`
+- `blocked_by` — `note → note | block` (con `since`, `reason`)
+- `mentions` — `note | block → note | block`
+- `supports` — `note | block → note | block` (Zettel-trail clásico)
+- `refutes` — `note | block → note | block`
+- `about` — `note → note | block` (Report cubre estos elementos)
+- `authored_by` — `note | block → note` (Persons son notes con type=person)
 
-Seed inicial (`bun run db:seed` desde `apps/mcp`): 8 NoteType genéricos — `task`, `project`, `area`, `routine`, `note`, `report`, `person`, `reference`. Editables después.
+Validaciones del motor:
+- `pillars: array<string>` con `ASSERT $value ALLINSIDE ['PATHOS_SOMA','ETHOS','TELOS','SOPHIA']`
+- `state: string` con `ASSERT $value INSIDE ['INBOX','CLARIFIED','ACTIVE','WAITING','SOMEDAY','DONE','ARCHIVED']`
+- Todos los edges con `FROM/TO` enforced por SurrealDB
 
-**Embeddings**: DeepInfra hospeda `BAAI/bge-m3` (1024 dims, contexto 8192 tokens, multilingüe). API key via `DEEPINFRA_API_KEY`. El campo `NoteChunk.embeddingModel` guarda `'BAAI/bge-m3'`; `NoteChunk.dimensions` guarda `1024`.
+**Capture = nota sin tipo.** Una nota recién capturada se crea con `type = NONE` + `state = 'INBOX'`. El agente clarifica asignando un type y moviendo el estado a `CLARIFIED`.
+
+Seed inicial (`bun run db:apply` desde `apps/mcp`): 8 NoteType genéricos con IDs legibles (`note_type:task`, `note_type:project`, ...). Editables después.
+
+**Embeddings**: DeepInfra hospeda `BAAI/bge-m3` (1024 dims, contexto 8192 tokens, multilingüe). API key via `DEEPINFRA_API_KEY`. El campo `note_chunk.embedding_model` guarda `'BAAI/bge-m3'`; `note_chunk.dimensions` guarda `1024`.
 
 ## Búsqueda vectorial
 
-Mongo arranca como `mongodb/mongodb-atlas-local`, así que `$vectorSearch` y `$search` están disponibles. La búsqueda vectorial se hace contra la colección **`NoteChunk`** (no contra `Note`), porque las notas largas se chunkean.
+Índice HNSW nativo directamente sobre `block` (1024 dims, BGE-M3, cosine). Sin tabla `note_chunk` separada — el block ES el chunk.
 
-Prisma no expone `$vectorSearch` nativamente — usar:
-
-```ts
-await prisma.$runCommandRaw({
-  aggregate: 'NoteChunk',
-  pipeline: [
-    {
-      $vectorSearch: {
-        index: 'note_chunk_vector',
-        path: 'embedding',
-        queryVector: /* embedding del query */,
-        numCandidates: 100,
-        limit: 10
-      }
-    }
-  ],
-  cursor: {}
-})
+```surql
+DEFINE INDEX block_embedding ON block
+  FIELDS embedding HNSW DIMENSION 1024 DIST COSINE;
 ```
 
-El índice vectorial se crea una vez con `db.NoteChunk.createSearchIndex({...})` (o vía `$runCommandRaw createSearchIndexes`); **no** lo gestiona Prisma. Las dimensiones del índice deben coincidir con `NoteChunk.dimensions` del modelo de embeddings que se elija.
+Query K-NN:
+
+```surql
+SELECT id, content, note,
+       vector::distance::cosine(embedding, $query) AS score
+FROM block
+WHERE embedding <|10|> $query
+ORDER BY score ASC;
+```
+
+Hybrid (vector + filtro de note + temporal):
+
+```surql
+SELECT b.id, b.content, b.note.title,
+       vector::distance::cosine(b.embedding, $query) AS score
+FROM block AS b
+WHERE b.embedding <|20|> $query
+  AND b.note.state IN ['ACTIVE', 'WAITING']
+  AND b.note.updated_at > $since
+ORDER BY score ASC
+LIMIT 10;
+```
+
+## Renderizado de una page completa
+
+`note` ya no tiene `content`. Para reconstruir el markdown completo de una nota:
+
+```ts
+const [rerread] = await db.query<[Note[]]>('SELECT * FROM note WHERE id = $id', { id })
+const note = rerread[0]
+const [blocks] = await db.query<[Block[]]>(
+  'SELECT id, content FROM block WHERE id IN $ids',
+  { ids: note.block_order }
+)
+const byId = new Map(blocks.map(b => [String(b.id), b]))
+const markdown = note.block_order
+  .map(id => byId.get(String(id))?.content)
+  .filter(Boolean)
+  .join('\n\n---\n\n')
+```
+
+## Arquitectura MCP (tres capas)
+
+```
+Agente (prompt = dominio GTD)
+  │
+  ├─ surrealmcp oficial  →  CRUD + RELATE + queries genéricas
+  └─ Huygens MCP (pequeño, este repo)  →  embed, chunk, vector_search, generate_report
+       │
+       └─ driver surrealdb JS  →  SurrealDB
+```
+
+surrealmcp y Huygens MCP son **hermanos**, no padre-hijo. Detalle en `docs/research/02-architecture/mcp-three-layer-architecture.md`.

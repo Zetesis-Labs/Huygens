@@ -10,45 +10,63 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     command: sleep infinity
     environment:
-      # mongodb-atlas-local nombra el replica set con el hostname del container
-      # (aleatorio en cada recreación), así que conectamos en modo directo y
-      # nos saltamos el discovery del RS. Suficiente para lecturas, escrituras
-      # e índices; cuando necesitemos transacciones, fijar `hostname: mongo`
-      # en el servicio mongo y usar `replicaSet=mongo`.
-      DATABASE_URL: mongodb://mongo:27017/huygens?directConnection=true
+      SURREAL_URL: ws://surrealdb:8000/rpc
+      SURREAL_NS: huygens
+      SURREAL_DB: main
+      SURREAL_USER: root
+      SURREAL_PASS: root
     depends_on:
-      mongo:
+      surrealdb:
         condition: service_healthy
     networks:
       - default_network
 
-  mongo:
-    image: mongodb/mongodb-atlas-local:latest
-    restart: unless-stopped
-    ports:
-      - "27017:27017"
+  # Init container: el named volume se crea como root y la imagen oficial
+  # de SurrealDB corre como nonroot (uid 65532). Sin chown previo, RocksDB
+  # falla al escribir LOG. Este servicio corre una vez, chown el volumen
+  # y termina; surrealdb depende de su finalización exitosa.
+  surrealdb-init:
+    image: busybox:latest
+    user: "0:0"
+    command: ["sh", "-c", "chown -R 65532:65532 /data/db && chmod 700 /data/db"]
     volumes:
-      - mongo_data:/data/db
-      - mongo_config:/data/configdb
+      - surrealdb_data:/data/db
+    restart: "no"
+
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    restart: unless-stopped
+    # Sin override de user: la imagen ya corre como nonroot (uid 65532).
+    # RocksDB persistente; bind a 0.0.0.0 para que `app` lo alcance por nombre.
+    command:
+      - start
+      - --user
+      - root
+      - --pass
+      - root
+      - --bind
+      - 0.0.0.0:8000
+      - rocksdb:/data/db
+    ports:
+      - "8000:8000"
+    volumes:
+      - surrealdb_data:/data/db
+    depends_on:
+      surrealdb-init:
+        condition: service_completed_successfully
     networks:
       - default_network
     healthcheck:
-      test:
-        - CMD
-        - mongosh
-        - --quiet
-        - --eval
-        - "db.adminCommand('ping').ok"
+      test: ["CMD", "/surreal", "isready", "--endpoint", "http://localhost:8000"]
       interval: 5s
-      timeout: 10s
-      retries: 20
-      start_period: 30s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
 
 volumes:
   node_modules:
   claude_memory:
-  mongo_data:
-  mongo_config:
+  surrealdb_data:
 
 networks:
   default_network:
