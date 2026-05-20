@@ -1,0 +1,93 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "MCP",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bun run dev",
+      "cwd": "${workspaceFolder}/apps/mcp"
+    },
+    {
+      "name": "Worker",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "[ -f .env ] || cp .env.example .env; uv sync && uv run python -m huygens_worker",
+      "cwd": "${workspaceFolder}/backend/huygens-worker"
+    },
+    {
+      "name": "Apply schema",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bun run db:apply",
+      "cwd": "${workspaceFolder}/apps/mcp"
+    },
+    {
+      "name": "Smoke (tools)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bun run scripts/smoke-tools.ts",
+      "cwd": "${workspaceFolder}/apps/mcp"
+    },
+    {
+      "name": "Smoke (embeddings)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bun run scripts/smoke-embeddings.ts",
+      "cwd": "${workspaceFolder}/apps/mcp"
+    },
+    {
+      "name": "Lint fix (TS)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bun run lint:fix",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Lint fix (Py)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "uv run ruff check --fix . && uv run ruff format .",
+      "cwd": "${workspaceFolder}/backend/huygens-worker"
+    },
+    {
+      "name": "Typecheck (TS)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bun run typecheck",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Typecheck (Py mypy)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "uv run mypy huygens_worker",
+      "cwd": "${workspaceFolder}/backend/huygens-worker"
+    },
+    {
+      "name": "Typecheck (Py pyright)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "uv run pyright",
+      "cwd": "${workspaceFolder}/backend/huygens-worker"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Launch",
+      "configurations": ["MCP", "Worker"],
+      "stopAll": true
+    },
+    {
+      "name": "Eval",
+      "configurations": [
+        "Lint fix (TS)",
+        "Lint fix (Py)",
+        "Typecheck (TS)",
+        "Typecheck (Py mypy)",
+        "Typecheck (Py pyright)"
+      ],
+      "stopAll": true
+    }
+  ]
+}

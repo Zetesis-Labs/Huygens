@@ -8,7 +8,7 @@ the shape commitClarifyImpl expects on the TS side.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 from agno.agent import Agent
@@ -21,9 +21,20 @@ log = logging.getLogger(__name__)
 
 NoteState = Literal["CLARIFIED", "ACTIVE", "WAITING", "SOMEDAY", "DONE", "ARCHIVED"]
 NoteTypeSlug = Literal[
-    "task", "project", "area", "routine", "note", "report", "person", "reference", "objetivo", "idea"
+    "task",
+    "project",
+    "area",
+    "routine",
+    "note",
+    "report",
+    "person",
+    "reference",
+    "objetivo",
+    "idea",
 ]
-EdgeKind = Literal["mentions", "supports", "refutes", "part_of", "blocked_by", "about", "authored_by"]
+EdgeKind = Literal[
+    "mentions", "supports", "refutes", "part_of", "blocked_by", "about", "authored_by"
+]
 Transformation = Literal["verbatim", "extracted", "summarized", "inferred"]
 
 
@@ -33,20 +44,23 @@ class BlockProposal(BaseModel):
 
 class InternalRef(BaseModel):
     kind: EdgeKind = Field(description="Edge semantic kind")
-    to_note_index: int = Field(ge=0, description="Index of the target note within the `notes` array")
+    to_note_index: int = Field(
+        ge=0, description="Index of the target note within the `notes` array"
+    )
 
 
 class NoteProposal(BaseModel):
     title: str = Field(description="Concise title in the original language of the raw")
-    type_slug: NoteTypeSlug = Field(description="Note type slug. Choose the most specific one that fits.")
+    type_slug: NoteTypeSlug = Field(
+        description="Note type slug. Choose the most specific one that fits."
+    )
     state: NoteState = Field(default="CLARIFIED", description="ZTD state. Default CLARIFIED.")
     mit_for: str | None = Field(
         default=None,
-        description="ISO 8601 datetime if this is a Most Important Task for a specific day, else null"
+        description="ISO 8601 datetime if this is a Most Important Task for a specific day, else null",
     )
     blocks: list[BlockProposal] = Field(
-        min_length=1,
-        description="Markdown blocks composing this note, in order"
+        min_length=1, description="Markdown blocks composing this note, in order"
     )
     transformation: Transformation = Field(
         description=(
@@ -57,13 +71,15 @@ class NoteProposal(BaseModel):
     )
     internal_refs: list[InternalRef] = Field(
         default_factory=list,
-        description="Edges from this note to other notes being created in the same decomposition"
+        description="Edges from this note to other notes being created in the same decomposition",
     )
 
 
 class Decomposition(BaseModel):
     notes: list[NoteProposal] = Field(min_length=1)
-    reasoning_summary: str = Field(description="One short paragraph: why this decomposition and not another")
+    reasoning_summary: str = Field(
+        description="One short paragraph: why this decomposition and not another"
+    )
 
 
 SYSTEM_PROMPT = """You are the **clarify agent** of Huygens — a personal memory and knowledge system for Rubén García.
@@ -127,7 +143,7 @@ def get_agent() -> Agent:
 
 async def clarify(raw_content: str, source_kind: str) -> Decomposition:
     agent = get_agent()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     prompt = (
         f"TODAY is {now.strftime('%Y-%m-%d (%A)')} (UTC). "
         "Use this to resolve relative dates like 'mañana', 'hoy', 'el viernes'.\n\n"

@@ -24,3 +24,49 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["huygens_worker"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9",
+    "mypy>=1.13",
+    "pyright>=1.1",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "A", "C4", "S", "SIM", "RUF"]
+ignore = [
+    "E501",  # line length handled by formatter
+    "B008",  # function calls in argument defaults — Agno relies on this pattern
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**/*.py" = ["S101"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+# Pragmatic strict-ish: catch real bugs without fighting third-party SDK quirks.
+# The surrealdb Python SDK exposes AsyncSurreal as a factory rather than a class,
+# which trips strict mode; agno's structured-output typing is also dynamic.
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["agno.*", "uuid_extensions", "surrealdb"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

@@ -12,9 +12,13 @@ build/
 out/
 *.tsbuildinfo
 
-# Prisma
-**/generated/
-**/prisma/migrations/
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
 
 # Environment
 .env
@@ -33,6 +37,7 @@ yarn-error.log*
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
+!.vscode/launch.json
 *.swp
 *.swo
 

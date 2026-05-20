@@ -2,16 +2,16 @@
   "name": "Huygens",
   "dockerComposeFile": "docker-compose.yml",
   "service": "app",
-  "runServices": ["app", "mongo"],
+  "runServices": ["app", "surrealdb-init", "surrealdb"],
   "workspaceFolder": "/workspace",
-  "forwardPorts": [3030, 27017],
+  "forwardPorts": [3030, 8000],
   "portsAttributes": {
     "3030": {
       "label": "MCP server",
       "onAutoForward": "notify"
     },
-    "27017": {
-      "label": "MongoDB (Atlas Local)",
+    "8000": {
+      "label": "SurrealDB",
       "onAutoForward": "ignore"
     }
   },
@@ -21,8 +21,10 @@
         "ms-vscode-remote.remote-containers",
         "biomejs.biome",
         "ms-azuretools.vscode-docker",
-        "Prisma.prisma",
-        "mongodb.mongodb-vscode"
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "tamasfe.even-better-toml"
       ],
       "settings": {
         "editor.formatOnSave": true,
@@ -32,11 +34,20 @@
           "source.organizeImports.biome": "always"
         },
         "typescript.tsdk": "node_modules/typescript/lib",
-        "biome.lspBin": "./node_modules/.bin/biome"
+        "biome.lspBin": "./node_modules/.bin/biome",
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "always",
+            "source.organizeImports.ruff": "always"
+          }
+        },
+        "python.defaultInterpreterPath": "${workspaceFolder}/backend/huygens-worker/.venv/bin/python",
+        "python.analysis.typeCheckingMode": "standard"
       }
     }
   },
-  "postCreateCommand": "bun install && cd apps/mcp && bunx prisma generate",
+  "postCreateCommand": "bun install && cd backend/huygens-worker && uv sync",
   "shutdownAction": "stopCompose",
   "overrideCommand": false,
   "remoteEnv": {

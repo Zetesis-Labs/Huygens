@@ -20,30 +20,29 @@ import logging
 import time
 from dataclasses import dataclass, field
 
-from surrealdb import AsyncSurreal
-
 from .clarify import clarify
 from .commit import commit_clarify
 from .events import emit_event, new_session_id
 from .settings import settings
+from .surreal_client import DB, Row, query_rows
 
 log = logging.getLogger(__name__)
 
 
 @dataclass
 class InboxWatcher:
-    db: AsyncSurreal
+    db: DB
     seen_processed: set[str] = field(default_factory=set)
     in_flight: set[str] = field(default_factory=set)
 
-    async def fetch_pending(self) -> list[dict]:
-        rows = await self.db.query(
+    async def fetch_pending(self) -> list[Row]:
+        return await query_rows(
+            self.db,
             "SELECT id, content, source_kind, created_at "
-            "FROM raw_capture WHERE processed_at IS NONE ORDER BY created_at ASC"
+            "FROM raw_capture WHERE processed_at IS NONE ORDER BY created_at ASC",
         )
-        return rows or []
 
-    async def process_one(self, row: dict) -> bool:
+    async def process_one(self, row: Row) -> bool:
         raw_id = str(row["id"])
         if raw_id in self.in_flight or raw_id in self.seen_processed:
             return False

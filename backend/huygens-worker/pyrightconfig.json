@@ -1,0 +1,8 @@
+{
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "standard",
+  "include": ["huygens_worker"],
+  "reportMissingImports": true,
+  "reportUnusedImport": true,
+  "reportUnusedVariable": true
+}

@@ -1,4 +1,8 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+Actor = Literal["worker", "conversational", "user", "system"]
 
 
 class Settings(BaseSettings):
@@ -8,10 +12,10 @@ class Settings(BaseSettings):
     surreal_ns: str = "huygens"
     surreal_db: str = "main"
     surreal_user: str = "root"
-    surreal_pass: str = "root"
+    surreal_pass: str = "root"  # noqa: S105 — dev default; real value comes from env
 
     poll_interval_seconds: float = 2.0
-    actor: str = "worker"
+    actor: Actor = "worker"
 
     openai_api_key: str = ""
     clarify_model: str = "gpt-4o-mini"

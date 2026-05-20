@@ -6,10 +6,12 @@ Mirrors apps/mcp/src/events.ts. Observability must not break the parent op.
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
-from surrealdb import AsyncSurreal
 from uuid_extensions import uuid7
+
+from .settings import Actor
+from .surreal_client import DB, execute
 
 log = logging.getLogger(__name__)
 
@@ -26,23 +28,21 @@ EventKind = Literal[
     "worker_yielded",
 ]
 
-Actor = Literal["worker", "conversational", "user", "system"]
 
-
-class EmitInput(TypedDict, total=False):
+class EmitInput(TypedDict):
     kind: EventKind
     actor: Actor
     session_id: str
-    subject: Any
-    payload: dict[str, Any]
-    confidence: float
-    reasoning_summary: str
-    model: str
-    tokens_used: dict[str, int]
-    duration_ms: int
+    subject: NotRequired[Any]
+    payload: NotRequired[dict[str, Any]]
+    confidence: NotRequired[float]
+    reasoning_summary: NotRequired[str]
+    model: NotRequired[str]
+    tokens_used: NotRequired[dict[str, int]]
+    duration_ms: NotRequired[int]
 
 
-async def emit_event(db: AsyncSurreal, event: EmitInput) -> None:
+async def emit_event(db: DB, event: EmitInput) -> None:
     try:
         content: dict[str, Any] = {
             "kind": event["kind"],
@@ -58,10 +58,11 @@ async def emit_event(db: AsyncSurreal, event: EmitInput) -> None:
             "tokens_used",
             "duration_ms",
         ):
-            if event.get(key) is not None:
-                content[key] = event[key]
-        await db.query("CREATE agent_event CONTENT $content", {"content": content})
-    except Exception as err:  # noqa: BLE001
+            value = event.get(key)
+            if value is not None:
+                content[key] = value
+        await execute(db, "CREATE agent_event CONTENT $content", {"content": content})
+    except Exception as err:
         log.error("[agent_event] emit failed: %s", err)
 
 
