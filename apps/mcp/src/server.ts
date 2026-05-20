@@ -3,6 +3,7 @@ import { registerCapture } from './tools/capture'
 import { registerChunkMarkdown } from './tools/chunk-markdown'
 import { registerCommitClarify } from './tools/commit-clarify'
 import { registerEmbedText } from './tools/embed-text'
+import { registerFindRelated } from './tools/find-related'
 import { registerGenerateReport } from './tools/generate-report'
 import { registerGetRaw } from './tools/get-raw'
 import { registerIndexBlock } from './tools/index-block'
@@ -26,6 +27,7 @@ export function createServer(): McpServer {
   registerEmbedText(server)
   registerIndexBlock(server)
   registerVectorSearch(server)
+  registerFindRelated(server)
   registerUpdateNoteState(server)
   registerListMits(server)
   registerListByType(server)

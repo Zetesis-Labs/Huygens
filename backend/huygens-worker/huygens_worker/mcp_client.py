@@ -16,8 +16,8 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.shared.exceptions import McpError
 
-from .clarify import Decomposition
 from .errors import HuygensError, huygens_error_from_mcp, huygens_error_from_structured
+from .schemas import Decomposition
 from .settings import settings
 
 log = logging.getLogger(__name__)
@@ -43,17 +43,26 @@ def _decomposition_to_payload(decomposition: Decomposition) -> dict[str, Any]:
         if note.mit_for is not None:
             entry["mit_for"] = note.mit_for
         notes.append(entry)
-    return {"notes": notes, "external_refs": []}
+    external_refs = [
+        {
+            "from_note_index": ref.from_note_index,
+            "kind": ref.kind,
+            "to_external_id": ref.to_external_id,
+        }
+        for ref in decomposition.external_refs
+    ]
+    return {"notes": notes, "external_refs": external_refs}
 
 
-def _extract_json_block(text_blocks: list[str]) -> dict[str, Any]:
-    """commit_clarify returns two text blocks: a human summary and a
-    `\\n[raw JSON]\\n{...}` payload. We parse the JSON out of the latter."""
+def _extract_json_block(text_blocks: list[str]) -> Any:
+    """MCP tools include a trailing `\\n[raw JSON]\\n…` block as the
+    machine-readable payload. Returns whatever was JSON-parsed there —
+    dict for commit_clarify/index_block, list for find_related."""
     for block in text_blocks:
         if "[raw JSON]" in block:
             _, _, body = block.partition("[raw JSON]")
             return json.loads(body.strip())
-    raise RuntimeError(f"MCP commit_clarify: no [raw JSON] block in response: {text_blocks!r}")
+    raise RuntimeError(f"MCP tool: no [raw JSON] block in response: {text_blocks!r}")
 
 
 async def commit_clarify_via_mcp(
@@ -85,6 +94,24 @@ async def index_block_via_mcp(block_ids: list[str]) -> dict[str, Any]:
     if not block_ids:
         return {"indexed": [], "dimensions": 0, "input_tokens": 0}
     return await _call_mcp_tool("index_block", {"block_ids": block_ids})
+
+
+async def find_related_via_mcp(
+    query: str, *, k: int = 5, threshold: float = 0.5
+) -> list[dict[str, Any]]:
+    """Pre-fetch RAG: retrieve existing notes related to a concept.
+
+    Returns an empty list (not an error) when the corpus has no matches
+    above threshold — the clarify prompt treats that as "this raw
+    introduces new ideas".
+    """
+    result = await _call_mcp_tool(
+        "find_related", {"query": query, "k": k, "threshold": threshold}
+    )
+    # find_related's [raw JSON] block is the hits list, not an object.
+    if isinstance(result, list):
+        return result
+    return []
 
 
 async def _call_mcp_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
