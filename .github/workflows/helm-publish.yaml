@@ -1,0 +1,77 @@
+name: Build & Publish Helm Chart
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Chart version override (e.g. 0.2.0). Leave empty to use Chart.yaml version."
+        required: false
+      app-version:
+        description: "App version to set in Chart.yaml (e.g. 0.4.1). Leave empty to keep current."
+        required: false
+  workflow_call:
+    inputs:
+      version:
+        required: false
+        type: string
+      app-version:
+        required: false
+        type: string
+    secrets:
+      HARBOR_USERNAME:
+        required: true
+      HARBOR_PASSWORD:
+        required: true
+
+env:
+  REGISTRY: gauss.nexolabs.dev
+  CHART_PATH: helm/huygens
+  OCI_REPO: oci://gauss.nexolabs.dev/huygens
+
+jobs:
+  publish:
+    name: Package & Push Helm Chart
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+
+      - name: Override chart version (if provided)
+        if: ${{ inputs.version != '' }}
+        run: |
+          sed -i "s/^version:.*/version: ${{ inputs.version }}/" ${{ env.CHART_PATH }}/Chart.yaml
+
+      - name: Override appVersion (if provided)
+        if: ${{ inputs.app-version != '' }}
+        run: |
+          sed -i "s/^appVersion:.*/appVersion: \"${{ inputs.app-version }}\"/" ${{ env.CHART_PATH }}/Chart.yaml
+
+      - name: Resolve chart version
+        id: version
+        run: |
+          VERSION=$(grep '^version:' ${{ env.CHART_PATH }}/Chart.yaml | awk '{print $2}')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Chart version: $VERSION"
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Lint chart
+        run: helm lint ${{ env.CHART_PATH }}
+
+      - name: Package chart
+        run: helm package ${{ env.CHART_PATH }} --destination /tmp/helm-packages
+
+      - name: Push chart to Harbor
+        run: |
+          helm push /tmp/helm-packages/huygens-${{ steps.version.outputs.version }}.tgz ${{ env.OCI_REPO }}

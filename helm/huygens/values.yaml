@@ -1,0 +1,94 @@
+# Default values for huygens.
+# Override per environment (staging, prod) at deploy time.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  registry: gauss.nexolabs.dev
+  repository: huygens
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+mcp:
+  enabled: true
+  image:
+    name: mcp
+    # Defaults to .Chart.AppVersion. Override per-deploy via env.json.
+    tag: ""
+  replicas: 1
+  port: 3030
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 3030
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts: []
+    tls: []
+
+worker:
+  enabled: true
+  image:
+    name: worker
+    tag: ""
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  pollIntervalSeconds: 2
+  clarifyModel: gpt-4o-mini
+
+surrealdb:
+  # When enabled the chart deploys SurrealDB as a StatefulSet. Set to false to
+  # point at an external SurrealDB via `env.surrealUrl`.
+  enabled: true
+  image:
+    repository: surrealdb/surrealdb
+    tag: latest
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+env:
+  # SurrealDB connection (overridden by the chart if surrealdb.enabled=true)
+  surrealUrl: ""
+  surrealNs: huygens
+  surrealDb: main
+  surrealUser: root
+  # Plaintext password fallback for dev only. Production uses `existingSecret`.
+  surrealPass: ""
+
+# Reference an existing Kubernetes Secret holding sensitive env vars
+# (OPENAI_API_KEY, DEEPINFRA_API_KEY, SURREAL_PASS). The Secret is expected
+# to be provisioned externally — e.g. via ExternalSecretsOperator from Infisical.
+existingSecret: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podSecurityContext: {}
+securityContext: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

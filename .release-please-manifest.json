@@ -1,0 +1,5 @@
+{
+  "apps/mcp": "0.4.0",
+  "backend/huygens-worker": "0.1.0",
+  "helm/huygens": "0.1.0"
+}

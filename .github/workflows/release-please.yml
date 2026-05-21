@@ -1,0 +1,78 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      mcp_released: ${{ steps.release.outputs['apps/mcp--release_created'] }}
+      mcp_version: ${{ steps.release.outputs['apps/mcp--version'] }}
+      mcp_tag: ${{ steps.release.outputs['apps/mcp--tag_name'] }}
+      worker_released: ${{ steps.release.outputs['backend/huygens-worker--release_created'] }}
+      worker_version: ${{ steps.release.outputs['backend/huygens-worker--version'] }}
+      worker_tag: ${{ steps.release.outputs['backend/huygens-worker--tag_name'] }}
+      helm_released: ${{ steps.release.outputs['helm/huygens--release_created'] }}
+      helm_version: ${{ steps.release.outputs['helm/huygens--version'] }}
+      helm_tag: ${{ steps.release.outputs['helm/huygens--tag_name'] }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish-mcp:
+    needs: release-please
+    if: needs.release-please.outputs.mcp_released == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/docker-publish-mcp.yaml
+    with:
+      version: ${{ needs.release-please.outputs.mcp_version }}
+    secrets:
+      HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+      HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+
+  publish-worker:
+    needs: release-please
+    if: needs.release-please.outputs.worker_released == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/docker-publish-worker.yaml
+    with:
+      version: ${{ needs.release-please.outputs.worker_version }}
+    secrets:
+      HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+      HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+
+  publish-helm:
+    needs: [release-please, publish-mcp, publish-worker]
+    if: |
+      always() &&
+      needs.release-please.outputs.helm_released == 'true' &&
+      needs.publish-mcp.result != 'failure' &&
+      needs.publish-worker.result != 'failure'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/helm-publish.yaml
+    with:
+      version: ${{ needs.release-please.outputs.helm_version }}
+      # If a component was released alongside the chart, ship the chart with that
+      # appVersion. MCP takes precedence (it's the "primary" app). If neither
+      # released we keep whatever Chart.yaml already has.
+      app-version: ${{ needs.release-please.outputs.mcp_version || needs.release-please.outputs.worker_version || '' }}
+    secrets:
+      HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+      HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}

@@ -22,6 +22,45 @@ Filosofía operativa: **Zen to Done (ZTD)** — capturar, procesar, planificar (
 - **Conventional commits** en inglés
 - **Sin git sin instrucción explícita** — no commits, push, branch, tag a menos que el usuario lo pida
 
+## Release pipeline
+
+Conventional commits → release-please abre/actualiza un PR de release agregando los bumps. Merge del PR = tags + GH Releases + build de imágenes Docker (Harbor) + publicación del Helm chart como OCI artifact.
+
+### Componentes versionables
+
+| Scope        | Path                       | Tag             | Artefacto |
+|--------------|----------------------------|-----------------|-----------|
+| `mcp`        | `apps/mcp`                 | `mcp-v*`        | `gauss.nexolabs.dev/huygens/mcp:v*` |
+| `worker`     | `backend/huygens-worker`   | `worker-v*`     | `gauss.nexolabs.dev/huygens/worker:v*` |
+| `helm`       | `helm/huygens`             | `helm-v*`       | `oci://gauss.nexolabs.dev/huygens/huygens:*` |
+
+### Reglas de bump
+
+- `feat(scope): ...` → minor
+- `fix(scope): ...` → patch
+- `feat(scope)!: ...` o footer `BREAKING CHANGE:` → major
+- `chore:`, `docs:`, `style:`, `refactor:`, `test:`, `ci:` (sin scope o con scope no versionable) → sin bump
+
+Commits sin scope o con scope desconocido NO disparan release de ningún componente.
+
+### Cambios multi-componente
+
+Commits separados (uno por scope) O un commit con bullets en el body que release-please parsea:
+
+```
+feat: add lens cognition
+
+* feat(mcp): expose lens_score tool
+* feat(worker): persist lens predictions on commit
+```
+
+### Secrets requeridos en GitHub Actions
+
+- `HARBOR_USERNAME`
+- `HARBOR_PASSWORD`
+
+Si la org `Zetesis-Labs` ya los tiene a nivel organization (vienen de ZetesisPortal), Huygens los hereda automáticamente.
+
 ## Devcontainer
 
 Tres servicios: `app` (Bun), `surrealdb` (BBDD principal), `surrealdb-init` (one-shot, chown del volumen para que SurrealDB corra rootless como uid 65532). A futuro: `huygens-worker` (Python + Agno) para procesamiento autónomo del inbox (ver ADR-0018).
