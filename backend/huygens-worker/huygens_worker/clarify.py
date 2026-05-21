@@ -25,7 +25,7 @@ from agno.agent import Agent
 from agno.models.openai import OpenAIChat
 
 from .errors import ConfigMissingError
-from .mcp_client import find_related_via_mcp
+from .mcp_client import find_related_via_mcp, get_prompt_via_mcp
 from .schemas import (
     BlockProposal,
     Decomposition,
@@ -47,58 +47,24 @@ __all__ = [
 log = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = """You are the **clarify agent** of Huygens — a personal memory and knowledge system for Rubén García.
+CLARIFY_PROMPT_NAME = "clarify-system"
 
-Your job: turn one raw capture (transcript, note, voice memo, free text) into a structured DECOMPOSITION ready to commit.
+_system_prompt_cache: str | None = None
 
-CONTEXT — Huygens runs Zen To Done (ZTD): the user captures everything raw into an inbox; you process those raws into typed notes that flow through states (CLARIFIED → ACTIVE → DONE).
 
-NOTE TYPES — pick the most specific one:
-- task        — concrete actionable item
-- project     — outcome with multiple tasks
-- area        — ongoing area of responsibility
-- routine     — recurring habit
-- note        — free-form note / observation
-- report      — narrative report
-- person      — a person (use sparingly, only if the raw is really about a person)
-- reference   — external material (URL, book, paper)
-- objetivo    — strategic goal with optional target date
-- idea        — generative / unfinished concept
+async def _system_prompt() -> str:
+    """Fetch the clarify system prompt from the MCP once per process.
 
-TRANSFORMATION — declare how each note relates to the raw:
-- verbatim   — the block is literally what the user said
-- extracted  — directly stated in the raw
-- summarized — condensed from the raw
-- inferred   — your interpretation, NOT explicitly stated
-
-WORKFLOW:
-
-You are given the raw text PLUS a `RELATED CANDIDATES` block — existing notes the system pre-retrieved that may be relevant. For each candidate, decide:
-
-- score >= 0.65 AND the candidate is genuinely the same thing the raw is about → link the matching new note to it via `external_refs` (`mentions` for "relates to", `supports` for "reinforces", `about` if your new note is *about* the existing one).
-- score < 0.65, or the candidate covers a different scope → ignore.
-
-Then produce the decomposition:
-- `notes` = new notes you're creating (deduped via the rule above — if a candidate already covers it, link instead of duplicate).
-- `external_refs` = edges from those new notes to candidate ids you decided to link.
-- `internal_refs` = edges between notes within `notes` (NOT to existing notes).
-- `reasoning_summary` = one short paragraph: what candidates were relevant, what got linked vs. created.
-
-If `RELATED CANDIDATES` is empty, this raw introduces new ideas — proceed without external_refs.
-
-PRINCIPLES:
-1. **Plural by default.** A raw usually contains 2-5 distinct ideas. Split aggressively but don't fragment a single coherent thought.
-2. **Don't duplicate.** If find_related surfaces the same idea, link instead of creating.
-3. **Title is action-oriented for tasks**, descriptive for notes/ideas. Match the user's language (Spanish or English) from the raw.
-4. **mit_for ONLY** if the raw mentions a specific day or deadline.
-   - "tomorrow", "today at X" → the absolute ISO date.
-   - "before Friday" / "antes del viernes" → set mit_for = that Friday (the **deadline**).
-   - "next Monday" → that Monday.
-   - Never pick a date in the past. If your computation lands before today, you've miscounted — recompute.
-5. **transformation = inferred is fine** for ideas you're surfacing, but mark it as such.
-
-OUTPUT: a Decomposition Pydantic instance with notes[], external_refs[], reasoning_summary.
-"""
+    Single source of truth lives in apps/mcp/src/prompts/clarify-system.md —
+    served as an MCP prompt that any consumer (this worker, the conversational
+    agent in Claude Code) loads. Cached so we don't pay an HTTP round-trip
+    per clarify; restart the worker to pick up prompt edits.
+    """
+    global _system_prompt_cache
+    if _system_prompt_cache is None:
+        _system_prompt_cache = await get_prompt_via_mcp(CLARIFY_PROMPT_NAME)
+        log.info("clarify: loaded system prompt %r (%d chars)", CLARIFY_PROMPT_NAME, len(_system_prompt_cache))
+    return _system_prompt_cache
 
 
 def _format_candidates(hits: list[dict[str, Any]]) -> str:
@@ -119,6 +85,7 @@ async def clarify(raw_content: str, source_kind: str) -> Decomposition:
     if not settings.openai_api_key:
         raise ConfigMissingError("OPENAI_API_KEY env var not set", {"name": "OPENAI_API_KEY"})
 
+    system_prompt = await _system_prompt()
     candidates = await find_related_via_mcp(raw_content, k=5, threshold=0.5)
     log.info("clarify: pre-fetched %d related candidate(s)", len(candidates))
 
@@ -134,7 +101,7 @@ async def clarify(raw_content: str, source_kind: str) -> Decomposition:
 
     agent = Agent(
         model=OpenAIChat(id=settings.clarify_model, api_key=settings.openai_api_key),
-        instructions=SYSTEM_PROMPT,
+        instructions=system_prompt,
         output_schema=Decomposition,
         markdown=False,
         telemetry=False,

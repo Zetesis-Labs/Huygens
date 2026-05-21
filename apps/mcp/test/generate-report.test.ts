@@ -183,9 +183,7 @@ describe('generateReportImpl', () => {
     expect(result.report_id).toBeUndefined()
     expect(result.report_block_ids).toBeUndefined()
 
-    const [reportNotes] = await ctx.db.query<[{ id: string }[]]>(
-      "SELECT id FROM note WHERE type = note_type:report"
-    )
+    const [reportNotes] = await ctx.db.query<[{ id: string }[]]>('SELECT id FROM note WHERE type = note_type:report')
     expect(reportNotes).toEqual([])
   })
 

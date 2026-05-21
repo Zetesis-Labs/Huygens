@@ -114,6 +114,39 @@ async def find_related_via_mcp(
     return []
 
 
+async def get_prompt_via_mcp(name: str) -> str:
+    """Fetch a canonical prompt the MCP advertises (e.g. 'clarify-system').
+
+    The prompt text is the single source of truth shared by the autonomous
+    worker and any conversational client. The MCP returns a list of messages;
+    we concatenate the text content of the user-role messages (the LORE +
+    workflow live there) and use the result as the agent's system prompt.
+    """
+    try:
+        async with (
+            streamablehttp_client(settings.mcp_url) as (read, write, _),
+            ClientSession(read, write) as session,
+        ):
+            await session.initialize()
+            result = await session.get_prompt(name)
+            chunks: list[str] = []
+            for message in result.messages:
+                content = message.content
+                text = getattr(content, "text", None)
+                if isinstance(text, str):
+                    chunks.append(text)
+            if not chunks:
+                raise RuntimeError(f"MCP prompt {name!r}: no text content in messages")
+            return "\n\n".join(chunks)
+    except BaseExceptionGroup as eg:
+        for leaf in _flatten_exception_group(eg):
+            if isinstance(leaf, McpError):
+                raise huygens_error_from_mcp(leaf) from eg
+            if isinstance(leaf, HuygensError):
+                raise leaf from eg
+        raise
+
+
 async def _call_mcp_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     try:
         async with (
