@@ -94,7 +94,7 @@ flowchart TB
     user -->|"genera un report"| report["Síntesis"]
 
     capture -->|"capture(text)"| inbox[(inbox)]
-    morning -->|"list_mits + list_inbox<br/>+ discutir + update_state"| graph[(grafo)]
+    morning -->|"list_mits + list_inbox<br/>+ discutir + update_state"| kg[(grafo)]
     weekly -->|"inventory + triage<br/>+ generate_report + review note"| graph
     search -->|"vector_search + find_related"| graph
     report -->|"generate_report"| graph
