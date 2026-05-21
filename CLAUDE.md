@@ -16,8 +16,8 @@ El detalle completo está en [`docs/MODEL.md`](./docs/MODEL.md). Aquí solo lo e
 ## Las tres fases del flujo
 
 1. **Captura** — agente vuelca conversación → `raw_capture` inmutable
-2. **Síntesis** — agente llama `generate_report` → nuevo `note(type=report)` con `derived_from` al raw y `based_on` a informes cercanos
-3. **Topologización** — worker detecta informe sin topologizar → traduce su narrativa a mutaciones del grafo (crea/actualiza tasks, projects, ideas, etc.) → emite `affects` edges
+2. **Síntesis** — agente llama `synthesize` → N **blocks narrativos atómicos** (`block_kind='narrative'`) con `derived_from` al raw, `about` a sujetos mencionados, `based_on` a blocks cercanos
+3. **Topologización** — worker detecta blocks narrativos no topologizados → traduce cada uno a mutaciones del grafo (crea/actualiza tasks, projects, ideas, etc.) → emite `affects` edges
 
 Detalle: [`docs/MODEL.md`](./docs/MODEL.md).
 
@@ -123,33 +123,36 @@ Modelo en dos planos (ver [`docs/MODEL.md`](./docs/MODEL.md) para el detalle):
 1. **Plano 1 — `raw_capture`**: lo que el usuario dijo literalmente. Evidencia inmutable. El verdadero inbox.
 2. **Plano 2 — `note` + `block` + edges**: interpretación del agente. Topología procesada.
 
-Tablas principales (`apps/mcp/surreal/schema.surql`):
+Tablas principales (objetivo per `docs/MODEL.md`, schema actual puede no reflejar todavía):
 
 | Tabla | Rol |
 |---|---|
-| `raw_capture` | Evidencia cruda. `content`, `source_kind`, `source_ref`, `processed_at` (NONE = pendiente). El "inbox real" |
-| `note` | Contenedor procesado. `title`, `type` opcional, `state` (ciclo ZTD), `block_order`, `metadata`, `mit_for` (Most Important Task) |
-| `block` | Unidad direccionable + vectorizable. `note` (ref), `content` (markdown), `embedding` (1024 dims). Vector HNSW index aquí |
-| `note_type` | Árbol editable de tipos (10 seedeados). Slug único, `parent` opcional, `featured_fields` |
+| `raw_capture` | Evidencia cruda inmutable. `content`, `source_kind`, `source_ref`, `created_at` |
+| `note` | Entidad topológica tipada. `title`, `type`, `state` (CLARIFIED única usada), `block_order`, `metadata` |
+| `block` | Átomo direccionable. `content`, `embedding`, `block_kind` ('descriptive'\|'narrative'), `note` opcional, + fields narrativos (`about`, `based_on`, `derived_from`, `topologized_at`) |
+| `note_type` | Taxonomía (8 seedeados). Slug único |
 | `agent_event` | Trazabilidad de decisiones del agente (ver ADR-0019) |
 
-Edges schemafull (`TYPE RELATION FROM X TO Y`). Los semánticos admiten `note | block` en ambas puntas:
+Edges schemafull (`TYPE RELATION FROM X TO Y`). Semánticos:
 
-- `part_of` — jerarquía macro (Objetivo→Project→Task). Solo `note → note`
-- `blocked_by` — `note → note | block` (con `since`, `reason`)
+- `part_of` — jerarquía (Objetivo→Project→Task). `note → note`
+- `blocked_by` — dependencia. `note → note | block`
 - `mentions`, `supports`, `refutes` — `note | block → note | block`
-- `about` — `note → note | block` (Report cubre estos elementos)
 - `authored_by` — `note | block → note` (Persons son notes con type=person)
-- `derived_from` — `note | block → raw_capture` (con `transformation`: verbatim/extracted/summarized/inferred)
+- `about` — `block(narrative) → note` (multi, los sujetos que cubre un informe-block)
+- `based_on` — `block(narrative) → block(narrative)` (cadena narrativa)
+- `affects` — `block(narrative) → note` (mutaciones del worker, con `action`, `summary`)
+- `derived_from` — `block | note → raw_capture` (provenance, con `transformation`)
 
 Validaciones del motor:
-- `state: string` con `ASSERT $value INSIDE ['CLARIFIED','ACTIVE','WAITING','SOMEDAY','DONE','ARCHIVED']`
+- `state: string` con `ASSERT $value INSIDE ['CLARIFIED','ACTIVE','WAITING','SOMEDAY','DONE','ARCHIVED']` (solo CLARIFIED driven)
 - `source_kind` en `raw_capture` con `ASSERT $value INSIDE ['chat','voice','manual','import','agent-self']`
+- `block_kind` con `ASSERT $value INSIDE ['descriptive','narrative']`
 - Todos los edges con `FROM/TO` y `UNIQUE(in, out)` enforced
 
-**NoteTypes seedeados** (10): `task`, `project`, `area`, `routine`, `note`, `report`, `person`, `reference`, `objetivo`, `idea`. Detalle de cuándo usar cada uno: [`docs/MODEL.md`](./docs/MODEL.md).
+**NoteTypes seedeados** (8): `task`, `project`, `area`, `routine`, `person`, `reference`, `objetivo`, `idea`. Eliminados respecto a versiones previas: `report` (los informes son blocks narrativos) y `note` (genérico, solapaba con block narrativo). Detalle: [`docs/MODEL.md`](./docs/MODEL.md).
 
-**Captura ≠ Note.** Una captura cruda crea un `raw_capture`, no una `note`. Las notes existen porque el agente ya procesó (clarify) un raw — nacen con `state = 'CLARIFIED'` por defecto.
+**Captura ≠ Note.** Una captura cruda crea un `raw_capture`, no una `note`. Las notes se crean (o actualizan) cuando el worker topologiza un block narrativo, no antes.
 
 **Embeddings**: DeepInfra hospeda `BAAI/bge-m3` (1024 dims, contexto 8192 tokens, multilingüe). API key via `DEEPINFRA_API_KEY`. Los campos `block.embedding_model` guarda `'BAAI/bge-m3'`; `block.dimensions` guarda `1024`.
 
