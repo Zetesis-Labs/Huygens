@@ -11,7 +11,7 @@ Huygens nació apoyado en **GTD** + **Pilares Estratégicos** (`PATHOS_SOMA`, `E
 
 1. **GTD canónico es operacionalmente pesado**. Rubén se autodefine como "creativo y caótico, débil en operativa". Horizontes de foco y weekly reviews exhaustivas piden más disciplina de la que está dispuesto a sostener.
 
-2. **Los Pilares estaban infrautilizados**. Conceptualmente ricos (ver [docs/research/01-vision/strategic-pillars.md](../research/01-vision/strategic-pillars.md)) pero implementados solo como `array<string>` por nota. Las funciones que justificarían su existencia — eje narrativo de reports, brújula de balance, slice estratégico — **no estaban construidas**. Mientras tanto, el agente cargaba con asignarlos en cada captura: coste cognitivo real, valor dudoso.
+2. **Los Pilares estaban infrautilizados**. Conceptualmente ricos pero implementados solo como `array<string>` por nota. Las funciones que justificarían su existencia — eje narrativo de reports, brújula de balance, slice estratégico — **no estaban construidas**. Mientras tanto, el agente cargaba con asignarlos en cada captura: coste cognitivo real, valor dudoso.
 
 **Zen to Done** (Leo Babauta, 2007) es una simplificación de GTD orientada a hábitos: capturar todo inmediatamente, procesar la inbox a diario, planificar con **MITs** (1-3 por día) y **rocas** semanales, ejecutar con foco. Operativa real, no ontología.
 
@@ -23,7 +23,6 @@ Cambios concretos:
 
 - **`pillars: array<string>`** se elimina de `note` y `block`. El agente deja de razonar sobre ellos.
 - La función "dimensión estratégica" pasa a **Objetivos** (ver ADR-0022): notas de tipo `objetivo` con fecha opcional, agrupables por temática y navegables vía edges.
-- La filosofía griega permanece en [`docs/research/01-vision/strategic-pillars.md`](../research/01-vision/strategic-pillars.md) como **archivo histórico** — testimonio del pensamiento desde el que el proyecto nació.
 
 **Por qué dropear y no diferir**: dejar el campo opcional ignorado introduce ruido en el schema y deja al agente con un campo "a ignorar" en el prompt. El alivio cognitivo solo se materializa si se elimina. Si los Pilares reaparecen, hay una **Opción C** documentada abajo.
 
@@ -47,7 +46,7 @@ Cambios concretos:
   - Pérdida temporal de las cuatro funciones de Pilares descritas arriba.
   - Recuperarlos en el futuro requiere migración: re-clasificar Objetivos existentes con `pillar`.
 - **Neutrales**:
-  - [`docs/research/01-vision/strategic-pillars.md`](../research/01-vision/strategic-pillars.md) queda como pieza filosófica histórica, aunque no esté implementada.
+  - La filosofía griega de los Pilares queda como pieza histórica del pensamiento desde el que el proyecto nació, aunque no esté implementada.
 
 ## Future evolution: Opción C (sketch para el Rubén futuro)
 
@@ -82,13 +81,9 @@ Pillars como **entidades navegables**, edge únicamente desde `note` de tipo `ob
 - [ADR-0010](./0010-pillars-and-state-as-enums.md) — esta decisión **supersede la parte de Pilares**; la parte de `NoteState` enum (validado con `ASSERT`) sigue válida
 - [ADR-0022](./0022-objetivo-and-idea-types.md) — los Objetivos absorben parte de la función de Pilares
 - [ADR-0023](./0023-mit-field.md) — otra pieza del paquete ZTD (campo MIT en `note`)
-- [ADR-0012](./0012-capture-is-uncategorized.md) — sigue válido, refuerza la simplificación de la captura
-- [docs/research/01-vision/strategic-pillars.md](../research/01-vision/strategic-pillars.md) — pieza histórica preservada como ensayo conceptual
 
 ## Notes
 
-Preservar la filosofía griega en `docs/research` no es código muerto: es la motivación intelectual desde la que el proyecto nació, y releerla en el futuro tiene valor incluso si la implementación no la incorpora.
-
-ZTD se adopta como **filosofía, no como dogma**. Las prácticas (MITs, foco diario, rocas semanales, monotarea) viven en `docs/agents/huygens-domain.md` como heurísticas del agente. Si con uso real Rubén necesita un eje estratégico permanente, la Opción C está sketcheada arriba — ~50 líneas de schema y cuatro registros de seed.
+ZTD se adopta como **filosofía, no como dogma**. Las prácticas (MITs, foco diario, rocas semanales, monotarea) viven como heurísticas del agente. Si con uso real Rubén necesita un eje estratégico permanente, la Opción C está sketcheada arriba — ~50 líneas de schema y cuatro registros de seed.
 
 El pivote es consciente: se cierra una puerta filosófica para abrir una puerta operativa. La puerta cerrada queda documentada, no enterrada.

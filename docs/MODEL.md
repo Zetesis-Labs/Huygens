@@ -1,6 +1,6 @@
 # Huygens — Modelo (v2)
 
-> Documento canónico. Reemplaza la información conceptual de `docs/user-cases.md`, `docs/agents/huygens-domain.md` y otros docs previos. Si algún otro doc contradice este, **este gana** hasta que se reescriba el otro.
+> Documento canónico. Reemplaza toda la documentación conceptual anterior, que ha sido eliminada en una pasada de limpieza. Si algún otro doc contradice este, **este gana** hasta que se reescriba el otro.
 
 ---
 
@@ -67,6 +67,7 @@ Hay tres fases claramente diferenciadas. Las dos primeras son **deliberadas** (l
 | **Tú** | Conversar. Decidir cuándo generar un informe. Aprobar/desaprobar resultados. | Editar SurrealQL a mano. Mantener consistencia del grafo. |
 | **Agente conversacional** (Claude Code) | Volcar lo conversado al raw. Generar informes a petición tuya con contexto de informes cercanos. Servirte de interfaz de consulta al grafo. | Modificar el grafo directamente sin pasar por un informe. Decidir solo qué entra al grafo. |
 | **huygens-mcp** | Exponer tools y resources. Persistir raws/notas/informes/edges. Hacer la búsqueda vectorial. Llamar al LLM para `generate_report`. | Tomar decisiones de dominio. Es plomería. |
+| **LLM** (OpenAI) | Sintetizar narrativa cuando el MCP llama `generate_report`. Producir la lista de mutaciones cuando el worker se lo pide. | Persistir nada. Decidir cuándo se le invoca — siempre lo dispara MCP o worker. |
 | **huygens-worker** | Leer informes no topologizados, traducir su contenido semántico a mutaciones del grafo, aplicarlas. **Es un topologizador, nada más.** | Clarificar raws directamente. Generar informes. Decidir cadencia. Crear notas que no vengan de un informe. |
 | **SurrealDB** | Persistencia, vector index, audit. | Lógica de dominio. |
 
@@ -194,7 +195,7 @@ note  --about-->        note          un informe que cubre nodos (también lo us
 note  --authored_by-->  note(person)  autoría
 ```
 
-El worker es quien tiene la libertad creativa para inventar estas conexiones leyendo la narrativa. Es donde más LLM hay implicado en su trabajo.
+El worker es quien decide qué edges semánticos crear entre nodos al topologizar un informe — proponiendo cómo se relacionan las cosas que el informe menciona. Esto es decisión sobre estructura relacional, no sobre tipos: el informe ya fija qué se está creando y de qué tipo; el worker solo elabora las conexiones. Es la parte de su trabajo donde más LLM interviene.
 
 ---
 
@@ -343,6 +344,5 @@ Para que sepas qué hay que tocar:
 4. Sustituir `clarify-system` prompt por `topologize-system`.
 5. Reescribir `clarify-spec.md` LORE a `topologize-spec.md`.
 6. Actualizar `CLAUDE.md` para apuntar a este doc como canónico.
-7. Marcar `docs/user-cases.md` y `docs/agents/huygens-domain.md` como obsoletos (o reescribir).
 
 Ninguno está hecho. Este doc es solo el modelo; la implementación es la siguiente conversación.

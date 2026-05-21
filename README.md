@@ -2,6 +2,10 @@
 
 Monorepo TypeScript con Bun. Contiene un servidor MCP que sirve de memoria estructurada para un agente personal, persistida en **SurrealDB** (grafo + documento + vector search en un mismo motor).
 
+## Modelo
+
+El modelo conceptual canónico vive en [`docs/MODEL.md`](./docs/MODEL.md). En una frase: hablas con un agente, eso queda como `raw_capture`, lo sintetizas en un **informe** (`note(type=report)`), y un worker pequeño aplica lo que dice ese informe al grafo.
+
 ## Stack
 
 - **Bun** 1.x — runtime y package manager
@@ -11,10 +15,6 @@ Monorepo TypeScript con Bun. Contiene un servidor MCP que sirve de memoria estru
 - **MCP** (`@modelcontextprotocol/sdk`) con transporte Streamable HTTP
 - **Embeddings**: `BAAI/bge-m3` vía DeepInfra (1024 dims, contexto 8192, multilingüe)
 - **Biome** para lint y format
-
-## Modelo de datos: Note + Block
-
-Cada `note` es composición ordenada de `block`s (markdown auto-contenido). La topología puede apuntar a notes o a blocks indistintamente — permite Zettelkasten-trails y referencias granulares sin pagar la complejidad de un block model atómico (Notion/Anytype). Detalle en `CLAUDE.md`.
 
 ## Estructura
 
@@ -26,7 +26,11 @@ Cada `note` es composición ordenada de `block`s (markdown auto-contenido). La t
 │       ├── surreal/       # schema.surql + seed.surql
 │       ├── scripts/       # apply-schema.ts, smoke.ts
 │       └── src/           # entrypoint + cliente SurrealDB + server MCP
-├── docs/research/         # Investigación y diseño (40+ docs)
+├── backend/
+│   └── huygens-worker/    # Worker Python (legacy clarify; objetivo: topologizador)
+├── docs/
+│   ├── MODEL.md           # Modelo canónico
+│   └── research/          # Investigación y diseño
 ├── biome.json
 ├── tsconfig.base.json
 └── package.json           # workspaces: ["apps/*"]
@@ -67,25 +71,3 @@ El servicio `surrealdb` arranca con backend **RocksDB** persistente y expone:
 - Live queries: subscripciones reactivas vía WebSocket
 
 Conexión desde el app: `ws://surrealdb:8000/rpc` (variables `SURREAL_URL`, `SURREAL_NS`, `SURREAL_DB`, `SURREAL_USER`, `SURREAL_PASS` ya configuradas en `docker-compose.yml`).
-
-## Arquitectura MCP (resumen)
-
-Tres capas, hermanas:
-
-```
-Agente (prompt = dominio GTD)
-  ├─ surrealmcp oficial  →  CRUD + RELATE genérico
-  └─ Huygens MCP (este repo)  →  embed, chunk, vector_search, generate_report
-       └─ driver surrealdb JS  →  SurrealDB
-```
-
-Detalle: `docs/research/02-architecture/mcp-three-layer-architecture.md`.
-
-## Estado
-
-- Schema base + seed: ✅
-- Edges schemafull autorizados: ✅
-- Vector index HNSW preparado: ✅
-- Tools del MCP (embed, chunk, vector_search, ...): pendientes (v2 del roadmap)
-
-Roadmap detallado en `docs/research/07-roadmap/`.

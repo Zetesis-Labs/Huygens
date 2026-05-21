@@ -10,7 +10,6 @@ Lee en este orden:
 2. **[01-vision/motivation.md](./01-vision/motivation.md)** — por qué existe el proyecto (10 min)
 3. **[03-data-model/topology-as-primary.md](./03-data-model/topology-as-primary.md)** — el principio rector del diseño (15 min)
 4. **[02-architecture/mcp-three-layer-architecture.md](./02-architecture/mcp-three-layer-architecture.md)** — cómo se compone el sistema (15 min)
-5. **[07-roadmap/v1-current.md](./07-roadmap/v1-current.md)** — qué hay hoy y qué falta para cerrar v1 (10 min)
 
 Total: ~1 hora para tener el mapa completo.
 
@@ -32,7 +31,6 @@ Total: ~1 hora para tener el mapa completo.
 
 ### 01 — Visión y motivación
 - [motivation.md](./01-vision/motivation.md) — Por qué existe Huygens
-- [strategic-pillars.md](./01-vision/strategic-pillars.md) — Los 4 pilares (Pathos&Soma, Éthos, Telos, Sophia)
 - [user-context.md](./01-vision/user-context.md) — Quién es Rubén y cómo pensar el proyecto para él
 
 ### 02 — Arquitectura
@@ -43,8 +41,6 @@ Total: ~1 hora para tener el mapa completo.
 
 ### 03 — Modelo de datos
 - [topology-as-primary.md](./03-data-model/topology-as-primary.md) — El insight fundacional: la topología antes que el payload
-- [note-model.md](./03-data-model/note-model.md) — Anatomía completa de Note
-- [pillars-and-states.md](./03-data-model/pillars-and-states.md) — Los dos enums centrales
 - [relations-and-edges.md](./03-data-model/relations-and-edges.md) — Edges tipados, schemafull, reificación
 - [self-critique.md](./03-data-model/self-critique.md) — Trade-offs y limitaciones reconocidas
 
@@ -81,8 +77,6 @@ Total: ~1 hora para tener el mapa completo.
 - [philosophical-resonances.md](./06-theory/philosophical-resonances.md) — Tradiciones filosóficas que iluminan el proyecto
 
 ### 07 — Roadmap
-- [v1-current.md](./07-roadmap/v1-current.md) — Estado actual (commit `707fadb`) y qué falta para cerrar v1
-- [v2-near-term.md](./07-roadmap/v2-near-term.md) — Domain tools, reports, suggestion-mode schema evolution
 - [v3-far-future.md](./07-roadmap/v3-far-future.md) — Living ontology, TDA, tensor networks, hipergrafos, distribución embebida
 
 ## Lecturas temáticas verticales

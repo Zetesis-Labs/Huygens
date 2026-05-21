@@ -46,7 +46,6 @@ Consecuencia técnica inmediata: el campo `note.content` se elimina; la tabla `n
 ## Related
 
 - ADRs: `ADR-0008` (topología primaria), `ADR-0011` (edges admiten `note | block`), `ADR-0015` (BGE-M3 embeddings)
-- Research: [docs/research/03-data-model/note-model.md](../research/03-data-model/note-model.md)
 - Código: `apps/mcp/surreal/schema.surql` (tabla `block`)
 
 ## Notes

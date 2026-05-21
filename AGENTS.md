@@ -4,15 +4,11 @@ Entry point para agentes que operen sobre este repositorio. Si eres Codex, un ag
 
 ## Qué es Huygens
 
-Memoria estructurada personal para Rubén — un MCP server basado en SurrealDB que sirve como capa de memoria para un agente de IA en flujo GTD. Una sola persona (Rubén) lo usa. No es multi-tenant. No es producto.
+Memoria estructurada personal para Rubén — un MCP server basado en SurrealDB que sirve como capa de memoria para un agente de IA. Una sola persona (Rubén) lo usa. No es multi-tenant. No es producto.
 
-## Lecturas obligatorias para el agente
+## Lectura obligatoria
 
-Lee estos tres documentos **al inicio de cada sesión nueva**, en este orden:
-
-1. **[`docs/agents/huygens-domain.md`](./docs/agents/huygens-domain.md)** — conocimiento del dominio (entidades, pilares, edges, flujos de captura/clarificación/report)
-2. **[`docs/agents/surrealql-patterns.md`](./docs/agents/surrealql-patterns.md)** — queries SurrealQL copy-pasteables para Huygens
-3. **[`docs/agents/conventions.md`](./docs/agents/conventions.md)** — reglas operativas obligatorias (idempotencia, trazabilidad, tono, etc.)
+**[`docs/MODEL.md`](./docs/MODEL.md)** — modelo canónico del sistema. Léelo al inicio de cada sesión nueva. Reemplaza todos los docs conceptuales anteriores.
 
 ## Mapa del repo
 
@@ -22,9 +18,10 @@ Lee estos tres documentos **al inicio de cada sesión nueva**, en este orden:
 │   ├── surreal/               ← schema.surql + seed.surql
 │   ├── src/                   ← server, cliente SurrealDB
 │   └── scripts/               ← apply-schema, smoke test
+├── backend/huygens-worker/    ← Worker Python (legacy clarify; objetivo: topologizador)
 ├── docs/
-│   ├── agents/                ← Conocimiento operativo del agente (LÉEME)
-│   └── research/              ← Investigación + diseño (40+ docs, contexto profundo)
+│   ├── MODEL.md               ← Modelo canónico (LÉEME)
+│   └── research/              ← Investigación + diseño (contexto profundo)
 ├── .devcontainer/             ← Docker Compose (app + SurrealDB + init)
 ├── CLAUDE.md                  ← Entry point específico para Claude Code
 ├── AGENTS.md                  ← Este fichero (Codex / Hermes / general)
@@ -61,14 +58,6 @@ SURREAL_USER=root
 SURREAL_PASS=root
 ```
 
-## Estado actual del proyecto
-
-- **Schema + BBDD**: implementado y aplicable (commit `c09b067` + `76a569b`)
-- **MCP server**: scaffolding vacío. No hay tools registradas todavía.
-- **Lo siguiente**: implementar las tools del Huygens MCP (`capture_inbox`, `list_inbox`, `set_state`, `add_block`, `relate`, eventualmente embedding + vector_search)
-
-Detalle del roadmap en `docs/research/07-roadmap/`.
-
 ## Para profundizar conceptualmente
 
 `docs/research/` contiene ~100k palabras de discusión de diseño organizadas temáticamente. Si quieres entender por qué se tomó alguna decisión, busca ahí. Notable:
@@ -77,7 +66,6 @@ Detalle del roadmap en `docs/research/07-roadmap/`.
 - `03-data-model/topology-as-primary.md` — el principio fundacional
 - `04-database/mongodb-pivot.md` — por qué SurrealDB y no Mongo/Neo4j/Falkor
 - `06-theory/` — fundamentos teóricos (declarative DB as ontology, hypergraphs, Wolfram, etc.)
-- `06-theory/wolfram-and-the-substrate-of-information.md` — modelo mental del proyecto
 
 No necesitas leer todo. Pero referencia desde aquí cuando una duda específica aparezca.
 

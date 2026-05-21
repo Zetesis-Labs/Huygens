@@ -79,7 +79,7 @@ metadata: {
 - `ADR-0013` (eight-seed-notetypes — superseded por este ADR)
 - `ADR-0023` (MIT field — otra pieza del paquete ZTD)
 - `ADR-0008` (topology primary — Objetivos y Projects se conectan vía edges)
-- Código: `apps/mcp/surreal/seed.surql` (añadir UPSERTs), `docs/agents/huygens-domain.md` (documentación operativa)
+- Código: `apps/mcp/surreal/seed.surql` (añadir UPSERTs)
 
 ## Notes
 

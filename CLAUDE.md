@@ -3,7 +3,7 @@
 > **Lectura obligatoria al inicio de sesión** — única:
 > [`docs/MODEL.md`](./docs/MODEL.md) — modelo canónico del sistema. Reemplaza todos los docs conceptuales anteriores.
 >
-> Este fichero (`CLAUDE.md`) contiene **convenciones del repo + comandos**. El modelo de dominio vive en `docs/MODEL.md`. Los docs antiguos en `docs/agents/` y `docs/user-cases.md` están **obsoletos** hasta que se reescriban.
+> Este fichero (`CLAUDE.md`) contiene **convenciones del repo + comandos**. El modelo de dominio vive en `docs/MODEL.md`.
 
 ## Proyecto
 
@@ -118,7 +118,7 @@ bun run db:smoke       # smoke test contra SurrealDB
 
 ## Modelo de datos (SurrealDB) — resumen
 
-Modelo en dos planos (ver `docs/agents/huygens-domain.md` para el detalle):
+Modelo en dos planos (ver [`docs/MODEL.md`](./docs/MODEL.md) para el detalle):
 
 1. **Plano 1 — `raw_capture`**: lo que el usuario dijo literalmente. Evidencia inmutable. El verdadero inbox.
 2. **Plano 2 — `note` + `block` + edges**: interpretación del agente. Topología procesada.
@@ -147,7 +147,7 @@ Validaciones del motor:
 - `source_kind` en `raw_capture` con `ASSERT $value INSIDE ['chat','voice','manual','import','agent-self']`
 - Todos los edges con `FROM/TO` y `UNIQUE(in, out)` enforced
 
-**NoteTypes seedeados** (10): `task`, `project`, `area`, `routine`, `note`, `report`, `person`, `reference`, `objetivo`, `idea`. Detalle de cuándo usar cada uno: `docs/agents/huygens-domain.md`.
+**NoteTypes seedeados** (10): `task`, `project`, `area`, `routine`, `note`, `report`, `person`, `reference`, `objetivo`, `idea`. Detalle de cuándo usar cada uno: [`docs/MODEL.md`](./docs/MODEL.md).
 
 **Captura ≠ Note.** Una captura cruda crea un `raw_capture`, no una `note`. Las notes existen porque el agente ya procesó (clarify) un raw — nacen con `state = 'CLARIFIED'` por defecto.
 
@@ -235,4 +235,3 @@ Dos capas complementarias (ver ADR-0019 y ADR-0020):
 - **`agent_event`**: cada decisión del agente (worker o conversacional) emite un evento con `kind`, `actor`, `session_id` (UUIDv7), `confidence`, `reasoning_summary`, `tokens_used`, etc. Retention ilimitado.
 - **CHANGEFEED 10y** sobre tablas críticas (raw_capture, note, block, edges): time-travel queries y reconstrucción histórica del estado.
 
-Reglas para emitir eventos: `docs/agents/conventions.md` sección 14.

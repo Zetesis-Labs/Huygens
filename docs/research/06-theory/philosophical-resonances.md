@@ -15,9 +15,8 @@ Son las que más directamente coinciden con la tesis central de Huygens: **lo fu
 **Alfred North Whitehead** (1861-1947), matemático devenido filósofo, escribió en _Process and Reality_ (1929) la obra fundacional de la **process philosophy**. Su tesis: la realidad última no son sustancias persistentes sino **eventos** ("actual occasions"). Cada evento "concrece" (concrescence) información de eventos anteriores y se convierte en pasado para los siguientes.
 
 Para Huygens:
-- Una Note no es una cosa estática: es un **evento de captura/clarificación/relacionamiento** que toma información del contexto (otras notas, conversación con el agente, estado mental del momento) y la concrece
+- Una Note no es una cosa estática: es un **evento** que toma información del contexto (otras notas, conversación con el agente, estado mental del momento) y la concrece
 - El CHANGEFEED de SurrealDB es la encarnación técnica de "process > substance"
-- La idea de "agente clarificando inbox" es literalmente concrescence: un occasion absorbiendo información de occasions previos
 
 Cross-ref: ver detalle en [wolfram-and-the-substrate-of-information.md](./wolfram-and-the-substrate-of-information.md) y [adjacent-fields-isomorphisms.md](./adjacent-fields-isomorphisms.md) — Whitehead resuena con Wolfram fortísimamente (pero filosófico vs computacional).
 
@@ -100,7 +99,7 @@ Para Huygens:
 - Una Note es un signo. Su objeto es el referente externo (un pensamiento, una persona real, una idea). Su interpretante es lo que el agente o el usuario hace con ella en cada interacción.
 - La semiosis ilimitada se traduce en: cada vez que el agente lee una nota y produce otra (clarification, classification, link), está produciendo un nuevo interpretante que se vuelve signo para futuras lecturas. El proceso no termina.
 
-Peirce también introduce la **abducción** — un tipo de inferencia distinto a deducción e inducción. Es el razonamiento "qué hipótesis explicaría mejor estos datos". Es **literalmente lo que hace el agente** cuando clarifica una nota del inbox: abduce qué tipo le viene mejor, qué pillars toca, qué edges plausibles existen.
+Peirce también introduce la **abducción** — un tipo de inferencia distinto a deducción e inducción. Es el razonamiento "qué hipótesis explicaría mejor estos datos".
 
 **Lectura**: Peirce escribió muchísimo y de forma fragmentaria. _Peirce on Signs_ (ed. James Hoopes) es una buena selección. Para abducción: _The Essential Peirce_ vol. 1 y 2.
 
@@ -199,7 +198,6 @@ Wheeler imaginó un universo donde las propiedades físicas son respuestas a pre
 
 Para Huygens:
 - Las propiedades de tus notas (state, type, pillars) son respuestas a preguntas que el agente o tú formuláis. Sin formulación no hay propiedad determinada.
-- El acto de "clarificar" es literalmente "hacer la pregunta" que determina las propiedades
 
 **Lectura**: Wheeler, "Information, physics, quantum: the search for links" (1990). Es accesible y profundamente influyente.
 
@@ -264,8 +262,6 @@ El **weekly review** de GTD es un examen hadotiano. Los informes narrativos gene
 **Lectura**: Hadot, _Filosofía como forma de vida_ y _Ejercicios espirituales y filosofía antigua_. Son lecturas que cambian cómo se entiende lo que estás construyendo.
 
 ### Aristóteles: telos, eudaimonia, las virtudes
-
-Ya tocado en [strategic-pillars.md](../01-vision/strategic-pillars.md). Recapitulemos para esta sección:
 
 - **Telos**: cada cosa tiene un fin propio. Para los humanos, _eudaimonia_ (florecimiento)
 - **Virtudes** como hábitos (no como inclinaciones innatas). El Pilar Éthos es literalmente esto.
@@ -343,7 +339,6 @@ Para Huygens: hay estados de una Note donde la clasificación es **ambigua de ma
 **Lao Tse**, en el _Tao Te Ching_, articula **wu wei** — acción sin esfuerzo, o acción que fluye con la naturaleza de las cosas en lugar de contra ella.
 
 Para Huygens:
-- La interfaz ideal: el agente actúa **wu wei** sobre tu inbox. Sin esfuerzo perceptible del usuario, el caos se ordena.
 - Schemas que enforzan demasiado son contra-naturales (forcing). Schemas que dejan emerger estructura son wu wei.
 
 **Lectura**: el _Tao Te Ching_ es corto. Traducciones recomendadas: Stephen Mitchell (poética), o D.C. Lau (académica).

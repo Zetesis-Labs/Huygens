@@ -79,7 +79,6 @@ Como consecuencia, **`note.state` ya NO incluye `'INBOX'`** — el "estar pendie
 - ADR-0010: Pillars y NoteState como enums (actualizado para sacar INBOX de los valores)
 - ADR-0012: Capture is uncategorized (sigue válido en parte — typeId sigue siendo opcional para notas que el agente no clasifica)
 - ADR-0011: Schemafull edges con note|block (este edge añade `raw_capture` como destino válido más)
-- `docs/agents/huygens-domain.md`: documenta el modelo en dos planos para el agente
 - `apps/mcp/surreal/schema.surql`: la implementación
 
 ## Notes

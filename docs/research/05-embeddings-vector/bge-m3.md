@@ -119,7 +119,6 @@ Para Huygens, con volumen personal (~miles de notas/año, no millones), un re-em
 
 ## Cross-references
 
-- [`../03-data-model/note-model.md`](../03-data-model/note-model.md) — cómo se conecta `NoteChunk` con `Note` en el schema
 - [`../04-database/surrealdb-deep-dive.md`](../04-database/surrealdb-deep-dive.md) — cómo SurrealDB materializa el índice HNSW
 - [`./deepinfra-integration.md`](./deepinfra-integration.md) — cómo llamamos al modelo en runtime
 - [`./vector-search-strategy.md`](./vector-search-strategy.md) — estrategia de chunking y búsqueda híbrida

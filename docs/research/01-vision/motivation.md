@@ -43,8 +43,8 @@ El agente recibe el input y decide qué hacer: clasificar, archivar, partir en c
 
 Lo que el sistema produce, en orden de utilidad operativa:
 
-- **Notas markdown clasificadas y archivadas**, con `Pillar[]` asignado, `NoteType` cuando se ha clarificado, `NoteState` reflejando dónde están en el flujo GTD.
-- **Informes narrativos**: documentos que cosen estrategia → táctico → operativo. No son listados. Son texto que cuenta qué ha pasado en una semana, en un mes, en un trimestre. Cada review se vertebra por los cuatro Pilares Estratégicos (véase [strategic-pillars.md](./strategic-pillars.md)).
+- **Notas markdown clasificadas y archivadas**, tipadas por `NoteType` y con su `NoteState` reflejando dónde están en el flujo GTD.
+- **Informes narrativos**: documentos que cosen estrategia → táctico → operativo. No son listados. Son texto que cuenta qué ha pasado en una semana, en un mes, en un trimestre.
 - **Búsqueda vectorial** sobre todo el contenido, por similitud semántica (embeddings BGE-M3 vía DeepInfra).
 - **Filtrado por actividad temporal**: qué se ha modificado, cuándo, qué se ha quedado parado.
 
@@ -62,7 +62,7 @@ Esta lista importa tanto como la anterior. Cada item está aquí porque fue tent
 - **No es multi-usuario**. No hay tenancy. No hay roles. Hay un usuario y se llama Rubén. Todo el diseño parte de esa premisa.
 - **No es un producto comercial**. No habrá SaaS, no habrá pricing, no habrá onboarding para nadie más. Lo que justifica decisiones que serían cuestionables en producto: schema acoplado a las preferencias del usuario, enums hardcodeados, vocabulario en castellano filosófico, etc.
 - **No es un sustituto de pensar**. Es un sustituto de **organizar lo pensado**. La diferencia es importante: Huygens no genera ideas, las clasifica. No toma decisiones de fondo, las ejecuta. No suple la dirección, suple la fricción operativa que impide que la dirección se materialice.
-- **No es Notion con grafo**. La taxonomía actual de Notion (Personas, Tools, Sources, Notes, Perspectivas, Metatipos todos en un solo árbol) se considera explícitamente parte del problema. Huygens separa ejes ortogonales — State, Type, Pillar — en lugar de aplanarlos en un único árbol. Más detalle en [user-context.md](./user-context.md).
+- **No es Notion con grafo**. La taxonomía actual de Notion (Personas, Tools, Sources, Notes, Perspectivas, Metatipos todos en un solo árbol) se considera explícitamente parte del problema. Huygens separa ejes ortogonales — State y Type — en lugar de aplanarlos en un único árbol. Más detalle en [user-context.md](./user-context.md).
 
 ## La quimera reconocida
 
@@ -89,6 +89,6 @@ Si esto pasa, la quimera está justificada. Si no pasa, la quimera se documenta 
 
 ## Cierre
 
-Huygens no resuelve un problema universal. Resuelve un problema muy concreto de una persona muy concreta. Esa especificidad es su fortaleza y su límite. Toda la documentación posterior — el modelo de datos en [note-model.md](../03-data-model/note-model.md), las decisiones de stack en [stack-decisions.md](../02-architecture/stack-decisions.md), el detalle de los Pilares en [strategic-pillars.md](./strategic-pillars.md), el perfil del usuario en [user-context.md](./user-context.md) — sólo tiene sentido leída desde aquí.
+Huygens no resuelve un problema universal. Resuelve un problema muy concreto de una persona muy concreta. Esa especificidad es su fortaleza y su límite. Toda la documentación posterior — el modelo canónico en [MODEL.md](../../MODEL.md), las decisiones de stack en [stack-decisions.md](../02-architecture/stack-decisions.md), el perfil del usuario en [user-context.md](./user-context.md) — sólo tiene sentido leída desde aquí.
 
 Si una decisión futura no se puede justificar contra este documento, probablemente la decisión esté mal.

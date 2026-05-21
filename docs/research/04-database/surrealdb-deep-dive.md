@@ -21,17 +21,16 @@ Cada record tiene un ID con la forma `tabla:slug`:
 ```surql
 note:abc123          -- table 'note', slug 'abc123' (puede ser hash o legible)
 note_type:task       -- table 'note_type', slug 'task'
-pillar:ethos         -- table 'pillar', slug 'ethos'
-person:ruben         -- table 'person', slug 'ruben'
+raw_capture:xyz789   -- table 'raw_capture', slug 'xyz789'
 ```
 
-El slug puede ser **cualquier identificador** — UUIDs, hashes, o slugs legibles. Para entidades estables y enumerables (pillars, note types) preferimos legibles; para records generados (notas individuales) preferimos hashes o UUIDs.
+El slug puede ser **cualquier identificador** — UUIDs, hashes, o slugs legibles. Para entidades estables y enumerables (note types) preferimos legibles; para records generados (notas individuales) preferimos hashes o UUIDs.
 
 El ID completo (`note:abc123`) es referenciable directamente en queries:
 
 ```surql
 SELECT * FROM note:abc123;
-UPDATE note:abc123 SET state = 'CLARIFIED';
+UPDATE note:abc123 SET title = 'Nuevo título';
 ```
 
 Sin `WHERE id = ...`. El ID *es* la dirección.
@@ -42,7 +41,7 @@ Surreal organiza todo en una jerarquía `ns/db/table`. Para Huygens:
 
 - **Namespace**: `huygens`
 - **Database**: `main`
-- **Tables**: `note`, `note_type`, `note_chunk`, `pillar`, `person`, ...
+- **Tables**: `note`, `note_type`, `block`, `raw_capture`, ...
 
 Esta separación importa porque permite **multi-tenancy** trivial (un namespace por usuario u organización) o **multi-stage** (un database para prod y otro para staging dentro del mismo servidor). En Huygens, single-user, sólo usamos un namespace y un database.
 
@@ -66,10 +65,8 @@ DEFINE TABLE note SCHEMAFULL;
 
 DEFINE FIELD title    ON note TYPE string;
 DEFINE FIELD content  ON note TYPE string;
-DEFINE FIELD pillars  ON note TYPE array<string>
-  ASSERT $value ALLINSIDE ['PATHOS_SOMA', 'ETHOS', 'TELOS', 'SOPHIA'];
-DEFINE FIELD state    ON note TYPE string DEFAULT 'INBOX'
-  ASSERT $value INSIDE ['INBOX', 'CLARIFIED', 'ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED'];
+DEFINE FIELD state    ON note TYPE string DEFAULT 'CLARIFIED'
+  ASSERT $value INSIDE ['CLARIFIED'];
 DEFINE FIELD created_at      ON note TYPE datetime DEFAULT time::now();
 DEFINE FIELD last_modified_at ON note TYPE datetime DEFAULT time::now();
 ```
@@ -89,7 +86,7 @@ DEFINE FIELD reason  ON blocked_by TYPE option<string>;
 Lo crítico:
 
 - `TYPE RELATION` marca esto como una table de aristas
-- `FROM note TO note` enforza que esta arista sólo va de `note` a `note`. Intentar crear `blocked_by` desde una `note` a un `pillar` falla en el motor
+- `FROM note TO note` enforza que esta arista sólo va de `note` a `note`. Intentar crear `blocked_by` desde una `note` a un `raw_capture` falla en el motor
 - Los fields son **fields de la arista**, no de los nodos extremos. Una arista `blocked_by` tiene sus propios `since` y `reason`
 
 Que esto sea **una table** significa que puedes:
@@ -108,22 +105,21 @@ Edges = entidades de primera clase.
 CREATE note:abc CONTENT {
   title: 'Pivotar a Surreal',
   content: 'Mongo no encaja, ver investigación...',
-  pillars: ['ETHOS', 'SOPHIA'],
-  state: 'INBOX'
+  state: 'CLARIFIED'
 };
 ```
 
 `CONTENT { ... }` reemplaza todo el record. `SET field = value, ...` actualiza fields individuales:
 
 ```surql
-UPDATE note:abc SET state = 'CLARIFIED', last_modified_at = time::now();
+UPDATE note:abc SET title = 'Nuevo título', last_modified_at = time::now();
 ```
 
 ### Leer
 
 ```surql
-SELECT * FROM note WHERE state = 'INBOX';
-SELECT title, state FROM note WHERE pillars CONTAINS 'ETHOS';
+SELECT * FROM note WHERE state = 'CLARIFIED';
+SELECT title, state FROM note WHERE type = note_type:task;
 SELECT * FROM note:abc;  -- por ID directo
 ```
 
@@ -206,7 +202,7 @@ SELECT ->blocked_by AS blocks FROM note:abc FETCH blocks;
 ### Definir el índice
 
 ```surql
-DEFINE INDEX chunk_embedding ON note_chunk
+DEFINE INDEX block_embedding ON block
   FIELDS embedding
   HNSW DIMENSION 1024 DIST COSINE
   EFC 150 M 16;
@@ -222,7 +218,7 @@ DEFINE INDEX chunk_embedding ON note_chunk
 ```surql
 SELECT id, content,
        vector::distance::cosine(embedding, $query) AS score
-FROM note_chunk
+FROM block
 WHERE embedding <|10|> $query
 ORDER BY score ASC;
 ```
@@ -237,27 +233,26 @@ Aquí es donde Surreal brilla. En un solo statement:
 ```surql
 SELECT id, content,
        vector::distance::cosine(embedding, $query) AS score
-FROM note_chunk
+FROM block
 WHERE embedding <|20|> $query
-  AND <-of_chunk<-note WHERE state = 'ACTIVE'
-                          AND pillars CONTAINS 'SOPHIA'
+  AND note.state = 'CLARIFIED'
 ORDER BY score ASC
 LIMIT 10;
 ```
 
-Lee: "vecinos top-20 del query embedding, filtrados a aquellos cuya nota padre está activa y toca el pilar Sophia, los 10 mejores".
+Lee: "vecinos top-20 del query embedding, filtrados a aquellos cuyo `note` padre está en estado `CLARIFIED`, los 10 mejores".
 
 En Mongo + Atlas Search hacerlo requería `$vectorSearch` seguido de `$lookup` y `$match`. Aquí es una expresión.
 
 ## Live queries
 
 ```surql
-LIVE SELECT * FROM note WHERE state = 'INBOX';
+LIVE SELECT * FROM raw_capture WHERE processed_at IS NONE;
 ```
 
 Devuelve un **WebSocket subscription**. Cada `CREATE`/`UPDATE` que afecta la condición emite un evento. El cliente recibe push en tiempo real.
 
-Útil para Huygens: el agente puede suscribirse a "nuevos items en inbox" en vez de hacer polling cada N segundos. Para queries de tipo "monitor", esto es notablemente más limpio.
+Útil para Huygens: el worker puede suscribirse a "nuevos `raw_capture` no procesados" en vez de hacer polling cada N segundos. Para queries de tipo "monitor", esto es notablemente más limpio.
 
 ## INFO FOR DB (introspección)
 
@@ -283,13 +278,13 @@ Marca la table para mantener 30 días de cambios. Luego puedes consultar:
 
 ```surql
 -- Estado de la table en un momento del pasado
-SELECT * FROM note AT d'2026-05-13T10:00:00Z' WHERE state = 'ACTIVE';
+SELECT * FROM note AT d'2026-05-13T10:00:00Z' WHERE state = 'CLARIFIED';
 
 -- Lista de cambios desde una fecha
 SELECT * FROM note SINCE d'2026-05-15';
 ```
 
-Esto **reemplaza tablas de audit hechas a mano**. Para los informes semanales del agente ("¿qué pasó esta semana?"), CHANGEFEED es exactamente la primitiva correcta. Ver [`surrealdb-innovations.md`](./surrealdb-innovations.md) para profundidad.
+Esto **reemplaza tablas de audit hechas a mano**. Para los informes semanales del agente ("¿qué pasó esta semana?"), CHANGEFEED es exactamente la primitiva correcta.
 
 ## DEFINE FUNCTION (UDFs)
 
@@ -303,7 +298,7 @@ DEFINE FUNCTION fn::days_since_review($note_id: record<note>) -> int {
 -- Uso
 SELECT title, fn::days_since_review(id) AS stale
 FROM note
-WHERE state = 'ACTIVE';
+WHERE state = 'CLARIFIED';
 ```
 
 Para Huygens: encapsulan cómputos que aparecen en muchos queries (staleness, scoring, agregaciones específicas del dominio).
@@ -414,21 +409,20 @@ await db.connect('ws://surrealdb:8000/rpc', {
 })
 
 // Query simple
-const [inbox] = await db.query<[Note[]]>(
-  `SELECT * FROM note WHERE state = 'INBOX'`
+const [clarified] = await db.query<[Note[]]>(
+  `SELECT * FROM note WHERE state = 'CLARIFIED'`
 )
 
 // Con params
 const [results] = await db.query<[Note[]]>(
-  `SELECT * FROM note WHERE pillars CONTAINS $pillar`,
-  { pillar: 'ETHOS' }
+  `SELECT * FROM note WHERE type = $note_type`,
+  { note_type: 'note_type:task' }
 )
 
 // CRUD helpers (alternativa a query raw)
 const created = await db.create('note', {
   title: 'Foo',
-  content: 'Bar',
-  pillars: ['ETHOS']
+  content: 'Bar'
 })
 
 // Live query
@@ -465,7 +459,7 @@ v2.x es estable, pero la huella de v1.x todavía pesa. Hay edge cases que aparec
 
 ### 4. SurrealQL LLM gap
 
-Los modelos conocen Cypher mejor que SurrealQL. Para Huygens, donde el agente escribe queries, esto significa más fricción inicial. Mitigación: ejemplos canónicos en el prompt + uso del MCP oficial para CRUD (que normaliza las operaciones más comunes — ver [`surrealmcp.md`](./surrealmcp.md)).
+Los modelos conocen Cypher mejor que SurrealQL. Para Huygens, donde el agente escribe queries, esto significa más fricción inicial. Mitigación: ejemplos canónicos en el prompt + uso del MCP oficial para CRUD (que normaliza las operaciones más comunes).
 
 ### 5. Tooling visual menos rico
 
@@ -497,10 +491,7 @@ Donde Surreal empezaría a sufrir: >1M nodos con traversals profundos constantes
 
 ## Cross-references
 
-- [`mongodb-pivot.md`](./mongodb-pivot.md) — por qué pivotamos
 - [`graph-db-comparison.md`](./graph-db-comparison.md) — la comparativa que decidió Surreal
-- [`surrealdb-innovations.md`](./surrealdb-innovations.md) — qué hace Surreal único
-- [`surrealmcp.md`](./surrealmcp.md) — el MCP oficial
 - [`../02-architecture/devcontainer-and-services.md`](../02-architecture/devcontainer-and-services.md) — cómo se monta el devcontainer
 - [`../02-architecture/mcp-three-layer-architecture.md`](../02-architecture/mcp-three-layer-architecture.md) — capas
 - [`../03-data-model/topology-as-primary.md`](../03-data-model/topology-as-primary.md) — el principio rector

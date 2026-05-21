@@ -319,8 +319,6 @@ Discutido en la sección 2.5. El flujo del agente sobre la memoria no admite sho
 
 Los cuatro Pilares de Huygens (Pathos & Soma, Éthos, Telos, Sophia) son los ejes que el observer-Rubén usa para clasificar su propia experiencia. **No son intrínsecos al hipergrafo cognitivo subyacente** — son la lente del observer. Otro observer (otra persona, otro modelo cognitivo, otra cultura) tendría otros pilares. Esto resuena con la noción ruliadiana de que las "leyes" son artefactos del slice. Pero no es isomorfismo estricto — los pilares son una **categorización** del observer, no un slice computacional del substrato.
 
-Cross-ref: [pillars-and-states.md](../03-data-model/pillars-and-states.md).
-
 #### (b) Edges autorizados ↔ Reglas físicas
 
 Lo que en Huygens está autorizado conectarse con qué (qué `RELATE`s son admisibles) define la "física" del mundo cognitivo. Cambiar un edge type cambia la dinámica posible del sistema. Esto resuena con la idea wolframiana de que la regla determina el universo. Pero la analogía es suave: los edges autorizados son **constraints estáticas** sobre el grafo; las reglas wolframianas son **transformaciones dinámicas**. Estructuralmente similares — ambas son especificaciones locales —, pero operacionalmente distintas.

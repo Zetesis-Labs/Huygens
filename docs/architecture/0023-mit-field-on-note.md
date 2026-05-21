@@ -1,6 +1,6 @@
 # ADR-0023: Campo `mit_for` en `note` para marcar Most Important Tasks
 
-**Status**: Accepted
+**Status**: Accepted — campo reservado en schema, no driven en esta fase (planning diferido, ver `docs/MODEL.md`)
 **Date**: 2026-05-20
 **Decision-makers**: Rubén, Claude (asistente IA en sesión de diseño)
 **Tags**: data-model
@@ -39,7 +39,7 @@ Razones del campo dedicado sobre la convención en `metadata`:
 - `mit_for = NONE` → la note no es MIT (caso por defecto).
 - `mit_for = datetime` → la note es MIT para ese **día**. La parte de hora es secundaria; la convención es usar `00:00:00 UTC` del día.
 - Una note puede dejar de ser "MIT de hoy" al pasar el día — su `mit_for` queda como **rastro histórico** ("fue MIT el día X"), no se borra automáticamente.
-- No hay validación de motor sobre cuántas MITs por día existen — la convención "1-3 por día" vive en `docs/agents/conventions.md`.
+- No hay validación de motor sobre cuántas MITs por día existen — la convención "1-3 por día" es convención agéntica, no enforced.
 
 ### Convenciones del agente
 
@@ -87,7 +87,7 @@ GROUP BY state;
 - **Negativas**:
   - Un campo más en `note`. Coste mínimo: `option<datetime>` = `NONE` por defecto.
 - **Neutrales**:
-  - La convención "1-3 por día" no se enforce en motor — vive en `docs/agents/conventions.md`. Aceptable: pasarse de 3 es un signo a observar, no un error que romper.
+  - La convención "1-3 por día" no se enforce en motor. Aceptable: pasarse de 3 es un signo a observar, no un error que romper.
 
 ## Alternatives considered
 
@@ -103,7 +103,6 @@ GROUP BY state;
 - [ADR-0021](./0021-adopt-ztd-drop-pillars.md) — adopt ZTD; esto es parte del paquete
 - [ADR-0022](./0022-objetivo-and-idea-types.md) — Objetivo + Idea (otra pieza del paquete)
 - [ADR-0010](./0010-pillars-and-state-as-enums.md) — `state` enum sigue siendo válido; las MITs son tasks en estados normales (`CLARIFIED`/`ACTIVE`/`DONE`)
-- [docs/agents/huygens-domain.md](../agents/huygens-domain.md) — documentación operativa del dominio
 
 ## Notes
 

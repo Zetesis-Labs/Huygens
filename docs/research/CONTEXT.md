@@ -8,24 +8,15 @@ Huygens es un **MCP (Model Context Protocol) server** que sirve como **memoria e
 
 ### Función
 
-El agente captura inputs del usuario — chat texto corto, notas de voz transcritas, "tochos" largos — los procesa GTD-style contra la BBDD, genera informes narrativos, y permite búsqueda vectorial + filtrado por actividad temporal.
+El agente captura conversaciones libres como evidencia inmutable (`raw_capture`), sintetiza informes narrativos a partir de esos raws usando informes previos cercanos como contexto, y un worker pequeño traduce cada informe nuevo a mutaciones del grafo de tasks/projects/objetivos/ideas/references. **El informe es el artefacto central**; el worker es plomería. Modelo canónico en [`docs/MODEL.md`](../MODEL.md).
 
-Las entradas son siempre Markdown. El sistema NO es un second-brain de conocimiento general — es una memoria operativa + estratégica del propio Rubén, GTD-inspirada pero personalizada.
+Las entradas son siempre Markdown. El sistema NO es un second-brain de conocimiento general — es una memoria operativa + estratégica del propio Rubén.
 
 ### Conceptos del dominio
 
-- **Pilares estratégicos**: cuatro dimensiones ortogonales filosóficamente cargadas (conceptos griegos) que clasifican cada nota:
-  - **Pathos & Soma**: salud mental/física, fisioterapia, nutrición, emociones, meditación
-  - **Éthos**: hábito, productividad, GTD, disciplina, rutinas
-  - **Telos**: propósito, metas, visión, OKRs, libertad financiera
-  - **Sophia**: conocimiento, filosofía, teoría de categorías, programación funcional
-  - Una nota puede tocar **varios** pilares (son ejes, no categorías excluyentes)
+- **NoteType**: taxonomía de tipos. Los 10 tipos coexisten desde día uno (`task`, `project`, `area`, `routine`, `note`, `report`, `person`, `reference`, `objetivo`, `idea`). Solo `report` es estructuralmente especial — es el único que dispara la fase de topologización.
 
-- **NoteType**: árbol editable de tipos. Una Note tiene **cero o un** Type (opcional — la captura entra sin tipo). Seeds iniciales: `task, project, area, routine, note, report, person, reference`
-
-- **NoteState**: ciclo GTD: `INBOX → CLARIFIED → ACTIVE → WAITING → SOMEDAY → DONE → ARCHIVED`
-
-- **Topología primaria**: principio rector. Lo importante son las RELACIONES, no los nodos individuales. La memoria es un grafo dirigido con edges tipados, no una pila de documentos con campos de referencia
+- **Topología primaria**: principio rector. Lo importante son las RELACIONES, no los nodos individuales. La memoria es un grafo dirigido con edges tipados, no una pila de documentos con campos de referencia.
 
 ### Stack actual
 
@@ -54,14 +45,14 @@ Commit inicial: `707fadb`. En proceso de pivote (Mongo → Surreal).
 
 ### Decisiones cerradas
 
-1. **Pilares múltiples por nota** (orthogonal axes)
-2. **Captura = nota sin tipo + state=INBOX**. "Inbox" NO es un tipo, es un estado
-3. **Reports = Notes con type=report**, no modelo separado
-4. **Rutinas fuera del schema v1**, solo el tipo seedeado para clasificar
-5. **Embeddings: BGE-M3 vía DeepInfra**. 1024 dims, 8192 ctx
-6. **BBDD: SurrealDB** (pivote desde MongoDB tras reconocer que esto es topología, no documentos)
-7. **Edges schemafull con FROM/TO**: las relaciones autorizadas las enforza el motor, no validación en código
-8. **Arquitectura MCP**: tres capas. Agente (prompt) + surrealmcp (oficial, CRUD genérico) + Huygens MCP (custom, ~200 líneas TS, sólo infraestructura: embed, chunk, vector_search, generate_report)
+1. **Captura = `raw_capture` inmutable**, no una `note`. La nota nace solo cuando un informe la materializa, o cuando el worker crea/actualiza nodos topologizando un informe.
+2. **Reports = Notes con `type=report`**, no modelo separado. Es el corazón del sistema.
+3. **Rutinas fuera del schema v1**, solo el tipo seedeado para clasificar
+4. **Embeddings: BGE-M3 vía DeepInfra**. 1024 dims, 8192 ctx
+5. **BBDD: SurrealDB** (pivote desde MongoDB tras reconocer que esto es topología, no documentos)
+6. **Edges schemafull con FROM/TO**: las relaciones autorizadas las enforza el motor, no validación en código
+7. **Arquitectura MCP**: tres capas. Agente (prompt) + surrealmcp (oficial, CRUD genérico) + Huygens MCP (custom, sólo infraestructura: embed, chunk, vector_search, generate_report, get_report)
+8. **Worker = topologizador**, no clarificador. Lee informes sin topologizar, traduce la narrativa a mutaciones del grafo, emite `affects` edges. No toca raws directamente, no genera informes.
 
 ### Estructura del repo
 

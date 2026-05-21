@@ -18,14 +18,13 @@ Inspiración: **kaig** (https://github.com/surrealdb/kaig) tiene `.cursor/rules/
 El conocimiento operativo del agente vive en **`docs/agents/`** como markdown versionado. Los entry points por agente son **punteros cortos** que listan lecturas obligatorias y delegan el contenido.
 
 ```
-docs/agents/
-├── huygens-domain.md       ← entidades, pilares, edges, flujos GTD
-├── surrealql-patterns.md   ← queries SurrealQL copy-paste
-└── conventions.md          ← reglas operativas (idempotencia, trazabilidad, tono)
+docs/agents/   ← conocimiento operativo del agente (markdown versionado)
 
 AGENTS.md      ← entry point para Codex / Hermes / generales
 CLAUDE.md      ← entry point para Claude Code
 ```
+
+> Nota histórica (post-decisión): el contenido conceptual del dominio se consolidó posteriormente en [`docs/MODEL.md`](../MODEL.md) como fuente canónica. Esta ADR conserva la decisión original de mantener el conocimiento del agente en markdown versionado fuera de los entry points.
 
 Cada entry point empieza con "lecturas obligatorias al inicio de sesión" y lista los tres ficheros en orden. El resto cubre convenciones del repo (build, comandos, devcontainer) — no dominio.
 
@@ -61,7 +60,6 @@ Separación con el resto de `docs/`:
 ## Related
 
 - ADRs: `ADR-0014` (los agentes hablan con MCPs; este ADR define **cómo aprenden** a hacerlo)
-- Ficheros mismos: [docs/agents/huygens-domain.md](../agents/huygens-domain.md), [docs/agents/surrealql-patterns.md](../agents/surrealql-patterns.md), [docs/agents/conventions.md](../agents/conventions.md)
 - Inspiración: [surrealdb/kaig](https://github.com/surrealdb/kaig) — patrón `.cursor/rules/*.mdc`
 
 ## Notes

@@ -32,7 +32,7 @@ Cuando el corpus tenga >5000 notas y >12 meses de uso continuo, para que las mé
 
 ### Pipeline
 
-1. Construir el complejo simplicial a partir del grafo: nodos = Notes, edges = relaciones binarias, triángulos = ternas de notas co-ocurrentes (mismo project, misma sesión de captura, mismos pillars), tetraedros y orden superior cuando coactivación N-aria detectada
+1. Construir el complejo simplicial a partir del grafo: nodos = Notes, edges = relaciones binarias, triángulos = ternas de notas co-ocurrentes (mismo project, mismo informe topologizador, edges semánticos compartidos), tetraedros y orden superior cuando coactivación N-aria detectada
 2. **Persistent homology**: calcular barcodes — features topológicas (componentes conexas, loops, voids) y su "vida" a través de la filtración
 3. **Mapper algorithm**: visualización topológica del grafo agrupando regiones similares
 
@@ -70,7 +70,7 @@ Cada nota tiene un embedding de 1024 dims. Si tienes 10k notas, son 10M flotante
 
 ### Componentes
 
-- **Tensor representation del corpus**: construir un tensor de rank alto `T[note, chunk, embedding_dim, pillar, type, time_bucket]` y descomponerlo en una MERA o MPS
+- **Tensor representation del corpus**: construir un tensor de rank alto `T[note, block, embedding_dim, type, time_bucket]` y descomponerlo en una MERA o MPS
 - **Queries vía contracciones tensoriales**: en vez de "vector search exacto contra todos los chunks", contraer el tensor comprimido contra el embedding del query. Resultado aproximado pero mucho más rápido para corpora grandes
 - **Knowledge graph completion**: usar la descomposición tensorial para predecir edges plausibles. Si el tensor de relaciones se factoriza limpiamente, las posiciones "vacías" con valores altos en la factorización son candidatos a edges faltantes
 
@@ -92,8 +92,8 @@ Reemplazar el "un agente principal hace todo" por **agentes especializados** que
 
 ### Roles
 
-- **Agente principal (captura/clarificación)**: el que vive en el chat del día a día. Optimizado para latencia baja, contexto corto, decisiones rápidas. Modelo: Claude Sonnet 4.x
-- **Sub-agente "weekly review writer"**: especializado en generar reports narrativos. Más tokens, más caro, mejor output. Solo se activa al pedirle un report. Modelo: Claude Opus o equivalente
+- **Agente principal (captura + síntesis de informes)**: el que vive en el chat del día a día. Optimizado para latencia baja, contexto corto, decisiones rápidas. Modelo: Claude Sonnet 4.x
+- **Sub-agente "report writer"**: especializado en generar informes narrativos largos y revisiones periódicas. Más tokens, más caro, mejor output. Solo se activa al pedirle un informe sustancial. Modelo: Claude Opus o equivalente
 - **Sub-agente "researcher"**: profundiza en temas que aparecen recurrentemente en las notas. Lee referencias externas (vía WebSearch), las cruza con el corpus interno, y propone síntesis. Modelo: Claude Opus + tool access a web
 - **Sub-agente "schema evolution proposer"**: el que orquesta el flujo de v2.3/v3.1, analiza patterns y propone cambios. Modelo: Claude Sonnet
 - **Sub-agente "memory curator"**: en background, identifica notas redundantes, propone fusiones, detecta orphans (notas sin edges). Modelo: Claude Haiku (suficiente, queremos volumen barato)

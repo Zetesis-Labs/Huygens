@@ -52,7 +52,6 @@ NO se añade ADR para:
 | [0009](./0009-block-composed-notes.md) | Notes compuestas de Blocks markdown | Accepted | data-model |
 | [0010](./0010-pillars-and-state-as-enums.md) | Pillars y NoteState como enums | Superseded in part by ADR-0021 | data-model |
 | [0011](./0011-schemafull-edges-with-note-or-block.md) | Edges schemafull con `note \| block` | Accepted | data-model |
-| [0012](./0012-capture-is-uncategorized.md) | Captura es no-categorizada (typeId opcional) | Accepted | data-model |
 | [0013](./0013-eight-seed-notetypes.md) | 8 NoteType genéricos como seed inicial | Superseded by ADR-0022 | data-model |
 | [0014](./0014-three-layer-mcp-architecture.md) | Arquitectura MCP de tres capas | Accepted | architecture |
 | [0015](./0015-bge-m3-via-deepinfra.md) | BGE-M3 vía DeepInfra para embeddings | Accepted | architecture |

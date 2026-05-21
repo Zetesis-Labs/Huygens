@@ -98,7 +98,7 @@ Estos no afectan a decisiones técnicas, pero sí al **tono general**: el usuari
 
 Síntesis operativa de lo anterior:
 
-- **Conexiones con teoría de categorías son bienvenidas, no decorativas.** Cuando un edge tipado se puede explicar como morfismo, hacerlo. Cuando un Pilar puede entenderse como proyección sobre una dimensión, hacerlo. No es _name-dropping_; es vocabulario común.
+- **Conexiones con teoría de categorías son bienvenidas, no decorativas.** Cuando un edge tipado se puede explicar como morfismo, hacerlo. No es _name-dropping_; es vocabulario común.
 - **Conexiones filosóficas son bienvenidas.** Epistemología, fenomenología, ontología, autopoiesis. Si aparecen, aparecen con su nombre. El usuario las reconoce.
 - **Tono: como hablar con un par.** No condescendencia. No _marketing speak_. Si algo es un trade-off, decirlo. Si algo está roto, decirlo. Si algo es genuinamente bonito, decirlo sin azucarar.
 - **"Para el Rubén curioso del futuro".** Incluir bibliografía, links, referencias cuando el tema lo permita. La documentación no es sólo para ahora, es para volver a ella en 2028 con una pregunta y poder profundizar.
@@ -107,11 +107,11 @@ Síntesis operativa de lo anterior:
 
 Estos puntos son tan importantes como los positivos. Cada uno se ha verbalizado explícitamente en la conversación de diseño:
 
-- **Replicar la taxonomía de Notion**. La conoce, ha vivido con ella, sabe que mezcla churros con merinas. Personas, Tools, Sources, Notes, Perspectivas, Metatipos — todos en un solo árbol jerárquico. Huygens NO debe replicar esa estructura. La separación de ejes ortogonales (State / Type / Pillar) nace precisamente de no querer repetir ese error.
+- **Replicar la taxonomía de Notion**. La conoce, ha vivido con ella, sabe que mezcla churros con merinas. Personas, Tools, Sources, Notes, Perspectivas, Metatipos — todos en un solo árbol jerárquico. Huygens NO debe replicar esa estructura. La separación de ejes ortogonales (State / Type) nace precisamente de no querer repetir ese error.
 
 - **Un second-brain de conocimiento general**. Notion seguirá siendo el sitio para apuntes de lecturas, snippets, referencias. Huygens es para lo operativo y estratégico del propio usuario. Si una nota tiene la forma "qué he aprendido de X", probablemente va a Notion. Si tiene la forma "qué voy a hacer / qué he hecho / qué pienso sobre mi vida", va a Huygens.
 
-- **Un sistema rígido que imponga estructura para capturar**. El usuario es caótico al capturar — esa es la realidad y el sistema tiene que aceptarla. La capture entra como `state=INBOX`, sin tipo obligatorio, sin pilar obligatorio. La clarificación es un paso posterior, hecho por el agente, no una barrera de entrada.
+- **Un sistema rígido que imponga estructura para capturar**. El usuario es caótico al capturar — esa es la realidad y el sistema tiene que aceptarla. La captura entra como `raw_capture` inmutable, sin tipo ni clasificación obligatoria. La interpretación llega después, vía informe sintetizado por el agente — no es una barrera de entrada.
 
 - **Que la BBDD le obligue a clasificar antes de archivar**. Si para guardar una nota hace falta haberla taxonomizado, el sistema no se usa. Punto.
 
@@ -121,23 +121,22 @@ Este es probablemente el contraste más importante porque define qué tipo de ca
 
 **Notion actual del usuario**:
 
-Taxonomía heterogénea organizada en un único árbol. Personas, Tools, Sources, Notes, Perspectivas, Metatipos — todos colgando del mismo padre conceptual. Mezcla **categorías de cosa** (qué es) con **estado** (en qué momento del ciclo está) con **dimensión vital** (qué pilar toca). El resultado: una taxonomía que no es navegable y que requiere recordar dónde se puso cada cosa.
+Taxonomía heterogénea organizada en un único árbol. Personas, Tools, Sources, Notes, Perspectivas, Metatipos — todos colgando del mismo padre conceptual. Mezcla **categorías de cosa** (qué es) con **estado** (en qué momento del ciclo está). El resultado: una taxonomía que no es navegable y que requiere recordar dónde se puso cada cosa.
 
 **Huygens**:
 
-Tres ejes ortogonales claramente separados:
+Dos ejes ortogonales claramente separados:
 
 | Eje | Qué representa | Ejemplo |
 |---|---|---|
-| **State** | Lifecycle GTD | `INBOX`, `ACTIVE`, `WAITING`, `DONE` |
+| **State** | Lifecycle GTD | `CLARIFIED`, `ACTIVE`, `WAITING`, `DONE` |
 | **Type** | Qué clase de cosa es | `task`, `project`, `note`, `report`, `person` |
-| **Pillar** | Qué dimensión vital toca | `PATHOS_SOMA`, `ETHOS`, `TELOS`, `SOPHIA` |
 
-Cada nota tiene los tres independientemente. Una nota puede ser `state=ACTIVE`, `type=project`, `pillars=[TELOS, ETHOS]`. La consulta "muéstrame todos los proyectos activos relacionados con Telos" se traduce literalmente al filtro; no hay que adivinar dónde se archivó.
+Cada nota tiene los dos independientemente. Una nota puede ser `state=ACTIVE`, `type=project`. La consulta "muéstrame todos los proyectos activos" se traduce literalmente al filtro; no hay que adivinar dónde se archivó.
 
 Esto es el cambio fundamental. No es "Notion con mejor búsqueda". Es **descomponer una taxonomía aplanada en sus ejes constituyentes**, y dejar que cada eje viva su propia vida.
 
-Detalle del modelo: [note-model.md](../03-data-model/note-model.md). Detalle de los Pilares: [strategic-pillars.md](./strategic-pillars.md). Decisiones de stack: [stack-decisions.md](../02-architecture/stack-decisions.md).
+Detalle del modelo: [MODEL.md](../../MODEL.md). Decisiones de stack: [stack-decisions.md](../02-architecture/stack-decisions.md).
 
 ## Cierre
 

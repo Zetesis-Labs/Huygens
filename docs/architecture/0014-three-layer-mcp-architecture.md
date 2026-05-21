@@ -25,13 +25,12 @@ El proyecto está en fase exploratoria: el modelo evoluciona y el coste de mante
 
 Los dos MCPs son **hermanos**. Huygens MCP **no** llama a `surrealmcp` por dentro — habla directo al driver `surrealdb` JS. Una capa intermedia añadiría latencia y fragilidad sin valor.
 
-Con la introducción del worker autónomo (ADR-0018), el sistema pasa a tener **cuatro componentes** principales: agent + los dos MCPs + el worker. El worker es un proceso Python independiente que reacciona a inserciones en `raw_capture` vía LIVE query y commitea de vuelta a SurrealDB sin pasar por ningún MCP. Es hermano de los MCPs, no hijo: comparte solo la BBDD.
+Existe además un proceso worker independiente (ADR-0018) que comparte la BBDD pero no pasa por los MCPs. Su responsabilidad concreta evolucionó respecto a la primera versión del ADR-0018 — ver `docs/MODEL.md` para el rol vigente. La relación con los MCPs no cambia: el worker es hermano de los MCPs, no hijo, y el contrato compartido es el schema de SurrealDB.
 
 ```
                 ┌──────────────────────────────┐
                 │           Agent              │
-                │  (prompt = dominio GTD,      │
-                │   pilares, edges, etc.)      │
+                │  (prompt = modelo de dominio)│
                 └───┬──────────────────────┬───┘
                     │ CRUD/grafo           │ infraestructura
                     ▼                      ▼
@@ -43,10 +42,9 @@ Con la introducción del worker autónomo (ADR-0018), el sistema pasa a tener **
                     └────────┬───────────────┘
                              │
                              ▼
-                      ┌──────────────┐  ←── LIVE query   ┌─────────────────────┐
-                      │  SurrealDB   │ ────────────────→ │ huygens-worker      │
-                      │              │                   │ (Python + Agno)     │
-                      │              │ ←─── commit ──────│ procesa raws        │
+                      ┌──────────────┐                   ┌─────────────────────┐
+                      │  SurrealDB   │ ←──────────────── │ huygens-worker      │
+                      │              │ ────────────────→ │ (Python, ver ADR-18)│
                       └──────────────┘                   └─────────────────────┘
 ```
 
@@ -83,4 +81,4 @@ Con la introducción del worker autónomo (ADR-0018), el sistema pasa a tener **
 
 Heurística para mover una operación a tool: **si se repite muchas veces con la misma secuencia y esconde >1 round-trip a DeepInfra o SurrealDB, candidata**. Si es un `CREATE`/`RELATE`/`UPDATE` que el agente puede escribir, queda en prompt + `surrealmcp`.
 
-El worker autónomo (ADR-0018) **no va por ningún MCP**. Habla directo a SurrealDB con el driver Python (`surrealdb-py`) y reacciona a inserciones en `raw_capture` vía LIVE query. Los MCPs sirven al agente interactivo (que vive en Claude Code / Cursor); el worker es un proceso autónomo separado. Son tres canales hermanos hacia la misma BBDD — no se llaman entre ellos, y el contrato compartido es el schema de SurrealDB.
+El worker autónomo (ADR-0018) **no va por ningún MCP**. Habla directo a SurrealDB con el driver Python. Los MCPs sirven al agente interactivo (que vive en Claude Code / Cursor); el worker es un proceso autónomo separado. Son canales hermanos hacia la misma BBDD — no se llaman entre ellos, y el contrato compartido es el schema de SurrealDB. El rol concreto del worker dentro de ese contrato vive en `docs/MODEL.md`.

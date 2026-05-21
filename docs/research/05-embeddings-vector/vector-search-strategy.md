@@ -65,7 +65,7 @@ Si en el futuro la heurística falla (chunks muy desviados del target), introduc
 SurrealDB ofrece índices vectoriales nativos con HNSW. La definición es declarativa, sin trámites tipo `createSearchIndex` de Mongo Atlas:
 
 ```surql
-DEFINE INDEX note_chunk_embedding ON note_chunk
+DEFINE INDEX block_embedding ON block
   FIELDS embedding HNSW DIMENSION 1024 DIST COSINE;
 ```
 
@@ -82,7 +82,7 @@ Defaults son razonables para corpus < 1M vectores. Para Huygens (volumen persona
 Sintaxis para overridear:
 
 ```surql
-DEFINE INDEX note_chunk_embedding ON note_chunk
+DEFINE INDEX block_embedding ON block
   FIELDS embedding HNSW DIMENSION 1024 DIST COSINE
   M 16 EFC 200;
 ```
@@ -105,9 +105,9 @@ Búsqueda directa, sin filtros:
 SELECT 
   id,
   content,
-  noteId,
+  note,
   vector::distance::cosine(embedding, $query_vector) AS score
-FROM note_chunk
+FROM block
 WHERE embedding <|10|> $query_vector
 ORDER BY score ASC
 LIMIT 10;
@@ -125,19 +125,18 @@ Desglose:
 
 ## Hybrid search — la query realmente útil
 
-Vector similarity sola es pobre. Para Huygens, los filtros narrativos (estado GTD, temporal, pilares) son **fundamentales**. SurrealDB permite combinarlos todos en una sola query, sin post-processing en código:
+Vector similarity sola es pobre. Para Huygens, los filtros narrativos (tipo de nota, temporal) son **fundamentales**. SurrealDB permite combinarlos todos en una sola query, sin post-processing en código:
 
 ```surql
 SELECT 
-  c.id,
-  c.content,
-  c.note.title,
-  c.note.->touches_pillar->pillar.slug AS pillars,
-  vector::distance::cosine(c.embedding, $query) AS score
-FROM note_chunk AS c
-WHERE c.embedding <|20|> $query
-  AND c.note.state IN ['ACTIVE', 'WAITING']
-  AND c.note.updated_at > $since
+  b.id,
+  b.content,
+  b.note.title,
+  vector::distance::cosine(b.embedding, $query) AS score
+FROM block AS b
+WHERE b.embedding <|20|> $query
+  AND b.note.state = 'CLARIFIED'
+  AND b.note.updated_at > $since
 ORDER BY score ASC
 LIMIT 10;
 ```
@@ -145,17 +144,16 @@ LIMIT 10;
 Esto combina, en una sola query:
 
 1. **Similitud vectorial** — top-20 candidatos del índice HNSW
-2. **Filtro de estado GTD** — solo notas en estados "vivos"
+2. **Filtro de estado** — solo blocks cuya nota padre está clarificada
 3. **Filtro temporal** — solo cambios recientes
-4. **Graph traversal** — sigue `->touches_pillar->pillar` para exponer los pilares de cada nota en el resultado
 
-Esto es exactamente el tipo de query que un grafo schemafull hace bien y un Mongo con `$vectorSearch` hace de forma torpe (requiere `$lookup`, pipelines anidados, latencia agregada). Ver [`../04-database/surrealdb-innovations.md`](../04-database/surrealdb-innovations.md) para el detalle de por qué esto es relevante.
+Esto es exactamente el tipo de query que un grafo schemafull hace bien y un Mongo con `$vectorSearch` hace de forma torpe (requiere `$lookup`, pipelines anidados, latencia agregada).
 
 ### Patrón general de hybrid search
 
 ```
 1. Recall amplio: `<|30|>` o `<|50|>` desde el índice vectorial
-2. Filtros estructurales: estado, fechas, pilares, tipo
+2. Filtros estructurales: estado, fechas, tipo
 3. Re-ranking opcional (cross-encoder)
 4. Truncar a top-K final con LIMIT
 ```
@@ -174,40 +172,25 @@ Vector similarity captura semántica gruesa. Para precisión fina, un **cross-en
 
 ## Pipeline de indexing
 
-¿Cuándo se generan / regeneran los chunks de una nota? Esquema:
+¿Cuándo se generan / regeneran los blocks de una nota? Esquema:
 
 ```
-Note.content cambia
+Note.content cambia (o nace una nota nueva)
    ↓
-DELETE chunks existentes de esa Note (CASCADE)
+DELETE blocks existentes de esa Note (CASCADE)
    ↓
 chunk(content) → string[]
    ↓
 embedBatch(chunks) → number[][]
    ↓
-CREATE note_chunk × N
+CREATE block × N
 ```
 
-Implementación: tool del Huygens MCP llamado `reindex_note(noteId)`. Se llama:
-
-- **No** al crear la nota inicialmente si está en `INBOX` (ver más abajo)
-- Cuando una Note pasa de `INBOX` a `CLARIFIED` (primera indexación real)
-- Cuando una Note ya clarificada modifica `content` significativamente
-- En batch tras un re-embed total (cambio de modelo de embeddings)
-
-### Por qué no indexar en INBOX
-
-Durante captura, el contenido de una nota cambia mucho (el agente edita, el usuario añade). Reembeber cada cambio sería:
-
-- **Ruido en el índice**: chunks zombi durante segundos/minutos
-- **Coste innecesario**: por barato que sea, hacerlo bien es hacerlo una vez
-- **Latencia percibida**: la captura debe ser instantánea, indexar no
-
-Política: **`INBOX` no se indexa**. Indexación arranca al transicionar a `CLARIFIED` (cuando el contenido es "estable enough" para querer encontrarlo).
+Implementación: tool del Huygens MCP llamado `reindex_note(noteId)`. Se llama al crear/actualizar el contenido de una nota, y en batch tras un re-embed total (cambio de modelo de embeddings).
 
 ### Idempotencia
 
-`reindex_note(noteId)` debe ser idempotente: llamarlo dos veces seguidas con el mismo contenido produce los mismos chunks + embeddings. El `DELETE → CREATE` lo garantiza, aunque pierde IDs estables de chunk entre runs (no es problema si los chunks son efímeros y no se referencian directamente desde fuera).
+`reindex_note(noteId)` debe ser idempotente: llamarlo dos veces seguidas con el mismo contenido produce los mismos blocks + embeddings. El `DELETE → CREATE` lo garantiza, aunque pierde IDs estables de block entre runs (no es problema si los blocks son efímeros y no se referencian directamente desde fuera).
 
 ## Métricas a monitorizar
 
@@ -217,18 +200,18 @@ Lista de instrumentación sugerida — no obligatoria v1, pero buena de tener cu
 |---|---|
 | **Recall@10** | ¿Cuántas notas relevantes aparecen en top-10? Necesita ground truth (queries + relevantes etiquetados manualmente). 30-50 queries marcadas es suficiente para detectar drift |
 | **Latencia p50 / p99** | Vector search con HNSW es < 50ms p99 para corpus < 100K vectores. Si sube, algo va mal (índice corrupto, query mal formada, EFSearch demasiado alto) |
-| **% de chunks "stale"** | Chunks cuyo embedding fue generado contra un `content` distinto al actual de la nota. Indicador de pipeline roto |
+| **% de blocks "stale"** | Blocks cuyo embedding fue generado contra un `content` distinto al actual de la nota. Indicador de pipeline roto |
 | **Coste mensual en DeepInfra** | Sanity check. Si pasa de céntimos a euros, hay un bug de reindexado loop |
 
 ## Mantenimiento (recurring jobs)
 
-### Detección de stale chunks
+### Detección de stale blocks
 
-Comparar `note.updated_at` con `note_chunk.created_at` (asumiendo `created_at` del chunk = momento de indexing). Si `note.updated_at > note_chunk.created_at`, el chunk está stale.
+Comparar `note.updated_at` con `block.created_at` (asumiendo `created_at` del block = momento de indexing). Si `note.updated_at > block.created_at`, el block está stale.
 
 ```surql
-SELECT id, noteId, created_at
-FROM note_chunk
+SELECT id, note, created_at
+FROM block
 WHERE created_at < note.updated_at;
 ```
 
@@ -236,20 +219,20 @@ Posible job nocturno: detectar stale + llamar a `reindex_note` para cada nota af
 
 ### Limpieza de huérfanos
 
-Chunks de notas eliminadas. Si el schema usa `CASCADE` en la relación `note_chunk → note`, SurrealDB lo gestiona automáticamente. Si no, job de limpieza:
+Blocks de notas eliminadas. Si el schema usa `CASCADE` en la relación `block → note`, SurrealDB lo gestiona automáticamente. Si no, job de limpieza:
 
 ```surql
-DELETE note_chunk WHERE noteId NOT IN (SELECT id FROM note);
+DELETE block WHERE note NOT IN (SELECT id FROM note);
 ```
 
 ### Reembed completo
 
 Para cambio de modelo o de parámetros HNSW. Procedimiento:
 
-1. Drop del índice viejo: `REMOVE INDEX note_chunk_embedding ON note_chunk;`
+1. Drop del índice viejo: `REMOVE INDEX block_embedding ON block;`
 2. Define del índice nuevo con la dimensión correcta
-3. Re-batch `embedBatch` sobre todos los chunks existentes
-4. Update del campo `embedding` + `embeddingModel`
+3. Re-batch `embedBatch` sobre todos los blocks existentes
+4. Update del campo `embedding` + `embedding_model`
 
 Cuestión de horas para volumen personal. No requiere downtime real si se hace fuera de queries activas.
 
@@ -264,8 +247,6 @@ Cuestión de horas para volumen personal. No requiere downtime real si se hace f
 ## Cross-references
 
 - [`./bge-m3.md`](./bge-m3.md) — qué produce el embedding que indexamos
-- [`./deepinfra-integration.md`](./deepinfra-integration.md) — cómo se obtiene el embedding en runtime
-- [`../03-data-model/note-model.md`](../03-data-model/note-model.md) — schema de Note y NoteChunk
+- [`../../MODEL.md`](../../MODEL.md) — schema canónico de `note` y `block`
 - [`../04-database/surrealdb-deep-dive.md`](../04-database/surrealdb-deep-dive.md) — fundamentos de SurrealDB y su sintaxis
-- [`../04-database/surrealdb-innovations.md`](../04-database/surrealdb-innovations.md) — por qué SurrealDB hace mejor el hybrid search que Mongo
 - [`../02-architecture/mcp-three-layer-architecture.md`](../02-architecture/mcp-three-layer-architecture.md) — el Huygens MCP expone `vector_search` y `reindex_note` como tools

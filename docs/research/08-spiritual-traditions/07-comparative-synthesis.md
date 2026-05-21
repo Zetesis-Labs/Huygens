@@ -361,7 +361,6 @@ Una selección de los 15-20 libros que valdría más la pena leer si el lector s
 - `../06-theory/quantum-and-hypergraphs.md` — QBism y observer-relativismo cuántico
 - `../06-theory/living-topology.md` — schema evolutivo, _tikkun_, _spanda_, _harakat jawhariyya_
 - `../03-data-model/topology-as-primary.md` — topología sobre sustancia
-- `../03-data-model/pillars-and-states.md` — pilares y estados como articulación ortogonal
 - `../03-data-model/relations-and-edges.md` — vocabulario relacional
 
 ## Cierre

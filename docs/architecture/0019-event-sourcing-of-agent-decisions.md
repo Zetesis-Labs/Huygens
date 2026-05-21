@@ -7,15 +7,14 @@
 
 ## Context
 
-Con la introducción del worker autónomo (ADR-0018), el agente toma decisiones interpretativas sobre `raw_capture`s **sin supervisión humana en tiempo real**: clasifica, segmenta en blocks, propone edges, decide cuándo se rinde y pide revisión. Este modo de operar abre un problema operativo grave: ¿cómo se audita, depura y mejora un sistema cuyas decisiones críticas pasan por una caja negra LLM?
+Con la introducción del worker autónomo (ADR-0018), el sistema toma decisiones interpretativas con apoyo LLM **sin supervisión humana en tiempo real**. Este modo de operar abre un problema operativo grave: ¿cómo se audita, depura y mejora un sistema cuyas decisiones críticas pasan por una caja negra LLM?
 
 Preguntas concretas que queremos poder responder en cualquier momento:
 
-- "¿Por qué el worker clasificó este raw como Task y no Project?"
-- "¿En qué % de capturas el worker se rinde y pide revisión humana?"
+- "¿Por qué el agente tomó esta decisión y no otra?"
 - "¿Cómo evoluciona la confidence media con el tiempo?"
-- "¿Cuánto cuesta procesar el inbox cada mes?"
-- "Tras cambiar el system prompt v3 → v4, ¿mejoró el needs_review rate?"
+- "¿Cuánto cuesta operar cada mes?"
+- "Tras cambiar el system prompt v3 → v4, ¿mejoró la tasa de éxito?"
 
 Sin trazabilidad estructurada, estas preguntas son inrespondibles más allá de impresiones subjetivas. Logs textuales no son queryables; integraciones externas (OpenTelemetry, Logfire) mezclan dominio con observabilidad de infra y dejan el reasoning fuera del grafo de conocimiento — incoherente con ADR-0008 (topología como primaria).
 
@@ -23,18 +22,11 @@ Sin trazabilidad estructurada, estas preguntas son inrespondibles más allá de 
 
 Implementar **event sourcing de las decisiones agénticas** vía una nueva tabla `agent_event`. Cada decisión del worker (y del agente conversacional cuando aplique) emite un evento estructurado con metadata completa — kind, actor, session, subject involucrado, payload, confidence, reasoning summary, modelo, tokens, duración.
 
-Schema completo:
+Schema (los valores concretos de `kind` no son load-bearing para esta decisión — dependen del trabajo concreto del agente en cada fase, ver `docs/MODEL.md` para el flujo vigente):
 
 ```surql
 DEFINE TABLE OVERWRITE agent_event SCHEMAFULL;
-DEFINE FIELD kind ON agent_event TYPE string
-  ASSERT $value INSIDE [
-    'raw_received', 'raw_claimed',
-    'analysis_started', 'related_context_fetched',
-    'decomposition_proposed', 'human_review_requested',
-    'commit_attempted', 'commit_succeeded', 'commit_failed',
-    'worker_yielded'
-  ];
+DEFINE FIELD kind ON agent_event TYPE string;
 DEFINE FIELD actor ON agent_event TYPE string
   ASSERT $value INSIDE ['worker', 'conversational', 'user', 'system'];
 DEFINE FIELD session_id ON agent_event TYPE string;
@@ -62,20 +54,17 @@ DEFINE INDEX agent_event_actor     ON agent_event FIELDS actor;
 4. **Worker y conversacional emiten al mismo schema**, distinto `actor`. Permite comparar performance entre ambos modos de operar.
 5. **`subject: option<record>`** acepta cualquier tipo de record (raw_capture, note, block, edge) sin necesidad de union explícita — SurrealDB lo trata como record genérico.
 
-Eventos típicos durante un clarify del worker:
+El formato de un evento típico (kinds elididos porque dependen del trabajo concreto en curso):
 
 ```
 session_id: 01933e8f-...
 
-T+0    raw_claimed             subject=raw_capture:xyz   actor=worker
-T+50   analysis_started        subject=raw_capture:xyz   model=claude-opus-4-7
-T+1200 related_context_fetched payload={matches_count: 3, top_score: 0.82}
-T+8400 decomposition_proposed  confidence=0.88
-                               payload={notes_count: 3, edges_count: 5}
-                               tokens_used={input: 4200, output: 1100}
-                               reasoning_summary="3 intents distintos detectados..."
-T+8500 commit_attempted
-T+8650 commit_succeeded        payload={notes_ids: [...], edges_ids: [...]}
+T+0    <kind>   subject=<record>   actor=worker
+T+50   <kind>   subject=<record>   model=claude-opus-4-7
+T+8400 <kind>   confidence=0.88    payload={...}
+                tokens_used={input: 4200, output: 1100}
+                reasoning_summary="..."
+T+8650 <kind>   payload={ids: [...]}
 ```
 
 ## Consequences
@@ -96,7 +85,7 @@ T+8650 commit_succeeded        payload={notes_ids: [...], edges_ids: [...]}
 
 **Neutrales**:
 
-- Convención compartida entre worker y conversacional — codificada en `docs/agents/conventions.md`
+- Convención compartida entre worker y conversacional
 - La emisión es síncrona con la decisión (no fire-and-forget): si falla la escritura del evento, falla la decisión. Aceptamos ese coste a cambio de no perder trazas.
 
 ## Alternatives considered
@@ -113,33 +102,23 @@ T+8650 commit_succeeded        payload={notes_ids: [...], edges_ids: [...]}
 - ADR-0018: Worker autónomo (el productor principal de estos eventos)
 - ADR-0020: CHANGEFEED para state diff (complementario — uno captura intención, el otro el cambio resultante)
 - ADR-0008: Topology as primary (justifica por qué los eventos viven en SurrealDB y no en un sistema externo)
-- `docs/agents/conventions.md`: convención obligatoria de emisión para todos los agentes
 - `apps/mcp/surreal/schema.surql`: la implementación
 
 ## Notes
 
-Queries que esto desbloquea inmediatamente:
+Queries que esto desbloquea inmediatamente (los `kind` concretos dependen de la fase del sistema):
 
 ```surql
--- Tasa de needs_human_review por mes
-SELECT
-  time::format(created_at, '%Y-%m') AS month,
-  count() AS total_events,
-  count((kind = 'human_review_requested')) AS reviews
-FROM agent_event
-WHERE actor = 'worker' AND kind IN ['commit_succeeded', 'human_review_requested']
-GROUP BY month;
-
--- Distribución de confidence
+-- Distribución de confidence sobre un kind dado
 SELECT math::round(confidence * 10) / 10 AS bucket, count() AS n
 FROM agent_event
-WHERE kind = 'decomposition_proposed'
+WHERE kind = $target_kind
 GROUP BY bucket;
 
--- Reconstruir el flujo completo de un raw concreto
+-- Reconstruir el flujo completo de un subject concreto
 SELECT * FROM agent_event
 WHERE session_id = (
-  SELECT session_id FROM agent_event WHERE subject = raw_capture:xyz LIMIT 1
+  SELECT session_id FROM agent_event WHERE subject = $subject LIMIT 1
 )
 ORDER BY created_at;
 

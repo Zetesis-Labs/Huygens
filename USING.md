@@ -1,11 +1,18 @@
 # Using Huygens
 
-Personal memory MCP. You capture raws (chat, voice, free text), an autonomous
-worker decomposes them into typed notes with semantic search, and you query
-that memory from any MCP-aware agent.
+Personal memory MCP. You capture raws (chat, voice, free text) and synthesize
+them into **reports** that document what changed in your thinking; a worker
+applies those reports to the typed graph.
 
-This doc is the minimum to get from a clean clone to "I just talked to my
-memory".
+The conceptual model lives in [`docs/MODEL.md`](./docs/MODEL.md) — read it
+first. This doc is the minimum to get from a clean clone to "I just talked to
+my memory".
+
+> **Note on current state**: the worker still runs in its legacy form
+> (clarifies raws directly into notes). The target per `docs/MODEL.md` is a
+> topologizer that reads reports and applies them to the graph. Until that
+> rewrite lands, the operational flow below describes what actually works
+> today; treat `docs/MODEL.md` as the direction of travel.
 
 ## Boot
 
@@ -20,13 +27,13 @@ The compose brings up four containers:
 |------------------|---------------------------------------------------------------------|
 | `surrealdb`      | SurrealDB v3 with HNSW vectors + 10y CHANGEFEED                     |
 | `huygens-mcp`    | The TS MCP server on `http://localhost:3030/mcp` + `/healthz`       |
-| `huygens-worker` | Python service that auto-processes the inbox via OpenAI gpt-4o-mini |
+| `huygens-worker` | Python service (legacy clarify; topologizer is the next rewrite)    |
 | `surrealdb-init` | One-shot chown so SurrealDB can write its rocksdb volume            |
 
 First-time setup needs API keys. `apps/mcp/.env` needs `DEEPINFRA_API_KEY`
 (for BGE-M3 embeddings); `backend/huygens-worker/.env` needs
-`OPENAI_API_KEY` (for the clarify agent). Both files are gitignored;
-`.env.example` ships as the template.
+`OPENAI_API_KEY`. Both files are gitignored; `.env.example` ships as the
+template.
 
 Verify the stack is healthy:
 
@@ -51,9 +58,10 @@ similar for Cursor / Claude Desktop):
 }
 ```
 
-Restart the client. You should see 8 tools advertised:
-`capture`, `list_inbox`, `get_raw`, `commit_clarify`, `chunk_markdown`,
-`embed_text`, `index_block`, `vector_search`.
+Restart the client. The MCP advertises tools for capture, raw inspection,
+report generation, chunking/embedding, indexing, and vector search.
+`generate_report` is the canonical path for turning a raw into a report
+(see `docs/MODEL.md` Fase 2).
 
 ## The day-to-day flow
 
@@ -65,20 +73,24 @@ Anywhere in a chat with your MCP-connected agent:
 > propuesta del cliente antes del viernes."
 
 The agent calls `capture` with `source_kind: "chat"`. A `raw_capture` row
-lands in the inbox. The autonomous worker sees it within ~2s.
+lands in the inbox.
 
-### What the worker does autonomously
+### Synthesize a report
 
-1. Polls `raw_capture WHERE processed_at IS NONE` every 2 seconds.
-2. For each new raw it emits `raw_claimed` → `analysis_started`, then calls
-   gpt-4o-mini with the ZTD clarify prompt.
-3. The LLM returns a typed `Decomposition` (notes + blocks + `mit_for` +
-   transformation tags + internal refs).
-4. The worker calls the MCP `commit_clarify` — that writes notes, blocks,
-   block_order, `derived_from` edges, marks the raw processed, emits
-   `commit_attempted` / `commit_succeeded`.
-5. The worker calls `index_block` for the new block ids — BGE-M3 (1024 dims)
-   embeddings persist on each block. The HNSW index updates transparently.
+When you've got enough material in a raw, ask your agent to generate a
+report from it. The agent calls `generate_report(raw_id, k_nearby=5)`: the
+MCP vector-searches the closest prior reports, prompts the LLM with the raw
+plus that context, and writes a new `note(type=report)` with `derived_from`
+to the raw and `based_on` to each prior report it used. Read it, accept it,
+regenerate if you don't like it.
+
+### Apply to the graph (legacy worker behavior)
+
+Today the worker still polls `raw_capture WHERE processed_at IS NONE` and
+clarifies raws directly into notes via `commit_clarify` + `index_block`.
+This pre-dates the report-centric model in `docs/MODEL.md` and will be
+replaced by the topologizer (which reads reports, not raws, and emits
+`affects` edges).
 
 Watch it live:
 
@@ -111,19 +123,9 @@ note ids derived from it).
 
 ## What's where in SurrealDB
 
-Two ontological planes:
-
-- **Plane 1 — `raw_capture`**: the literal user input. Evidence. Immutable
-  in practice. The real inbox.
-- **Plane 2 — `note` + `block` + edges**: the worker's interpretation.
-  Each note is a composition of markdown `block`s (via `block_order`); each
-  block carries its own BGE-M3 embedding for vector search.
-
-Edges (all schemafull with FROM/TO + UNIQUE(in,out)):
-
-`derived_from` (cross-plane, transformation=verbatim/extracted/summarized/inferred),
-`part_of`, `blocked_by`, `mentions`, `supports`, `refutes`, `about`,
-`authored_by`.
+See `docs/MODEL.md` for the canonical entity model (`raw_capture`, `note`,
+`block`, the 10 `note_type`s, and the edge families: procedencia,
+cadenas de informes, mutaciones de topología, semánticos).
 
 Observability:
 
@@ -156,15 +158,3 @@ listener is up, not that DB queries work.
 ```bash
 docker compose -f .devcontainer/docker-compose.yml down -v
 ```
-
-## What's not done yet
-
-- `find_related` tool — wrapper over `vector_search` that the clarify agent
-  could call mid-flow to enrich the prompt with related existing notes
-  (today every clarify is context-free)
-- Retry/backoff if OpenAI hiccups (today: log and try again next tick)
-- Persisted worker state — `seen_processed` is in-memory; on restart the
-  worker re-claims raws it had already processed (functionally OK since
-  `commit_clarify` is idempotent via `RAW_ALREADY_PROCESSED`, but it
-  pollutes the audit trail with duplicate `raw_claimed` events)
-- Generated reports — narratives that aggregate N notes for a period

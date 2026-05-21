@@ -25,27 +25,7 @@ Cada punto incluye: **problema**, **trade-off o razón**, **mitigación si la ha
 
 ---
 
-## 2. `Type=inbox` vs `state=INBOX` (redundancia, RESUELTO)
-
-**Problema inicial**. La primera versión del seed (`apps/mcp/scripts/seed-note-types.ts` o similar) incluía un `NoteType { slug: 'inbox' }`. La intuición era "tener un tipo para las notas sin clasificar". Pero al modelarlo así, una nota recién capturada quedaba con `type=inbox + state=INBOX` — redundancia evidente.
-
-**El insight del usuario**. > *"Lo que capturas no es 'una nota de tipo inbox'. Es algo sin categorizar. 'Inbox' es estado del workflow, no es una categoría de cosa."*
-
-**Resolución**. Se eliminó `inbox` del seed inicial de NoteTypes. La captura ahora es:
-
-```ts
-{ typeId: null, state: 'INBOX' }
-```
-
-El `typeId=null` modela honestamente "esto aún no está categorizado". Cuando el agente o el usuario clarifica, asigna un `typeId` (`task`, `project`, `reference`, ...) y mueve el state a `CLARIFIED`. Limpio y sin redundancia.
-
-**Lección**. La distinción entre **estado** (proceso, dinámico) y **tipo** (clasificación, semi-estable) es ontológicamente importante. Mezclarlos genera redundancia inmediata.
-
-**Estado**. **Resuelto** en commit posterior al seed inicial.
-
----
-
-## 3. `relatedNoteIds[]` unidireccional sin semántica (RESUELTO)
+## 2. `relatedNoteIds[]` unidireccional sin semántica (RESUELTO)
 
 **Problema**. En la v1 (Mongo + Prisma), las relaciones cruzadas entre Notes vivían como `relatedNoteIds: ObjectId[]` — un array plano de IDs. **Sin tipo de relación, sin dirección semántica**. La relación "Note A menciona a Note B" y "Note A está bloqueada por Note B" eran indistinguibles a nivel de schema.
 
@@ -53,7 +33,7 @@ El `typeId=null` modela honestamente "esto aún no está categorizado". Cuando e
 
 - Para distinguir tipos de relación había que meterlos en `metadata.relations: { mentions: [...], blockedBy: [...], supports: [...] }`. Eso convertía `metadata` en doble responsabilidad: tipo-específica + relaciones.
 - Las queries de grafo (e.g., "qué notas mencionan o son mencionadas por X") requerían `$graphLookup` lento y poco expresivo.
-- La validación FROM/TO ("una Note puede mencionar otra Note pero no un Pillar") tenía que vivir en código TypeScript, ~80 líneas de helpers de validación previa a escritura.
+- La validación FROM/TO (qué entidades pueden estar conectadas con qué edge) tenía que vivir en código TypeScript, ~80 líneas de helpers de validación previa a escritura.
 
 **Resolución**. **Pivote completo de BBDD**: de MongoDB a SurrealDB. Las relaciones cruzadas pasan a ser edges tipados con `FROM` y `TO` schemafull, validados por el motor. Detalle del pivote: [../04-database/mongodb-pivot.md](../04-database/mongodb-pivot.md). Detalle del nuevo modelo: [relations-and-edges.md](./relations-and-edges.md).
 
@@ -63,7 +43,7 @@ El `typeId=null` modela honestamente "esto aún no está categorizado". Cuando e
 
 ---
 
-## 4. El Type `note` en el seed
+## 3. El Type `note` en el seed
 
 **Problema**. El seed inicial de NoteTypes incluye 8 valores: `task, project, area, routine, note, report, person, reference`. El cuarto valor — **`note`** — es semánticamente extraño. **Toda fila de la colección ya es una Note**. Tener un Type llamado "note" es como una etiqueta "cosa": no clasifica, no aporta información distintiva.
 
@@ -86,23 +66,7 @@ El `typeId=null` modela honestamente "esto aún no está categorizado". Cuando e
 
 ---
 
-## 5. `Pillar` enum vs `NoteType` model — inconsistencia
-
-**Problema**. Los `NoteType` son **editables en runtime** (un model con tabla propia). Los `Pillar` son **enum** — para añadir un quinto haría falta migración de schema. **Inconsistencia metodológica** dentro del mismo modelo: ¿por qué unas categorías son editables y otras no?
-
-**Defensa**. Los pilares son **filosóficamente fundacionales y estables**. Cuatro conceptos griegos (Pathos-Soma, Ethos, Telos, Sophia) que no se inventan. Si Rubén descubriera un quinto pilar de la experiencia humana, sería un evento intelectual notable, no un seed más en una tabla. Ver [pillars-and-states.md](./pillars-and-states.md) para la defensa completa.
-
-Los NoteTypes son **operativos y pragmáticos**. Hoy puede tener sentido `task` y `project`, mañana puede aparecer `meeting-note`, `kpi`, `decision`. El dominio evoluciona. Forzar migración para cada nuevo type sería fricción inútil.
-
-**Limitación honesta**. El `Pillar` enum **no tiene field `description`** en la BBDD. La descripción de cada pilar la conoce el agente por **prompt** (en el system prompt o en context inicial). Esto significa que si alguien explora la BBDD directamente, no sabe qué significa `ETHOS` sin acudir al prompt o a la documentación.
-
-**Alternativa rechazada**. Hacer `Pillar` también un model. Coste: una tabla más, un seed más, queries de join para resolver el `pillar.description`. Beneficio: descripción consultable. Decisión: el beneficio no compensa el coste — los pilares son **cuatro**, la documentación se conoce.
-
-**Estado**. **Trade-off vivo**, aceptado por filosofía de diseño.
-
----
-
-## 6. Sin `NoteRevision` (audit trail)
+## 4. Sin `NoteRevision` (audit trail)
 
 **Problema**. Cuando el agente reescribe una `Note.content` (porque clarifica una transcripción de voz, mejora la redacción, fusiona dos notas), el **texto original desaparece**. Solo queda la última versión.
 
@@ -130,14 +94,14 @@ Los NoteTypes son **operativos y pragmáticos**. Hoy puede tener sentido `task` 
 
 ---
 
-## 7. Pipeline de regeneración de `NoteChunk`
+## 5. Pipeline de regeneración de blocks
 
-**Problema**. El schema dice que `NoteChunk` se genera a partir de `Note.content`, y se asume que **se regenera** cuando `Note.content` cambia. Pero **no hay nada en el schema ni en el código que dispare esa regeneración**. Si una Note se actualiza, sus chunks quedan desfasados. La búsqueda vectorial empieza a devolver chunks que apuntan a texto que ya no existe en la Note.
+**Problema**. Los `block` se generan a partir del contenido de un `note` (típicamente un informe), y se asume que **se regeneran** cuando el contenido cambia. Pero **no hay nada en el schema ni en el código que dispare esa regeneración** automáticamente. Si los blocks de un informe se editan a mano vía MCP tools, los embeddings pueden quedar desfasados respecto al texto.
 
 **Síntomas previsibles**:
 
-- Vector search devuelve un chunk con `chunkIndex=2, content='... párrafo viejo ...'`. El usuario abre la Note, no encuentra esa frase porque el agente la reescribió.
-- Notas marcadas como "DONE" hace tiempo, con embeddings stale, contaminan resultados de búsqueda.
+- Vector search devuelve un block con texto que ya no se corresponde con el contenido actual del informe (porque alguien lo reescribió sin re-embedear).
+- Notas modificadas hace tiempo, con embeddings stale, contaminan resultados de búsqueda.
 
 **Mitigación posible (no implementada)**:
 
@@ -155,7 +119,7 @@ Los NoteTypes son **operativos y pragmáticos**. Hoy puede tener sentido `task` 
 
 ---
 
-## 8. Compound indexes vs single-column
+## 6. Compound indexes vs single-column
 
 **Problema**. El schema actual tiene `@@index([state])`, `@@index([typeId])`, `@@index([updatedAt])`, `@@index([lastReviewedAt])` — todos single-column. Para un enum de 7 valores como `state`, el índice no aporta mucho: cada bucket contiene ~1/7 de la colección.
 
@@ -173,9 +137,9 @@ Los NoteTypes son **operativos y pragmáticos**. Hoy puede tener sentido `task` 
 
 ---
 
-## 9. `sourceKind` como `String`, no enum
+## 7. `sourceKind` como `String`, no enum
 
-**Problema**. `Pillar` y `NoteState` son enums. `sourceKind` es `String?` libre. Inconsistencia en el modelo: ¿por qué este field puede tener cualquier valor mientras los otros están constrained?
+**Problema**. `NoteState` está enforced con `ASSERT $value INSIDE [...]`. `sourceKind` es `String?` libre. Inconsistencia en el modelo: ¿por qué este field puede tener cualquier valor mientras los otros están constrained?
 
 **Defensa**. `sourceKind` anticipa **flexibilidad**. Hoy los kinds son `'chat' | 'voice' | 'agent' | 'manual' | 'import'`. Mañana puede haber `'browser-extension'`, `'mobile-share'`, `'rss-feed'`, `'spotify'`. Forzar migración para cada nuevo source genera fricción innecesaria — el cambio es trivial conceptualmente, no debería requerir cambio de schema.
 
@@ -189,7 +153,7 @@ Los NoteTypes son **operativos y pragmáticos**. Hoy puede tener sentido `task` 
 
 ---
 
-## 10. No multi-usuario
+## 8. No multi-usuario
 
 **Decisión explícita**. Huygens v1 es **single-user**. Rubén es el único usuario, no hay `userId` en ningún modelo, no hay tenancy. El MCP server vive en local o en una instancia personal.
 
@@ -220,23 +184,20 @@ La razón de tener este fichero como parte de la documentación oficial — y no
 | # | Tema | Estado |
 |---|---|---|
 | 1 | `metadata Json` sin validación | Trade-off vivo (mitigado por Zod en tools) |
-| 2 | `Type=inbox` vs `state=INBOX` | **Resuelto** (eliminado del seed) |
-| 3 | `relatedNoteIds[]` plano | **Resuelto** (pivote a SurrealDB) |
-| 4 | Type `note` semi-redundante | Trade-off vivo (queda como fallback) |
-| 5 | `Pillar` enum vs `NoteType` model | Trade-off vivo (defendido por filosofía) |
-| 6 | Sin `NoteRevision` (audit) | **Gap reconocido**, candidato a v2 |
-| 7 | Pipeline `NoteChunk` regen | **Gap reconocido**, candidato a v1 final |
-| 8 | Compound indexes | Optimización pendiente, no crítica |
-| 9 | `sourceKind` String libre | Trade-off vivo, aceptado |
-| 10 | Single-user | Decisión consciente, alcance |
+| 2 | `relatedNoteIds[]` plano | **Resuelto** (pivote a SurrealDB) |
+| 3 | Type `note` semi-redundante | Trade-off vivo (queda como fallback) |
+| 4 | Sin `NoteRevision` (audit) | **Gap reconocido**, candidato a v2 |
+| 5 | Pipeline de regeneración de blocks | **Gap reconocido**, candidato a v1 final |
+| 6 | Compound indexes | Optimización pendiente, no crítica |
+| 7 | `sourceKind` String libre | Trade-off vivo, aceptado |
+| 8 | Single-user | Decisión consciente, alcance |
 
-Tres resueltos. Dos gaps reconocidos con candidatos claros de solución. Cinco trade-offs vivos, aceptados con razón.
+Un resuelto. Dos gaps reconocidos con candidatos claros de solución. Cuatro trade-offs vivos, aceptados con razón. Una decisión consciente de alcance.
 
 ## Cross-references
 
-- [topology-as-primary.md](./topology-as-primary.md) — el principio que disparó la resolución de #3
-- [note-model.md](./note-model.md) — la entidad cuyas decisiones se critican aquí
-- [pillars-and-states.md](./pillars-and-states.md) — donde se defienden los enums (#5)
-- [relations-and-edges.md](./relations-and-edges.md) — la resolución técnica de #3
+- [topology-as-primary.md](./topology-as-primary.md) — el principio que disparó la resolución de #2
+- [relations-and-edges.md](./relations-and-edges.md) — la resolución técnica de #2
+- [../../MODEL.md](../../MODEL.md) — modelo canónico actual
 - [../04-database/mongodb-pivot.md](../04-database/mongodb-pivot.md) — el contexto del pivote
 - [../04-database/surrealdb-deep-dive.md](../04-database/surrealdb-deep-dive.md) — detalle del nuevo motor

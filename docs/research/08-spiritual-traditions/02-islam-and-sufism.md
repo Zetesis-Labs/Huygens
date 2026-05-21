@@ -276,7 +276,7 @@ El **mundo físico** (_nāsūt_) no es la totalidad de lo real, es solo la capa 
 
 ### 6.1. Resonancia con jerarquías topológicas en Huygens
 
-Esto encaja con la idea de una jerarquía de tipos en Huygens (el `NoteType` como árbol editable, ver `../03-data-model/note-model.md` y la discusión en `./pillars-and-states.md`), pero llevado al límite ontológico.
+Esto encaja con la idea de una jerarquía de tipos en Huygens (el `NoteType` como árbol editable), pero llevado al límite ontológico.
 
 En Huygens hay una jerarquía suave: tipos de notas, agrupaciones por pilares, niveles de abstracción (una `task` es operativa, un `project` agrupa tasks, un `area` agrupa projects). En Ibn ʿArabī la jerarquía es **constitutiva**: cada nivel emana del anterior y constituye el siguiente. Pero la estructura formal — niveles ontológicos parcialmente ordenados, con generación y penetración — es la misma.
 

@@ -30,26 +30,29 @@ El salto cualitativo está en las dos últimas filas: en Mongo, **el grafo es al
 ## Edges tipados planeados (lista inicial)
 
 ```surql
-DEFINE TABLE of_type        TYPE RELATION FROM note TO note_type SCHEMAFULL;
-DEFINE TABLE touches_pillar TYPE RELATION FROM note TO pillar    SCHEMAFULL;
-DEFINE TABLE part_of        TYPE RELATION FROM note TO note      SCHEMAFULL;
-DEFINE TABLE blocked_by     TYPE RELATION FROM note TO note      SCHEMAFULL;
-DEFINE TABLE mentions       TYPE RELATION FROM note TO note      SCHEMAFULL;
-DEFINE TABLE supports       TYPE RELATION FROM note TO note      SCHEMAFULL;
-DEFINE TABLE refutes        TYPE RELATION FROM note TO note      SCHEMAFULL;
-DEFINE TABLE about          TYPE RELATION FROM note TO note      SCHEMAFULL;
-DEFINE TABLE authored_by    TYPE RELATION FROM note TO note      SCHEMAFULL;
+DEFINE TABLE part_of        TYPE RELATION FROM note TO note         SCHEMAFULL;
+DEFINE TABLE blocked_by     TYPE RELATION FROM note TO note         SCHEMAFULL;
+DEFINE TABLE mentions       TYPE RELATION FROM note TO note         SCHEMAFULL;
+DEFINE TABLE supports       TYPE RELATION FROM note TO note         SCHEMAFULL;
+DEFINE TABLE refutes        TYPE RELATION FROM note TO note         SCHEMAFULL;
+DEFINE TABLE about          TYPE RELATION FROM note TO note         SCHEMAFULL;
+DEFINE TABLE authored_by    TYPE RELATION FROM note TO note         SCHEMAFULL;
+DEFINE TABLE derived_from   TYPE RELATION FROM note TO raw_capture  SCHEMAFULL;
 ```
 
 Notas sobre esta lista:
 
-- **`of_type` y `touches_pillar`** son edges hacia entidades fijas. En la v1 esos eran fields directos sobre `Note` (`typeId`, `pillars[]`). En la v2 hay flexibilidad: o se mantienen como fields, o se promueven a edges. Promoverlos da uniformidad ("todo es grafo") pero añade overhead de creación/lectura. Decisión pendiente; ver "Discusión: fields vs edges para Type y Pillar" más abajo.
+- **El tipo de un `note`** se modela como `record<note_type>` en la propia tabla `note`, no como edge. La taxonomía es un árbol de identidad estable; promoverlo a edge añade overhead sin beneficio práctico.
 
-- **`part_of`** sustituye a `parentNoteId` de Mongo. Es importante: ahora una `Task` puede ser `PART_OF` un `Project`, un `Project` puede ser `PART_OF` un `Area`, y todo eso se traversa en una query (`->part_of->note->part_of->note`).
+- **`part_of`** sustituye a `parentNoteId` de Mongo. Ahora una `Task` puede ser `PART_OF` un `Project`, un `Project` puede ser `PART_OF` un `Area`, y todo eso se traversa en una query (`->part_of->note->part_of->note`).
 
 - **`blocked_by`, `mentions`, `supports`, `refutes`, `about`** son los edges argumentativos / operativos. Son los que matan el `relatedNoteIds[]` de la v1.
 
 - **`authored_by`** apunta a un nodo de tipo `person` — que técnicamente sigue siendo un `Note` con `type=person`. La distinción `FROM note TO note` se mantiene a nivel SurrealDB; el "tipo" Person lo aporta la propiedad del nodo, no la tabla.
+
+- **`derived_from`** cruza planos: una `note` (típicamente un informe) puede apuntar al `raw_capture` que la originó.
+
+Pendientes de añadir como tablas reales pero ya descritas conceptualmente en [`docs/MODEL.md`](../../MODEL.md): `based_on` (informe → informe previo) y `affects` (informe → cualquier note tocada por la topologización). Ambas son centrales al modelo de "informe como artefacto" pero se documentarán en su propio sitio cuando se implementen.
 
 ## Edge con properties (ejemplo `blocked_by`)
 
@@ -82,7 +85,7 @@ El motor:
 4. Valida tipos de los fields opcionales.
 5. Crea la fila en la tabla `blocked_by`.
 
-**Si tratas de crear `blocked_by` FROM `pillar:ethos`, la BBDD rechaza la operación**. No es validación en código del cliente — es enforcement del schema. Eso es lo que MongoDB no podía dar limpiamente.
+**Si tratas de crear `blocked_by` FROM un nodo de tabla que no sea `note`, la BBDD rechaza la operación**. No es validación en código del cliente — es enforcement del schema. Eso es lo que MongoDB no podía dar limpiamente.
 
 ## Aclaración importante sobre la aridad de los edges
 
@@ -142,74 +145,22 @@ Cuándo **no** conviene reificar (mantener edge binario):
 
 Más sobre la teoría de hyperedges y por qué los grafos binarios son suficientes vía reificación: [../06-theory/hypergraphs-foundations.md](../06-theory/hypergraphs-foundations.md).
 
-## Discusión: fields vs edges para Type y Pillar
-
-Decisión abierta para el pivote a SurrealDB: `OF_TYPE` y `TOUCHES_PILLAR` ¿deben ser edges, o deben quedarse como fields directos sobre `Note`?
-
-**Como field** (heredado de v1):
-
-```surql
-DEFINE FIELD type    ON note TYPE option<record<note_type>>;
-DEFINE FIELD pillars ON note TYPE array<string> ASSERT $value INSIDE ['PATHOS_SOMA', 'ETHOS', 'TELOS', 'SOPHIA'];
-```
-
-**Como edge**:
-
-```surql
-DEFINE TABLE of_type        TYPE RELATION FROM note TO note_type SCHEMAFULL;
-DEFINE TABLE touches_pillar TYPE RELATION FROM note TO pillar    SCHEMAFULL;
-```
-
-| Aspecto | Como field | Como edge |
-|---|---|---|
-| Lectura barata | sí (acceso directo) | requiere traversal |
-| Escritura | una sola operación | tantas operaciones como tipos/pilares |
-| Uniformidad con resto del grafo | rompe el patrón | encaja |
-| Queries de grafo (`->of_type->note_type`) | no aplica | natural |
-| Properties en el edge (e.g., `assignedAt`, `confidence`) | imposible | trivial |
-
-**Posición provisional**: `type` como **field** (porque es 0..1, lectura constante, y el `note_type` es un árbol que casi nunca cambia para una Note dada). `pillars` también como **field** (porque son enum + array, no entidad real con identidad). Si en algún momento hace falta capturar "cuándo se asignó este pilar" o "con qué confianza", entonces se promueve a edge.
-
-Esa decisión se confirma cuando se cierre el deep-dive de SurrealDB: ver [../04-database/surrealdb-deep-dive.md](../04-database/surrealdb-deep-dive.md).
-
 ## Diagrama de un subgrafo típico
 
-Pongamos: tenemos un Project Mileto (`project:mileto`), con dos Tasks (`note:task-a`, `note:task-b`), una de las cuales está bloqueada, y una Idea (`note:idea-x`) que respalda la dirección. La estructura:
+Pongamos: tenemos un Project Mileto (`note:mileto` con `type=project`), con dos Tasks (`note:task-a`, `note:task-b`), una de las cuales está bloqueada, y una Idea (`note:idea-x`) que respalda la dirección. La estructura:
 
 ```
-project:mileto ←─[part_of]── note:task-a
-                              ↑
-                              │ [blocked_by]
-                              │ {since, reason}
-                              │
+note:mileto ←─[part_of]── note:task-a
+                            ↑
+                            │ [blocked_by]
+                            │ {since, reason}
+                            │
 note:idea-x ──[supports]→ note:task-b
-                              ↓
-                              [touches_pillar]
-                              ↓
-                          pillar:telos
 ```
 
-Cada flecha es un edge tipado. Cada edge tiene `FROM` y `TO` validados. Algunas tienen properties (e.g., `blocked_by` lleva `since` y `reason`). Una query de "qué bloquea a las tasks del Project Mileto" recorre `project:mileto <-part_of<- note <-blocked_by<- note` y devuelve los bloqueadores.
+Cada flecha es un edge tipado. Cada edge tiene `FROM` y `TO` validados. Algunas tienen properties (e.g., `blocked_by` lleva `since` y `reason`). Una query de "qué bloquea a las tasks del Project Mileto" recorre `note:mileto <-part_of<- note <-blocked_by<- note` y devuelve los bloqueadores.
 
 ## Queries de ejemplo
-
-### Notas activas que tocan el pilar Éthos
-
-```surql
-SELECT * FROM note
-WHERE state = 'ACTIVE'
-  AND 'ETHOS' INSIDE pillars;
-```
-
-(si `pillars` es field) o:
-
-```surql
-SELECT * FROM note
-WHERE state = 'ACTIVE'
-  AND ->touches_pillar->pillar.slug = 'ETHOS';
-```
-
-(si `touches_pillar` es edge).
 
 ### Tasks de un Project, bloqueadas
 
@@ -261,29 +212,11 @@ WHERE state = 'WAITING';
 
 Devuelve para cada nota waiting, qué la bloquea. Si quisieras la **cadena completa** (waiting → blocker → blocker → ...) usas recursión, que SurrealDB soporta vía `RELATE` recursive o vía paths con repetición.
 
-### Report semanal por Pillar
-
-```surql
-SELECT
-  pillar,
-  count() AS total,
-  count(state = 'ACTIVE')  AS active,
-  count(state = 'WAITING') AS waiting,
-  count(state = 'DONE')    AS done
-FROM (
-  SELECT *, array::flatten(pillars) AS pillar FROM note
-  WHERE updatedAt > time::now() - 7d
-)
-GROUP BY pillar;
-```
-
-(asumiendo `pillars` como field array). Esto genera la base numérica del informe semanal: cuántas notas tocan cada pilar y en qué estado están.
-
 ## La propiedad invisible: el motor te protege
 
 Vale la pena re-enfatizar lo central: con SurrealDB y schemafull edges, **el motor te impide** crear relaciones semánticamente erradas.
 
-Si un agente intenta `RELATE pillar:ethos -> blocked_by -> note:task_x`, la BBDD rechaza. Si intenta `RELATE note:task_a -> touches_pillar -> note:task_b`, la BBDD rechaza (porque `TO` debe ser `pillar`, no `note`).
+Si un agente intenta `RELATE raw_capture:x -> blocked_by -> note:task_x`, la BBDD rechaza (porque `FROM` debe ser `note`). Si intenta `RELATE note:task_a -> derived_from -> note:task_b`, la BBDD rechaza (porque `TO` de `derived_from` debe ser `raw_capture`, no `note`).
 
 Esto es lo que justifica la fricción de redefinir el schema cada vez que aparece un edge type nuevo. La fricción **paga** porque cada agente futuro, cada script de import, cada query exploratoria, vive dentro de las garantías que el motor enforza. No hay que confiar en que el código lo haga bien — el motor lo hace bien.
 
@@ -317,14 +250,13 @@ Esta es una de las áreas donde el changefeed nativo de SurrealDB también puede
 4. Para relaciones **N-arias genuinas**, se **reifica**: la relación se convierte en un nodo conectado a sus N participantes con edges binarios.
 5. El motor **enforza** qué relaciones están autorizadas. No es validación en código.
 6. Queries de grafo son **bidireccionales por construcción**: `->edge->` y `<-edge<-` son ambas baratas.
-7. Decisiones pendientes: `Type` y `Pillar` como fields vs edges. Política de borrado vs marcado histórico para edges resueltos.
+7. Decisiones pendientes: política de borrado vs marcado histórico para edges resueltos. Edges `based_on` y `affects` por implementar (centrales al modelo de informe como artefacto).
 
 ## Cross-references
 
 - [topology-as-primary.md](./topology-as-primary.md) — el principio que justifica este diseño
-- [note-model.md](./note-model.md) — la entidad nodo
-- [pillars-and-states.md](./pillars-and-states.md) — los enums
 - [self-critique.md](./self-critique.md) — trade-offs vivos
+- [../../MODEL.md](../../MODEL.md) — modelo canónico, incluye `based_on` y `affects`
 - [../04-database/mongodb-pivot.md](../04-database/mongodb-pivot.md) — por qué se pivotó
 - [../04-database/surrealdb-deep-dive.md](../04-database/surrealdb-deep-dive.md) — detalle del motor
 - [../06-theory/hypergraphs-foundations.md](../06-theory/hypergraphs-foundations.md) — teoría de hyperedges

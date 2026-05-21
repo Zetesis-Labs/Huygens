@@ -1,10 +1,10 @@
-# La topología como primaria
+# La topología como primaria (subordinada al informe)
 
 > "Esto que tenemos es una topología, claramente, no es simplemente una BBDD. Quizá definir una topología inicial y luego ir definiendo las relaciones que autorizamos hacia los markdowns sea una aproximación con más futuro."
->
-> "La topología es primaria. El markdown es payload sobre los nodos."
 
-Este fichero documenta el principio fundacional del modelo de datos de Huygens. Es el reframing que determinó todas las decisiones posteriores: el pivote de MongoDB a SurrealDB, la forma del schema, la separación entre nodos y edges, y la manera en que el agente debe razonar sobre la memoria.
+> Nota de reframing posterior: **el informe es el artefacto primario; la topología es el byproduct de topologizar informes**. Lo que sigue en este documento describe por qué tratar las relaciones como ciudadanos de primera (frente a un store documental) sigue siendo cierto y necesario — pero el grafo no se construye directamente. Se construye porque un worker traduce informes a mutaciones. Ver [`docs/MODEL.md`](../../MODEL.md).
+
+Este fichero documenta el principio que determinó el pivote de MongoDB a SurrealDB, la forma del schema, y la separación entre nodos y edges. El informe entra al grafo como un `note(type=report)` más, pero su rol es estructuralmente distinto: cada vez que existe uno nuevo, el worker lo lee y emite las mutaciones que pueblan el resto del grafo.
 
 ## El reframing
 
@@ -38,23 +38,26 @@ Esta es la lista inicial. Es ampliable — el árbol de tipos de relación crece
 
 | Edge type | FROM | TO | Semántica |
 |---|---|---|---|
-| `OF_TYPE` | `Note` | `NoteType` | Una Note tiene un Type (cuando ya está clasificada) |
-| `TOUCHES_PILLAR` | `Note` | `Pillar` | Una Note toca un Pilar Estratégico |
 | `PART_OF` | `Note` | `Note` | Una Task es PART_OF un Project; un Project es PART_OF un Area |
 | `BLOCKED_BY` | `Note` | `Note` | Esta nota espera por aquella |
 | `MENTIONS` | `Note` | `Note` | Referencia narrativa, débil |
 | `SUPPORTS` | `Note` | `Note` | Esta idea/evidencia respalda aquella |
 | `REFUTES` | `Note` | `Note` | Esta idea contradice aquella |
 | `ABOUT` | `Note` (típicamente un Report) | `Note` | Un Report cubre estas notas |
-| `AUTHORED_BY` | `Note` | `Person` | Una nota es atribuible a alguien (e.g., una cita) |
+| `AUTHORED_BY` | `Note` | `Person` (note con type=person) | Una nota es atribuible a alguien (e.g., una cita) |
+| `DERIVED_FROM` | `Note` | `raw_capture` | Procedencia: este note salió de aquel raw |
 
 Algunas observaciones importantes sobre esta tabla:
 
-- `OF_TYPE` y `TOUCHES_PILLAR` son edges entre `Note` y entidades fijas (el árbol `NoteType` y el enum `Pillar`). En la versión Mongo, esto se modelaba como `typeId` y `pillars[]` directamente sobre `Note`. En la versión SurrealDB, hay flexibilidad para elegir: o mantenerlos como campos del nodo (más barato, igual de expresivo) o promoverlos a edges (más uniforme, mejor para queries de grafo). Esa decisión se documenta en [relations-and-edges.md](./relations-and-edges.md).
+- **El `type` de un `note`** se modela como `record<note_type>` en la propia tabla `note`, no como edge. El árbol de tipos es identidad estable; promoverlo a edge añade overhead sin beneficio.
 
-- `BLOCKED_BY`, `SUPPORTS`, `REFUTES`, `MENTIONS` son los edges argumentativos / operativos entre Notes. Son los que dan vida al grafo. Sin ellos, Huygens es solo una lista de markdowns con tags.
+- `BLOCKED_BY`, `SUPPORTS`, `REFUTES`, `MENTIONS` son los edges argumentativos / operativos entre Notes. Los emite el worker al topologizar informes — son los que dan vida al grafo. Sin ellos, Huygens sería una lista de markdowns sin tejido.
 
-- `AUTHORED_BY` es el primer edge que cruza tipos `Note → Person`. Es importante reconocer que `Person` ya es una Note (con type=person), así que técnicamente la arista vive entre dos nodos del mismo table `note`. La distinción de "FROM Note TO Person" es semántica, no estructural — la valida la lógica del agente cuando crea la arista.
+- `AUTHORED_BY` cruza semánticamente `Note → Person`. `Person` ya es un Note (con type=person), así que la arista vive entre dos nodos del mismo table `note`. La distinción "FROM Note TO Person" es semántica, no estructural.
+
+- `DERIVED_FROM` es el único edge que cruza planos (de `note` a `raw_capture`). Lo emite el MCP cuando se materializa un informe a partir de un raw.
+
+Edges centrales al modelo pendientes de implementar como tablas (descritos en [`docs/MODEL.md`](../../MODEL.md)): `based_on` (informe → informe previo usado como contexto) y `affects` (informe → cualquier note tocada por su topologización).
 
 ## Propiedades de edges
 
@@ -73,13 +76,11 @@ El detalle importante para el resto de la documentación: **un edge no deja de s
 
 ## Por qué importa para los informes narrativos
 
-Una manera concreta de medir si el reframing aporta: ¿qué tipo de informe semanal queremos que el agente sea capaz de producir?
+Una manera concreta de medir si el reframing aporta: ¿qué tipo de informe queremos que el agente sea capaz de producir, y qué tipo de subgrafo le hace falta al worker para topologizarlo?
 
-Un informe semanal **NO** es "lista de notas creadas esta semana, agrupadas por tipo". Eso lo hace cualquier filtro `createdAt > hace 7 días`. Tampoco es solo "qué pilares se han tocado más" — un histograma sobre `pillars[]`.
+Un informe real es algo como:
 
-Un informe semanal real es algo como:
-
-> "Esta semana, en **Pillar Telos**, el **Project Mileto** tuvo 3 Tasks `ACTIVE` que se desbloquearon de **Task Z** (que estaba `BLOCKED_BY` proveedor externo durante 9 días). De esas tres, una pasó a `DONE` y dos siguen `ACTIVE` con dependencia interna. **Idea X**, capturada el martes, `SUPPORTS` la dirección del Project en su sección de arquitectura."
+> "Esta semana, el **Project Mileto** tuvo 3 Tasks `ACTIVE` que se desbloquearon de **Task Z** (que estaba `BLOCKED_BY` proveedor externo durante 9 días). De esas tres, una pasó a `DONE` y dos siguen `ACTIVE` con dependencia interna. **Idea X**, capturada el martes, `SUPPORTS` la dirección del Project en su sección de arquitectura."
 
 Esa frase requiere:
 
@@ -89,7 +90,7 @@ Esa frase requiere:
 4. Saber qué Tasks son `PART_OF` Mileto (atravesando el grafo).
 5. Saber qué notas `SUPPORTS` esa dirección, y qué notas son ideas vs evidencia (tipos).
 
-Sin edges tipados y dirigidos, ese informe no se puede construir sin escribir bastante código ad-hoc. Con edges tipados y dirigidos en el motor, la query es declarativa: pides el subgrafo que cumple esas condiciones y el motor te lo devuelve.
+Sin edges tipados y dirigidos, ese informe no se puede construir sin escribir bastante código ad-hoc. Con edges tipados y dirigidos en el motor, la query es declarativa: el MCP pide el subgrafo y se lo entrega al LLM como contexto al sintetizar, y el worker pide otro subgrafo al topologizar para decidir qué mutaciones aplicar.
 
 ## La carga semántica del schema
 
@@ -101,8 +102,7 @@ Esta es la diferencia entre un schema que tienes que documentar aparte ("ojo, no
 
 ## Cómo lee esto el resto de la documentación
 
-- [note-model.md](./note-model.md) describe la entidad central — el contenedor de payload.
-- [pillars-and-states.md](./pillars-and-states.md) documenta los dos enums fundacionales que clasifican cada nodo.
+- [`docs/MODEL.md`](../../MODEL.md) — modelo canónico; describe cómo el informe es el artefacto primario y la topología emerge de topologizarlo.
 - [relations-and-edges.md](./relations-and-edges.md) documenta la implementación concreta de los edges, comparando Mongo (v1) con SurrealDB (v2).
 - [self-critique.md](./self-critique.md) lista qué decisiones de este reframing siguen siendo trade-offs vivos.
 - [../04-database/mongodb-pivot.md](../04-database/mongodb-pivot.md) cuenta por qué se pivotó.
@@ -112,7 +112,7 @@ Esta es la diferencia entre un schema que tienes que documentar aparte ("ojo, no
 
 ## Resumen
 
-1. Lo que estamos modelando es una **topología**, no una base de datos en el sentido clásico.
+1. Lo que estamos modelando es una **topología**, no una base de datos en el sentido clásico — pero esa topología es **subordinada al informe**: emerge porque un worker traduce informes a mutaciones del grafo.
 2. **Las relaciones son ciudadanos de primera**; los nodos son contenedores de payload.
 3. El schema empieza por declarar **qué edges están autorizados** entre qué tipos de nodo.
 4. Esa autorización **la enforza el motor**, no validación en código.

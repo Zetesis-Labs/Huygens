@@ -86,13 +86,11 @@ A2A puede implementarse de varias formas:
 
 El agente principal tiene **todo el dominio** en su prompt:
 
-- Definición de Pilares (PATHOS_SOMA, ETHOS, TELOS, SOPHIA) y heurísticas para asignarlos
-- Los NoteType seedeados (task, project, area, routine, note, report, person, reference) y cuándo elegir cada uno
-- Lifecycle GTD (INBOX → CLARIFIED → ACTIVE → WAITING → SOMEDAY → DONE → ARCHIVED) y cuándo transicionar
-- Edges autorizados y semántica (`BLOCKED_BY`, `REFERENCES`, `PART_OF`, `DERIVED_FROM`)
-- Reglas de captura (todo entra como `state=INBOX`, sin tipo)
+- Los NoteType seedeados (task, project, area, routine, note, report, person, reference, objetivo, idea) y cuándo elegir cada uno
+- Edges autorizados y semántica (`blocked_by`, `mentions`, `part_of`, `derived_from`, `based_on`, `affects`)
+- Reglas de captura (todo entra como `raw_capture` inmutable)
 
-Eso cabe en ~2000 tokens de system prompt. No hay razón para partirlo en sub-agentes. Las operaciones son **bien definidas**: capturar, clasificar, buscar, generar reporte. No hay un sub-dominio que requiera prompt especializado.
+Eso cabe en ~2000 tokens de system prompt. No hay razón para partirlo en sub-agentes. Las operaciones son **bien definidas**: capturar, buscar, generar informe. No hay un sub-dominio que requiera prompt especializado.
 
 A2A reaparecería si introdujésemos un "weekly review writer" especializado, un "reference linker" para documentos externos, o un sub-agente de "voz a estructura" — pero todas esas operaciones siguen cabiendo en el agente principal hoy. Si el dominio crece a varias sub-áreas con prompts incompatibles, se reabre la conversación.
 

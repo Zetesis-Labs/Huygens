@@ -15,7 +15,7 @@ Se evaluó si el parser de SurrealQL acepta uniones en FROM/TO (`FROM note | blo
 
 ## Decision
 
-Se definen **7 edge tables schemafull**, cada uno con FROM/TO específicos según semántica:
+Cada edge se define como **table schemafull** con FROM/TO específicos según semántica. El conjunto inicial documentado aquí (no exhaustivo — el modelo actual `docs/MODEL.md` incluye edges adicionales documentados en ADRs posteriores) es:
 
 | Edge | FROM | TO | Uso |
 |---|---|---|---|
@@ -24,8 +24,10 @@ Se definen **7 edge tables schemafull**, cada uno con FROM/TO específicos segú
 | `mentions` | `note \| block` | `note \| block` | Referencia narrativa débil |
 | `supports` | `note \| block` | `note \| block` | Zettel-trail argumentativo |
 | `refutes` | `note \| block` | `note \| block` | Contradicción argumentativa |
-| `about` | `note` | `note \| block` | Report cubre elementos citados |
+| `about` | `note` | `note \| block` | Un note (típicamente informe) cubre elementos citados |
 | `authored_by` | `note \| block` | `note` | Atribución a Person (note con type=person) |
+
+> Esta lista refleja la decisión original sobre **forma** (schemafull, FROM/TO tipados, UNIQUE) y no pretende ser un inventario completo de los edges del sistema. Para el conjunto vigente ver `docs/MODEL.md` y los ADRs posteriores.
 
 Cada edge table tiene además `UNIQUE INDEX (in, out)` para impedir duplicados (ADR-0007).
 

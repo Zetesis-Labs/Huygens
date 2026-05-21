@@ -10,15 +10,15 @@ Two ontological planes (current schema).
 
 ```
 raw_capture {
-  id, content, source_kind, source_ref?, created_at, processed_at
+  id, content, source_kind, source_ref?, created_at
 }
 ```
 
-`processed_at IS NONE` means the worker hasn't clarified it yet. Capture is **not interpretation** — never split, summarise or guess at this stage.
+Capture is **not interpretation** — never split, summarise or guess at this stage.
 
 ## Plane 2 — Interpretation
 
-`note` + `block` + edges. Produced by clarify (autonomous or conversational).
+`note` + `block` + edges.
 
 ```
 note {

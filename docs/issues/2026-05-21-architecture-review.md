@@ -166,7 +166,7 @@ Consecuencias:
 
 Toda `schema.surql` usa `DEFINE TABLE OVERWRITE` y `DEFINE FIELD OVERWRITE`. Idempotente, sí. Pero si cambias `embedding TYPE F32` → `TYPE I8` y reaplico, SurrealDB acepta el cambio y los embeddings existentes pueden quedar en estado inconsistente.
 
-No existe la carpeta `apps/mcp/surreal/migrations/` aunque `docs/agents/conventions.md` la menciona.
+No existe la carpeta `apps/mcp/surreal/migrations/`.
 
 Para corpus personal hoy, OK. Cuando los embeddings cuesten tokens reales o cambies a quantización (ver nota [[EVAL] Quantizar HNSW index a I8]), NO ok sin guardia.
 

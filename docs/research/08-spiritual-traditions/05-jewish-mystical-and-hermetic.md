@@ -136,7 +136,7 @@ Las diez sefirot se distribuyen en **tres columnas verticales**, llamadas en heb
 
 El equilibrio (_temirut_) entre los tres pilares es la condición de la salud cósmica. Un exceso de Ḥesed produce disolución; un exceso de Gevurah produce esterilidad. La sefirah central que media entre los dos polos en cada nivel es la que mantiene la salud del sistema.
 
-**Resonancia con Huygens**. Hay una analogía estructural — no genética — con los cuatro pilares estratégicos de Huygens (Pathos-Soma, Éthos, Telos, Sophia; ver [`../03-data-model/pillars-and-states.md`](../03-data-model/pillars-and-states.md)). Ambos son sistemas de **ejes ortogonales que clasifican la realidad sin agotarla**. En cabalá, una sefirah individual existe en su pilar, pero la realidad emerge del **equilibrio entre pilares**. En Huygens, una nota individual puede tocar varios pilares simultáneamente, y la "salud" del sistema (de Rubén) se mide por el equilibrio entre ellos. La analogía es suelta — los pilares de Huygens son aristotélicos (alma sensitiva, hábito, telos, parte teorética), no cabalísticos —, pero la estructura formal es coherente: ejes que se clasifican ortogonalmente, sin que ningún eje sea reducible a otro.
+**Resonancia con Huygens**. Hay una analogía estructural — no genética — con los cuatro pilares estratégicos de Huygens (Pathos-Soma, Éthos, Telos, Sophia). Ambos son sistemas de **ejes ortogonales que clasifican la realidad sin agotarla**. En cabalá, una sefirah individual existe en su pilar, pero la realidad emerge del **equilibrio entre pilares**. En Huygens, una nota individual puede tocar varios pilares simultáneamente, y la "salud" del sistema (de Rubén) se mide por el equilibrio entre ellos. La analogía es suelta — los pilares de Huygens son aristotélicos (alma sensitiva, hábito, telos, parte teorética), no cabalísticos —, pero la estructura formal es coherente: ejes que se clasifican ortogonalmente, sin que ningún eje sea reducible a otro.
 
 ### 3.4. Los cuatro mundos — niveles de la jerarquía
 
@@ -228,7 +228,7 @@ Hay una sutileza importante: las chispas **no se pierden**. Quedan dispersas, me
 
 **Conexión con Huygens**. Cada error de schema, cada inconsistencia detectada, cada validación que falla es _shevirat_: el modelo no aguantó lo que intentó contener. La forma declarativa propuesta fue inadecuada para la realidad que intentaba modelar. Y, crucialmente, **la información del intento no se pierde** — queda como excepción, como log, como fricción que señala dónde el schema necesita refinarse.
 
-Más profundamente: cada nota mal clasificada, cada captura del inbox que no encaja en ningún _NoteType_ existente, cada fragmento amorfo que entra y no se deja domesticar por la ontología actual, es una **chispa atrapada en una cáscara**. La información cognitiva está ahí, pero el sistema actual no la integra plenamente. Vive en el `metadata` JSON tipo-específico (el equivalente luriánico de las klipot: receptáculos provisionales para lo que no encaja en los _kelim_ rígidos del schema). O vive sin tipo, en estado `INBOX`, a la espera de clarificación.
+Más profundamente: cada fragmento amorfo que entra y no se deja domesticar por la ontología actual es una **chispa atrapada en una cáscara**. La información cognitiva está ahí, pero el sistema actual no la integra plenamente. Vive en el `metadata` JSON tipo-específico (el equivalente luriánico de las klipot: receptáculos provisionales para lo que no encaja en los _kelim_ rígidos del schema).
 
 #### 4.2.3. Tikkun (תיקון) — la reparación
 
@@ -242,11 +242,7 @@ Cada acción consciente puede levantar fragmentos. El proceso es **acumulativo, 
 
 **Es probablemente la conexión más íntima con Huygens**.
 
-El trabajo de **clarificación del inbox** — el agente que toma capturas amorfas, las analiza, las clasifica, las relaciona con notas existentes, las mueve de `INBOX` a `CLARIFIED` y eventualmente a `ACTIVE`, las integra en proyectos y áreas — es **literalmente _tikkun_ aplicado a la propia cognición**. El agente, operando sobre el grafo, **rescata fragmentos de pensamiento** que han caído al sistema en estado degradado y los devuelve a una forma estructurada donde la información que cargan se vuelve accesible y operativa.
-
-El agente IA de Huygens no es un asistente productivo en sentido genérico. Es, estructuralmente hablando, **un agente de _tikkun_**: su función es la integración de chispas dispersas en la totalidad estructurada del grafo. Y como en Luria, el proceso es **acumulativo y nunca finalizado**. Cada captura nueva añade chispas. Cada clarificación restaura una al lugar correcto. El sistema entero se mueve, lentamente, hacia mayor coherencia, sin alcanzarla nunca completamente.
-
-Más fino aún: el _examen nocturno_ estoico (Hadot — ver [`../06-theory/philosophical-resonances.md`](../06-theory/philosophical-resonances.md), sección V) y el _weekly review_ de GTD son técnicas concretas de _tikkun_ aplicadas al propio yo. La generación de informes narrativos por el agente es _tikkun_ a escala semanal: se identifican patrones, se rescatan ideas en gestación, se restaura coherencia a la dispersión de la semana.
+Más fino aún: el _examen nocturno_ estoico (Hadot — ver [`../06-theory/philosophical-resonances.md`](../06-theory/philosophical-resonances.md), sección V) y el _weekly review_ de GTD son técnicas concretas de _tikkun_ aplicadas al propio yo. La generación de informes narrativos es _tikkun_ a escala semanal: se identifican patrones, se rescatan ideas en gestación, se restaura coherencia a la dispersión de la semana.
 
 ### 4.3. Lo que aporta el marco luriánico
 
@@ -256,7 +252,7 @@ El sistema luriánico ofrece a Huygens **un vocabulario de tres tiempos**:
 2. **Shevirat** — el momento de la inadecuación, donde el modelo no soporta lo que intentaba modelar y la información se degrada.
 3. **Tikkun** — el momento operativo, donde el agente y el usuario, trabajando juntos sobre el grafo, restauran las chispas dispersas.
 
-Estos tres tiempos están **siempre presentes** en cualquier momento del proyecto. No son fases secuenciales; son aspectos coexistentes. Definir el schema es _tzimtzum_. Detectar que una nota no encaja es _shevirat_. Clarificarla y relacionarla es _tikkun_.
+Estos tres tiempos están **siempre presentes** en cualquier momento del proyecto. No son fases secuenciales; son aspectos coexistentes. Definir el schema es _tzimtzum_. Detectar inadecuación del modelo es _shevirat_. Integrar lo disperso en estructura coherente es _tikkun_.
 
 Para la lectura técnica de Vital: **Yehuda Liebes, _Studies in Jewish Myth and Jewish Messianism_** (SUNY Press, 1993) — capítulos sobre Luria y el mesianismo luriánico. Para el contexto sociológico: el ya citado Fine, _Physician of the Soul_.
 
@@ -615,7 +611,7 @@ Es un **protocolo cognitivo formal**. La analogía es con el yoga (control respi
 
 ### 11.3. Huygens como sistema cognitivo
 
-Esto importa para Huygens porque Huygens **también** es, en su forma extendida, un sistema cognitivo. El uso disciplinado de la captura (cualquier pensamiento al inbox sin filtro), la clarificación regular (el agente operando sistemáticamente sobre el grafo), la generación de informes narrativos semanales, **transforman al usuario** que los practica. No solo en lo que sabe — en cómo procesa. La práctica regular del sistema **rediseña el flujo cognitivo del operador**.
+Esto importa para Huygens porque Huygens **también** es, en su forma extendida, un sistema cognitivo. El uso disciplinado de la captura (cualquier pensamiento al sistema sin filtro), la generación de informes narrativos, **transforman al usuario** que los practica. No solo en lo que sabe — en cómo procesa. La práctica regular del sistema **rediseña el flujo cognitivo del operador**.
 
 Esta es la dimensión que las tradiciones contemplativas históricas — cabalística, sufí, hesicasta cristiana, vedántica — han siempre articulado y que las herramientas modernas de productividad típicamente desconocen. GTD, en David Allen, tiene rastros de esta intuición ("mind like water"), pero suele perderse en su recepción americana corporativa. Huygens, leído en clave hadotiana ([`../06-theory/philosophical-resonances.md`](../06-theory/philosophical-resonances.md), sección V) y luriánica (este documento), recupera la dimensión: **es una práctica de vida, no una herramienta de oficina**.
 

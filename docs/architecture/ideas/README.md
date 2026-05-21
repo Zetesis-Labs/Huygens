@@ -26,8 +26,6 @@ None of them is buildable today — the system has no notes captured in real use
 
 - **[Find_related Re-ranking](find-related-reranking.md)** — learned re-ranker over HNSW top-K, trained on observed usage (which hits were consumed vs ignored). Beats cosine for "useful to *me*" once there's signal. Note: depends on Feedback Infrastructure landing first. Revisit when: months of real usage and "search keeps showing me the same boring matches" or the corpus is past where pure cosine ranks well.
 
-- **[Confidence-scored Auto-clarify](confidence-scored-clarify.md)** — gate the worker's auto-commits with a learned "would Rubén have accepted this?" classifier. High confidence → auto-commit (today's default). Low confidence → queue for human review. Trains from observed corrections. Revisit when: ≥30 manual corrections to past clarifies, or a specific recurring failure mode that the worker keeps repeating.
-
 ## Cross-cutting note
 
 These ideas are not exclusive. Several share the same substrate (feedback events), the same technique (small learned head on frozen BGE-M3), and the same data shape (per-note or per-block scoring). A well-designed Feedback Infrastructure layer would enable any subset of them to be built independently. Pick one, validate cheaply (each doc has a "Cheapest validation path"), and expand.

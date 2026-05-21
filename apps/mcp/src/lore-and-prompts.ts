@@ -17,7 +17,7 @@ const LORE_ENTRIES: LoreEntry[] = [
     uri: 'huygens://lore/clarify-spec',
     name: 'clarify-spec',
     description:
-      'Authoritative spec for how raw_captures become typed notes: note types, transformations, mit_for rules, state machine, edge semantics.',
+      'Transitional spec: note types, transformations and edge taxonomy. Canonical flow lives in docs/MODEL.md.',
     path: 'lore/clarify-spec.md'
   },
   {
@@ -33,12 +33,9 @@ const PROMPT_ENTRIES: PromptEntry[] = [
   {
     name: 'clarify-system',
     description:
-      'System prompt for an agent acting as the clarify worker — decomposes a raw_capture into a Decomposition using retrieve-then-generate RAG.',
+      'Transitional system prompt for the clarify worker. PROMPT_ENTRIES will gain topologize-system when the topologizer worker is implemented.',
     path: 'prompts/clarify-system.md'
   }
-  // morning-planning + weekly-review live at prompts/deferred/ until the
-  // planning / review phases re-enter scope. Current scope: capture +
-  // processing + reports + navigate.
 ]
 
 function readDoc(relativePath: string): string {
