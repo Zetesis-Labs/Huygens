@@ -1,6 +1,8 @@
 # Huygens — conocimiento del dominio para el agente
 
-> Este documento es **la verdad operativa** del dominio que el agente necesita para asistir al usuario. Léelo entero al inicio de cualquier sesión nueva. Los matices conceptuales más profundos viven en `docs/research/` (referenciados al final).
+> ⚠️ **OBSOLETO** — Este documento queda superseded por [`docs/MODEL.md`](../MODEL.md). El modelo que describe (con worker que clarifica raws directamente, sin "informe como artefacto central") **ya no aplica**. Consulta `docs/MODEL.md` para el modelo canónico actual.
+>
+> Este archivo se conserva por valor histórico hasta que el contenido útil que tenga (queries, patrones específicos) se migre a `docs/MODEL.md` o a docs nuevos. No lo uses como referencia operativa.
 
 ## ¿Qué es Huygens?
 

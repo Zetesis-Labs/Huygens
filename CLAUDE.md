@@ -1,35 +1,31 @@
 # CLAUDE.md
 
-> **Lecturas obligatorias al inicio de sesión** (en este orden):
-> 1. [`docs/agents/huygens-domain.md`](./docs/agents/huygens-domain.md) — qué es Huygens, entidades, edges, flujos
-> 2. [`docs/agents/surrealql-patterns.md`](./docs/agents/surrealql-patterns.md) — queries SurrealQL para Huygens
-> 3. [`docs/agents/conventions.md`](./docs/agents/conventions.md) — reglas operativas obligatorias
+> **Lectura obligatoria al inicio de sesión** — única:
+> [`docs/MODEL.md`](./docs/MODEL.md) — modelo canónico del sistema. Reemplaza todos los docs conceptuales anteriores.
 >
-> Este fichero (`CLAUDE.md`) contiene **convenciones del repo + comandos**. El conocimiento del dominio vive en `docs/agents/`.
+> Este fichero (`CLAUDE.md`) contiene **convenciones del repo + comandos**. El modelo de dominio vive en `docs/MODEL.md`. Los docs antiguos en `docs/agents/` y `docs/user-cases.md` están **obsoletos** hasta que se reescriban.
 
 ## Proyecto
 
-Monorepo TypeScript con **Bun** + **SurrealDB** + **MCP** en `apps/mcp`. Una sola app por ahora, pero la raíz declara workspaces (`apps/*`) para crecer.
+Monorepo TypeScript con **Bun** + **SurrealDB** + **MCP** en `apps/mcp`. Workspaces (`apps/*`) y backend (`backend/huygens-worker`) en Python.
 
-Filosofía operativa: **Zen to Done (ZTD)** — capturar, procesar, planificar (MITs), hacer. Detalle en `docs/agents/huygens-domain.md`.
+Filosofía: el sistema gira en torno al **informe** como artefacto central. Tú conversas con un agente, el agente genera informes a partir de las conversaciones usando informes previos como contexto, y un worker pequeño aplica lo que dice cada informe al grafo de tasks/projects/objetivos/ideas/references.
 
-## Scope actual (fase 1 de ZTD)
+El detalle completo está en [`docs/MODEL.md`](./docs/MODEL.md). Aquí solo lo esencial para operar.
 
-Huygens hoy hace cuatro cosas y nada más:
+## Las tres fases del flujo
 
-1. **Captura** raws inmutables (`raw_capture`)
-2. **Procesa** vía worker autónomo o conversación con el agente → notes tipadas con blocks + edges
-3. **Genera reports** sintetizando slices del corpus (parte del procesamiento, no fase aparte)
-4. **Navega el grafo** (vector_search, find_related, list_inbox, list_notes_by_type, get_raw)
+1. **Captura** — agente vuelca conversación → `raw_capture` inmutable
+2. **Síntesis** — agente llama `generate_report` → nuevo `note(type=report)` con `derived_from` al raw y `based_on` a informes cercanos
+3. **Topologización** — worker detecta informe sin topologizar → traduce su narrativa a mutaciones del grafo (crea/actualiza tasks, projects, ideas, etc.) → emite `affects` edges
 
-**Fuera del scope actual** — no se implementa, no se enforced, no priorizar:
+Detalle: [`docs/MODEL.md`](./docs/MODEL.md).
 
-- Planning (MITs, morning planning) — `mit_for` existe en schema pero no se usa
-- Doing (focus, IN_PROGRESS state) — el state machine acepta los valores pero solo `CLARIFIED` está en uso
-- Review-as-entity, routines con RRULE engine, commitments tracking — diseñado conceptualmente, no implementado
-- Transiciones de estado (`update_note_state` existe como tool pero no es prioritario)
+## Lo que está fuera del scope este ciclo
 
-Esto importa para los agentes: al clarificar un raw, **default state = CLARIFIED, mit_for = NONE**. Cualquier valor más allá de eso es over-reach del scope actual.
+- Estados ≠ CLARIFIED, `mit_for`, transiciones explícitas — schema lo acepta, no se driven
+- Routines con RRULE engine — `routine` es solo clasificación
+- Reviews-as-entity, dashboard — no implementados
 
 ## Convenciones
 

@@ -1,6 +1,8 @@
 # Huygens — Casos de uso y flujos
 
-Mapa exhaustivo de quién hace qué en Huygens, con visualizaciones de los flujos principales. Este doc es la fotografía actual del sistema — cuando cambien las cosas, se actualiza aquí.
+> ⚠️ **OBSOLETO** — Superseded por [`docs/MODEL.md`](./MODEL.md). Este doc describía un modelo anterior (worker clarifica raws, flows tipo morning-planning/weekly-review como ciudadanos primarios) que **ya no es el diseño**. El modelo canónico actual centra el sistema en el **informe** como artefacto que conecta conversación con topología, y el worker es un topologizador pequeño que aplica informes al grafo.
+>
+> El contenido aquí se conserva como referencia histórica del pensamiento previo. No lo uses para entender qué hace Huygens hoy — usa `docs/MODEL.md`.
 
 ---
 

@@ -1,6 +1,8 @@
 # Huygens Data Model
 
-Two ontological planes.
+> **⚠ Note for consuming agents:** the canonical model of how Huygens *flows* is described in `docs/MODEL.md` at the repo root, in Spanish — that's where the report-centered model lives (raw → report → worker topologizes). This document describes only the **physical schema currently in the database**, which is in transition toward that model. Where they diverge, MODEL.md describes the target.
+
+Two ontological planes (current schema).
 
 ## Plane 1 — Evidence
 

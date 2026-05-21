@@ -1,6 +1,6 @@
 # Convenciones del agente
 
-> Reglas operativas que cualquier agente trabajando sobre Huygens debería respetar. Son prescriptivas, no descriptivas — si las rompes sin razón, estás operando incorrectamente.
+> ⚠️ **Parcialmente obsoleto** — Algunas reglas siguen siendo válidas (idempotencia, audit, naming) pero las referencias al flujo "raw → worker clarifica" están **superadas**. El modelo canónico hoy es [`docs/MODEL.md`](../MODEL.md). Si una regla aquí contradice `MODEL.md`, gana `MODEL.md`.
 
 ## 1. Idempotencia
 
