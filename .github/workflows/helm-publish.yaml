@@ -31,7 +31,7 @@ env:
 jobs:
   publish:
     name: Package & Push Helm Chart
-    runs-on: ubuntu-latest
+    runs-on: cardano-runners
     permissions:
       contents: read
 
