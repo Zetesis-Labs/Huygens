@@ -1,6 +1,6 @@
 [project]
 name = "huygens-worker"
-version = "0.1.0"
+version = "0.2.0"
 description = "Autonomous inbox processor for Huygens. Watches raw_capture via CHANGEFEED and runs clarify via the MCP."
 requires-python = ">=3.12"
 readme = "README.md"
