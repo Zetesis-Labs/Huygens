@@ -13,6 +13,24 @@ Monorepo TypeScript con **Bun** + **SurrealDB** + **MCP** en `apps/mcp`. Una sol
 
 Filosofía operativa: **Zen to Done (ZTD)** — capturar, procesar, planificar (MITs), hacer. Detalle en `docs/agents/huygens-domain.md`.
 
+## Scope actual (fase 1 de ZTD)
+
+Huygens hoy hace cuatro cosas y nada más:
+
+1. **Captura** raws inmutables (`raw_capture`)
+2. **Procesa** vía worker autónomo o conversación con el agente → notes tipadas con blocks + edges
+3. **Genera reports** sintetizando slices del corpus (parte del procesamiento, no fase aparte)
+4. **Navega el grafo** (vector_search, find_related, list_inbox, list_notes_by_type, get_raw)
+
+**Fuera del scope actual** — no se implementa, no se enforced, no priorizar:
+
+- Planning (MITs, morning planning) — `mit_for` existe en schema pero no se usa
+- Doing (focus, IN_PROGRESS state) — el state machine acepta los valores pero solo `CLARIFIED` está en uso
+- Review-as-entity, routines con RRULE engine, commitments tracking — diseñado conceptualmente, no implementado
+- Transiciones de estado (`update_note_state` existe como tool pero no es prioritario)
+
+Esto importa para los agentes: al clarificar un raw, **default state = CLARIFIED, mit_for = NONE**. Cualquier valor más allá de eso es over-reach del scope actual.
+
 ## Convenciones
 
 - **ESM only** — `"type": "module"` en todos los `package.json`

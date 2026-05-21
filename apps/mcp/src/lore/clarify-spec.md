@@ -2,6 +2,8 @@
 
 Authoritative reference for how a raw_capture becomes typed notes in Huygens. Both the autonomous worker and any conversational agent operate under this spec.
 
+> **Current scope** — capture + processing + reports + navigate. The planning, doing and review phases are intentionally deferred. Fields and tools that belong to those phases (`mit_for`, `state` beyond `CLARIFIED`, the `update_note_state` tool) **exist in schema for forward compatibility but are not driven in this phase**. When clarifying a raw, default `state = CLARIFIED` and skip `mit_for` unless the raw is unambiguously about a deadline.
+
 ## Note Types (`type_slug`)
 
 Pick the most specific that fits. One type per note.
@@ -30,24 +32,13 @@ Declare how each note relates to the source raw:
 | `summarized` | condensed from the raw |
 | `inferred`   | YOUR interpretation, not explicitly in the raw — be honest about this |
 
-## States (ZTD state machine)
+## States — only `CLARIFIED` is in use this phase
 
-`CLARIFIED → ACTIVE → WAITING / SOMEDAY → DONE → ARCHIVED`
+The schema accepts the full ZTD machine `CLARIFIED → ACTIVE → WAITING / SOMEDAY → DONE → ARCHIVED`, but **in the current scope every new note is created with `state = CLARIFIED`** and stays there until a future phase activates state transitions. Don't pick anything else when clarifying.
 
-Default for a new note: `CLARIFIED`. The state machine is not strictly enforced by the schema — you can move to any state — but the canonical flow above is what reviews assume.
+## `mit_for` — deferred (do not set)
 
-## `mit_for` (Most Important Task)
-
-Only set if the raw mentions a specific day or deadline. ISO 8601 with `Z` suffix, UTC.
-
-| user says                          | mit_for                  |
-|------------------------------------|--------------------------|
-| "tomorrow", "mañana"               | next-day midnight UTC    |
-| "today at 10am"                    | today 10:00 UTC          |
-| "before Friday", "antes del viernes" | that Friday (deadline)   |
-| "next Monday"                      | that Monday              |
-
-**Never pick a date in the past.** If your computation lands before today, recompute.
+`mit_for` belongs to the planning phase, which is out of current scope. Leave it `NONE` when clarifying. Even if the raw mentions a deadline, capture the intent in the block text but do not populate `mit_for`. The field is reserved for forward compatibility.
 
 ## Edges
 

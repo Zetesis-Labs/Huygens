@@ -35,19 +35,10 @@ const PROMPT_ENTRIES: PromptEntry[] = [
     description:
       'System prompt for an agent acting as the clarify worker — decomposes a raw_capture into a Decomposition using retrieve-then-generate RAG.',
     path: 'prompts/clarify-system.md'
-  },
-  {
-    name: 'morning-planning',
-    description:
-      'Conversational flow: surface MITs + inbox + active work, decide the one thing that would make today not-wasted.',
-    path: 'prompts/morning-planning.md'
-  },
-  {
-    name: 'weekly-review',
-    description:
-      'Conversational flow: inventory open work, triage WAITING/SOMEDAY/old-ideas, generate the period report.',
-    path: 'prompts/weekly-review.md'
   }
+  // morning-planning + weekly-review live at prompts/deferred/ until the
+  // planning / review phases re-enter scope. Current scope: capture +
+  // processing + reports + navigate.
 ]
 
 function readDoc(relativePath: string): string {
