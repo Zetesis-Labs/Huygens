@@ -19,12 +19,13 @@ describe('captureImpl', () => {
     })
     expect(raw_id).toMatch(/^raw_capture:[A-Za-z0-9]+$/)
 
-    const [rows] = await ctx.db.query<[{ content: string; source_kind: string }[]]>(
-      'SELECT content, source_kind FROM raw_capture'
+    const [rows] = await ctx.db.query<[{ content: string; source_kind: string; status: string }[]]>(
+      'SELECT content, source_kind, status FROM raw_capture'
     )
     expect(rows).toHaveLength(1)
     expect(rows[0]?.content).toBe('recordar comprar leche')
     expect(rows[0]?.source_kind).toBe('manual')
+    expect(rows[0]?.status).toBe('pending')
   })
 
   test('source_ref absent stays NONE, not null', async () => {

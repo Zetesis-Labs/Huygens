@@ -6,13 +6,15 @@ type RawCapture = {
   content: string
   source_kind: string
   source_ref: string | null
+  status: 'pending' | 'processed' | 'ignored' | 'deferred'
   created_at: Date
   processed_at: Date | null
 }
 
 type Block = {
   id: RecordId
-  note: RecordId
+  note?: RecordId | null
+  block_kind: 'descriptive' | 'narrative'
   content: string
 }
 
@@ -28,163 +30,198 @@ type Note = {
 
 const db = await getDb()
 
-// ─── Plano 1: captura cruda ─────────────────────────────────────────────
-// Simula que el usuario dictó un tocho de voz que se transcribió.
 const RAW_TEXT = `Ana me dijo ayer que su fisio de Bilbao es muy bueno para
-cervicales, debería probarlo. Me recordó que tengo que renovar el carnet en
+cervicales, deberia probarlo. Me recordo que tengo que renovar el carnet en
 agosto. Y por cierto, anoche leyendo Milewski me di cuenta de que los
-functores aplicativos son justo lo que necesito para componer las queries del
-agente — explorar mañana.`
+applicative functors son justo lo que necesito para componer las queries del
+agente; explorar manana.`
 
-const [createRawResult] = await db.query<[RawCapture[]]>(
-  `CREATE raw_capture CONTENT {
-    content: $content,
-    source_kind: 'voice',
-    source_ref: $session_ref
-  } RETURN AFTER`,
-  { content: RAW_TEXT, session_ref: 'voice-session-abc' }
-)
-const raw = createRawResult[0]
-if (!raw) throw new Error('raw_capture create failed')
+const createdNotes: RecordId[] = []
+const createdBlocks: RecordId[] = []
+let raw: RawCapture | undefined
 
-// El inbox real: raw_captures sin procesar
-const [unprocessed] = await db.query<[RawCapture[]]>(
-  'SELECT id, source_kind, created_at FROM raw_capture WHERE processed_at IS NONE'
-)
+try {
+  const [createRawResult] = await db.query<[RawCapture[]]>(
+    `CREATE raw_capture CONTENT {
+      content: $content,
+      source_kind: 'voice',
+      source_ref: $session_ref,
+      status: 'pending'
+    } RETURN AFTER`,
+    { content: RAW_TEXT, session_ref: 'voice-session-smoke' }
+  )
+  raw = createRawResult[0]
+  if (!raw) throw new Error('smoke: raw_capture create failed')
 
-// ─── Plano 2: procesamiento (lo que en runtime hace el agente) ─────────
-// El agente decide:
-// - 1 Note "captura sesión voz" tipo=NONE (conserva sesión cruda como contexto)
-// - 1 Note tipo=task "Probar fisio recomendado por Ana en Bilbao"
-// - 1 Note tipo=task "Renovar carnet de conducir antes de agosto"
-// - 1 Note tipo=note "Idea: applicative functors para composición de queries del agente"
-// Cada una con su block markdown.
+  const [pendingBefore] = await db.query<[RawCapture[]]>(
+    "SELECT id, source_kind, status, created_at FROM raw_capture WHERE status = 'pending'"
+  )
 
-// 1. Note contenedora (sesión original como referencia)
-const [container] = await db.query<[Note[]]>(
-  `CREATE note CONTENT {
-    title: 'Sesión de voz — fisio, DNI, applicative functors',
-    state: 'CLARIFIED'
-  } RETURN AFTER`
-)
-const containerNote = container[0]!
-const [containerBlock] = await db.query<[Block[]]>('INSERT INTO block { note: $note, content: $content }', {
-  note: containerNote.id,
-  content: RAW_TEXT
-})
-await db.query('UPDATE $id SET block_order = $order', {
-  id: containerNote.id,
-  order: [containerBlock[0]!.id]
-})
+  const today = new Date()
+  today.setUTCHours(0, 0, 0, 0)
 
-// 2. Tasks y note específicas extraídas.
-//    La primera task se marca como MIT de hoy (ADR-0023) para demostrar el campo.
-const today = new Date()
-today.setUTCHours(0, 0, 0, 0)
+  const [notes] = await db.query<[Note[]]>(
+    `INSERT INTO note [
+      {
+        title: 'Sistema personal',
+        type: note_type:project,
+        state: 'ACTIVE'
+      },
+      {
+        title: 'Probar fisio recomendado por Ana en Bilbao',
+        type: note_type:task,
+        state: 'CLARIFIED',
+        mit_for: $today
+      },
+      {
+        title: 'Applicative functors para composicion de queries del agente',
+        type: note_type:idea,
+        state: 'CLARIFIED'
+      }
+    ]`,
+    { today }
+  )
 
-const [extracted] = await db.query<[Note[]]>(
-  `INSERT INTO note [
+  const [project, task, idea] = notes
+  if (!project || !task || !idea) throw new Error('smoke: failed to create notes')
+  createdNotes.push(project.id, task.id, idea.id)
+
+  for (const note of notes) {
+    const [blocks] = await db.query<[Block[]]>(
+      `INSERT INTO block {
+        note: $note,
+        block_kind: 'descriptive',
+        content: $content
+      }`,
+      {
+        note: note.id,
+        content: `## ${note.title}\n\nDescripcion aprobada durante smoke test v2.1-lite.`
+      }
+    )
+    const block = blocks[0]
+    if (!block) throw new Error(`smoke: failed to create descriptive block for ${note.id}`)
+    createdBlocks.push(block.id)
+    await db.query('UPDATE $note SET block_order = [$block]', {
+      note: note.id,
+      block: block.id
+    })
+  }
+
+  const [narrativeRows] = await db.query<[Block[]]>(
+    `CREATE block CONTENT {
+      block_kind: 'narrative',
+      content: $content,
+      topologized_at: time::now()
+    } RETURN AFTER`,
     {
-      title: 'Probar fisio recomendado por Ana en Bilbao',
-      type: note_type:task,
-      state: 'CLARIFIED',
-      mit_for: $today
-    },
-    {
-      title: 'Renovar carnet de conducir antes de agosto',
-      type: note_type:task,
-      state: 'CLARIFIED'
-    },
-    {
-      title: 'Applicative functors para composición de queries del agente',
-      type: note_type:note,
-      state: 'CLARIFIED'
+      content:
+        'Ana recomendo un fisio para cervicales, aparece una tarea de renovar carnet y se registra una idea tecnica sobre applicative functors.'
     }
-  ]`,
-  { today }
-)
+  )
+  const narrativeBlock = narrativeRows[0]
+  if (!narrativeBlock) throw new Error('smoke: failed to create narrative block')
+  createdBlocks.push(narrativeBlock.id)
 
-// Crear blocks para cada nota extraída
-for (const n of extracted) {
-  await db.query<[Block[]]>('INSERT INTO block { note: $note, content: $content }', {
-    note: n.id,
-    content: `## ${n.title}\n\nExtraído de la sesión de voz.`
-  })
-}
-
-// Edges `mentions` desde cada nota extraída hacia el container (procedencia)
-for (const n of extracted) {
-  await db.query('RELATE $from->mentions->$to', {
-    from: n.id,
-    to: containerNote.id
-  })
-}
-
-// 3. Edges derived_from: procedencia de cada nota hacia el raw.
-//    El container es verbatim (preserva el texto literal); las extraídas son 'extracted'.
-await db.query('RELATE $from->derived_from->$raw CONTENT { transformation: "verbatim" }', {
-  from: containerNote.id,
-  raw: raw.id
-})
-for (const n of extracted) {
-  await db.query('RELATE $from->derived_from->$raw CONTENT { transformation: "extracted" }', {
-    from: n.id,
+  await db.query('RELATE $block->derived_from->$raw CONTENT { transformation: "summarized" }', {
+    block: narrativeBlock.id,
     raw: raw.id
   })
-}
 
-// 4. Cerrar el ciclo: marcar el raw_capture como procesado.
-const allNotes = [containerNote.id, ...extracted.map(n => n.id)]
-await db.query('UPDATE $raw SET processed_at = time::now()', { raw: raw.id })
-
-// ─── Verificación ───────────────────────────────────────────────────────
-const [rawAfter] = await db.query<[RawCapture[]]>('SELECT * FROM raw_capture WHERE id = $id', {
-  id: raw.id
-})
-const [unprocessedAfter] = await db.query<[RawCapture[]]>('SELECT id FROM raw_capture WHERE processed_at IS NONE')
-const [mentionsCount] = await db.query<[{ count: number }[]]>(
-  'SELECT count() AS count FROM mentions WHERE out = $container GROUP ALL',
-  { container: containerNote.id }
-)
-
-// Procedencia inversa: qué notes derivan de este raw
-const [derivedNotes] = await db.query<[{ in: RecordId; transformation: string | null }[]]>(
-  'SELECT in, transformation FROM derived_from WHERE out = $raw',
-  { raw: raw.id }
-)
-
-// MITs de hoy: demuestra el índice mit_for (ADR-0023).
-const [mitsToday] = await db.query<[{ id: RecordId; title: string; mit_for: Date }[]]>(
-  `SELECT id, title, mit_for FROM note
-   WHERE mit_for >= $today AND mit_for < $tomorrow`,
-  {
-    today,
-    tomorrow: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+  for (const note of notes) {
+    await db.query('RELATE $block->about->$note', {
+      block: narrativeBlock.id,
+      note: note.id
+    })
   }
-)
 
-console.log(
-  JSON.stringify(
-    {
-      raw_capture_created: String(raw.id),
-      inbox_before_processing: unprocessed.length,
-      notes_produced: allNotes.map(String),
-      mentions_to_container: mentionsCount[0]?.count ?? 0,
-      raw_capture_processed_at: rawAfter[0]?.processed_at ?? null,
-      derived_from_edges: derivedNotes.map(d => ({
-        note: String(d.in),
-        transformation: d.transformation
-      })),
-      mits_today: mitsToday.map(n => ({ id: String(n.id), title: n.title })),
-      inbox_after_processing: unprocessedAfter.length
-    },
-    null,
-    2
+  await db.query('RELATE $block->affects->$note CONTENT { action: "created", summary: $summary }', {
+    block: narrativeBlock.id,
+    note: task.id,
+    summary: 'Crea la tarea de probar el fisio recomendado por Ana.'
+  })
+  await db.query('RELATE $block->affects->$note CONTENT { action: "created", summary: $summary }', {
+    block: narrativeBlock.id,
+    note: idea.id,
+    summary: 'Crea la idea tecnica sobre composicion de queries.'
+  })
+
+  await db.query('RELATE $task->part_of->$project', {
+    task: task.id,
+    project: project.id
+  })
+  await db.query('RELATE $idea->mentions->$project', {
+    idea: idea.id,
+    project: project.id
+  })
+
+  await db.query("UPDATE $raw SET status = 'processed', processed_at = time::now()", { raw: raw.id })
+
+  const [rawAfter] = await db.query<[RawCapture[]]>('SELECT * FROM raw_capture WHERE id = $id', {
+    id: raw.id
+  })
+  const [pendingAfter] = await db.query<[RawCapture[]]>("SELECT id FROM raw_capture WHERE status = 'pending'")
+  const [derivedRecords] = await db.query<[{ in: RecordId; transformation: string | null }[]]>(
+    'SELECT in, transformation FROM derived_from WHERE out = $raw',
+    { raw: raw.id }
   )
-)
+  const [aboutRows] = await db.query<[{ out: RecordId }[]]>('SELECT out FROM about WHERE in = $block', {
+    block: narrativeBlock.id
+  })
+  const [affectsRows] = await db.query<[{ out: RecordId; action: string; summary: string | null }[]]>(
+    'SELECT out, action, summary FROM affects WHERE in = $block',
+    { block: narrativeBlock.id }
+  )
+  const [mitsToday] = await db.query<[{ id: RecordId; title: string; mit_for: Date }[]]>(
+    `SELECT id, title, mit_for FROM note
+     WHERE mit_for >= $today AND mit_for < $tomorrow`,
+    {
+      today,
+      tomorrow: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+    }
+  )
 
-// Cleanup
-for (const n of extracted) await db.query('DELETE $id', { id: n.id })
-await db.query('DELETE $id', { id: containerNote.id })
-await db.query('DELETE $id', { id: raw.id })
-await closeDb()
+  console.log(
+    JSON.stringify(
+      {
+        raw_capture_created: String(raw.id),
+        raw_capture_status: rawAfter[0]?.status ?? null,
+        inbox_before_processing: pendingBefore.length,
+        inbox_after_processing: pendingAfter.length,
+        narrative_block: String(narrativeBlock.id),
+        notes_produced: createdNotes.map(String),
+        derived_from_records: derivedRecords.map(edge => ({
+          block: String(edge.in),
+          transformation: edge.transformation
+        })),
+        about_edges: aboutRows.map(edge => String(edge.out)),
+        affects_edges: affectsRows.map(edge => ({
+          note: String(edge.out),
+          action: edge.action,
+          summary: edge.summary
+        })),
+        mits_today: mitsToday.map(note => ({ id: String(note.id), title: note.title }))
+      },
+      null,
+      2
+    )
+  )
+} finally {
+  if (raw) {
+    await db.query('DELETE derived_from WHERE out = $raw', { raw: raw.id })
+  }
+  for (const block of createdBlocks) {
+    await db.query('DELETE about WHERE in = $block', { block })
+    await db.query('DELETE affects WHERE in = $block', { block })
+    await db.query('DELETE mentions WHERE in = $block OR out = $block', { block })
+    await db.query('DELETE blocked_by WHERE in = $block OR out = $block', { block })
+  }
+  for (const note of createdNotes) {
+    await db.query('DELETE part_of WHERE in = $note OR out = $note', { note })
+    await db.query('DELETE mentions WHERE in = $note OR out = $note', { note })
+    await db.query('DELETE blocked_by WHERE in = $note OR out = $note', { note })
+  }
+  for (const block of createdBlocks) await db.query('DELETE $block', { block })
+  for (const note of createdNotes) await db.query('DELETE $note', { note })
+  if (raw) await db.query('DELETE $raw', { raw: raw.id })
+  await closeDb()
+}

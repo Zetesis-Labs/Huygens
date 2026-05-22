@@ -8,7 +8,12 @@ Memoria estructurada personal para Rubén — un MCP server basado en SurrealDB 
 
 ## Lectura obligatoria
 
-**[`docs/MODEL.md`](./docs/MODEL.md)** — modelo canónico del sistema. Léelo al inicio de cada sesión nueva. Reemplaza todos los docs conceptuales anteriores.
+1. **[`docs/MODEL.md`](./docs/MODEL.md)** — modelo canónico v2.1-lite. Léelo al inicio de cada sesión nueva.
+2. **[`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md)** — reglas operativas para agentes conectados al MCP.
+
+El objetivo actual es conservar el **informe-block** (`block_kind='narrative'`)
+pero en una versión mínima, manual y trazable. El código todavía contiene piezas
+legacy del modelo anterior; si contradicen `docs/MODEL.md`, son transicionales.
 
 ## Mapa del repo
 
@@ -18,9 +23,10 @@ Memoria estructurada personal para Rubén — un MCP server basado en SurrealDB 
 │   ├── surreal/               ← schema.surql + seed.surql
 │   ├── src/                   ← server, cliente SurrealDB
 │   └── scripts/               ← apply-schema, smoke test
-├── backend/huygens-worker/    ← Worker Python (legacy clarify; objetivo: topologizador)
+├── backend/huygens-worker/    ← Shell Python MCP; futuro worker especializado
 ├── docs/
 │   ├── MODEL.md               ← Modelo canónico (LÉEME)
+│   ├── CONVENTIONS.md         ← Reglas operativas para agentes
 │   └── research/              ← Investigación + diseño (contexto profundo)
 ├── .devcontainer/             ← Docker Compose (app + SurrealDB + init)
 ├── CLAUDE.md                  ← Entry point específico para Claude Code
@@ -32,8 +38,38 @@ Memoria estructurada personal para Rubén — un MCP server basado en SurrealDB 
 
 - **Idioma**: español en conversación con el usuario, inglés en commits y código.
 - **Stack**: Bun + TypeScript estricto + Biome + SurrealDB v3 (multi-modelo: grafo + documento + vector).
-- **Devcontainer obligatorio**: nunca ejecutes comandos fuera del contenedor. Usa `docker exec devcontainer-app-1 ...` desde el host.
+- **Devcontainer obligatorio**: nunca ejecutes comandos fuera del contenedor. Usa `docker exec <container-app> ...` desde el host; el nombre puede ser `devcontainer-app-1` o `huygens_devcontainer-app-1` según el project name de Docker Compose.
 - **Sin git por iniciativa propia**: no commits, no branches, no PRs sin que el usuario lo pida explícitamente.
+- **No implementar schema por impulso**: antes de cambiar tipos, edges o flujo de topologización, validar contra `docs/MODEL.md` y preguntar al usuario.
+
+## Flujo objetivo v2.1-lite
+
+```
+captura durante el día
+  → inbox de raw_capture
+  → sesión deliberada de procesamiento
+  → uno o varios informe-blocks aprobados
+  → propuesta visible de mutaciones
+  → commit al grafo
+```
+
+El usuario habla con Claude Code, Codex, Hermes u otro agente conversacional. El
+agente usa el MCP; el MCP persiste en SurrealDB. El worker Python queda
+reservado para workers especializados futuros que usen el MCP, no como interfaz
+principal.
+
+Tools MCP objetivo:
+
+```text
+capture -> list_inbox -> create/update/get/discard_proposal -> commit_proposal
+set_raw_status para ignored/deferred/processed sin crear topologia
+```
+
+## Limpieza legacy
+
+El flujo antiguo `raw -> clarify -> notes` fue retirado. No existen tools MCP
+`commit_clarify` ni `generate_report`, el seed ya no incluye `note`/`report`, y
+el worker no usa Agno/OpenAI ni procesa el inbox por polling.
 
 ## Comandos clave (dentro del devcontainer)
 

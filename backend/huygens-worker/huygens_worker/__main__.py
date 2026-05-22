@@ -3,9 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from .inbox_watcher import InboxWatcher
+from .mcp_client import list_tools_via_mcp
 from .settings import settings
-from .surreal_client import open_db
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,15 +15,20 @@ log = logging.getLogger("huygens_worker")
 
 async def run() -> None:
     log.info(
-        "huygens-worker booting (url=%s ns=%s db=%s actor=%s)",
-        settings.surreal_url,
-        settings.surreal_ns,
-        settings.surreal_db,
+        "huygens-worker booting (mcp_url=%s actor=%s enabled=%s)",
+        settings.mcp_url,
         settings.actor,
+        settings.worker_enabled,
     )
-    async with open_db() as db:
-        watcher = InboxWatcher(db=db)
-        await watcher.run_forever()
+    if not settings.worker_enabled:
+        log.info("huygens-worker disabled; set WORKER_ENABLED=true to start the MCP agent shell")
+        while True:
+            await asyncio.sleep(3600)
+
+    tools = await list_tools_via_mcp()
+    log.info("huygens-worker MCP agent shell ready; %d tool(s) available", len(tools))
+    while True:
+        await asyncio.sleep(3600)
 
 
 def main() -> None:

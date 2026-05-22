@@ -92,6 +92,7 @@ services:
       start_period: 10s
 
   huygens-worker:
+    profiles: ["worker"]
     build:
       context: ../backend/huygens-worker
       dockerfile: Dockerfile
@@ -99,13 +100,7 @@ services:
     env_file:
       - ../backend/huygens-worker/.env
     environment:
-      SURREAL_URL: ws://surrealdb:8000/rpc
-      SURREAL_NS: huygens
-      SURREAL_DB: main
-      SURREAL_USER: root
-      SURREAL_PASS: root
-      POLL_INTERVAL_SECONDS: "2"
-      CLARIFY_MODEL: gpt-4o-mini
+      WORKER_ENABLED: ${WORKER_ENABLED:-false}
       MCP_URL: http://huygens-mcp:3030/mcp
     depends_on:
       surrealdb:

@@ -39,9 +39,10 @@ export type VectorSearchInput = z.infer<typeof vectorSearchSchema>
 
 export type SearchHit = {
   block_id: string
-  note_id: string
-  note_title: string
-  note_state: string
+  block_kind: string
+  note_id: string | null
+  note_title: string | null
+  note_state: string | null
   content: string
   score: number
 }
@@ -49,10 +50,11 @@ export type SearchHit = {
 type Row = {
   id: RecordId
   content: string
+  block_kind: string
   distance: number
-  note_id: RecordId
-  note_title: string
-  note_state: string
+  note_id: RecordId | null
+  note_title: string | null
+  note_state: string | null
 }
 
 export async function vectorSearchImpl(input: VectorSearchInput): Promise<SearchHit[]> {
@@ -83,6 +85,7 @@ export async function vectorSearchImpl(input: VectorSearchInput): Promise<Search
     SELECT
       id,
       content,
+      block_kind,
       note.id          AS note_id,
       note.title       AS note_title,
       note.state       AS note_state,
@@ -97,9 +100,10 @@ export async function vectorSearchImpl(input: VectorSearchInput): Promise<Search
 
   const hits: SearchHit[] = rows.map(r => ({
     block_id: String(r.id),
-    note_id: String(r.note_id),
-    note_title: r.note_title,
-    note_state: r.note_state,
+    block_kind: r.block_kind,
+    note_id: r.note_id ? String(r.note_id) : null,
+    note_title: r.note_title ?? null,
+    note_state: r.note_state ?? null,
     content: r.content,
     score: 1 - r.distance
   }))
@@ -121,7 +125,7 @@ export function registerVectorSearch(server: McpServer): void {
             : hits
                 .map(
                   h =>
-                    `- [${h.score.toFixed(3)}] ${h.note_title} (${h.note_state}) :: ${h.content.slice(0, 100).replace(/\n/g, ' ')}${h.content.length > 100 ? '…' : ''}`
+                    `- [${h.score.toFixed(3)}] ${h.note_title ?? h.block_id} (${h.note_state ?? h.block_kind}) :: ${h.content.slice(0, 100).replace(/\n/g, ' ')}${h.content.length > 100 ? '…' : ''}`
                 )
                 .join('\n')
         return {

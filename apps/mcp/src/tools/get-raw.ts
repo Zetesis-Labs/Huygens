@@ -19,9 +19,10 @@ export type RawDetail = {
   content: string
   source_kind: string
   source_ref: string | null
+  status: string
   created_at: string
   processed_at: string | null
-  derived_notes: string[]
+  derived_records: string[]
 }
 
 export async function getRawImpl(input: GetRawInput): Promise<RawDetail | null> {
@@ -38,6 +39,7 @@ export async function getRawImpl(input: GetRawInput): Promise<RawDetail | null> 
         content: string
         source_kind: string
         source_ref: string | null
+        status: string
         created_at: Date
         processed_at: Date | null
       }[]
@@ -56,6 +58,7 @@ export async function getRawImpl(input: GetRawInput): Promise<RawDetail | null> 
     content: raw.content,
     source_kind: raw.source_kind,
     source_ref: raw.source_ref,
+    status: raw.status,
     created_at: raw.created_at instanceof Date ? raw.created_at.toISOString() : String(raw.created_at),
     processed_at:
       raw.processed_at instanceof Date
@@ -63,14 +66,14 @@ export async function getRawImpl(input: GetRawInput): Promise<RawDetail | null> 
         : raw.processed_at
           ? String(raw.processed_at)
           : null,
-    derived_notes: derivedRows.map(d => String(d.in))
+    derived_records: derivedRows.map(d => String(d.in))
   }
 }
 
 export function registerGetRaw(server: McpServer): void {
   server.tool(
     'get_raw',
-    'Fetch full detail of a single raw_capture by id, plus the notes/blocks derived from it (if any).',
+    'Fetch full detail of a single raw_capture by id, plus the records derived from it (usually narrative blocks).',
     getRawShape,
     async args => {
       const raw = await getRawImpl(args)

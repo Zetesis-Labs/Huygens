@@ -1,18 +1,14 @@
 [project]
 name = "huygens-worker"
 version = "0.2.0"
-description = "Autonomous inbox processor for Huygens. Watches raw_capture via CHANGEFEED and runs clarify via the MCP."
+description = "Worker shell for future specialized Huygens MCP agents."
 requires-python = ">=3.12"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Rubén García" }]
 dependencies = [
-    "surrealdb>=2.0.0,<3",
     "pydantic>=2.0",
     "pydantic-settings>=2.6",
-    "uuid7>=0.1.0",
-    "agno>=2.6,<3",
-    "openai>=1.0",
     "mcp>=1.0",
 ]
 
@@ -43,7 +39,7 @@ target-version = "py312"
 select = ["E", "F", "I", "N", "W", "UP", "B", "A", "C4", "S", "SIM", "RUF"]
 ignore = [
     "E501",  # line length handled by formatter
-    "B008",  # function calls in argument defaults — Agno relies on this pattern
+    "B008",  # function calls in argument defaults
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -56,8 +52,7 @@ indent-style = "space"
 [tool.mypy]
 python_version = "3.12"
 # Pragmatic strict-ish: catch real bugs without fighting third-party SDK quirks.
-# The surrealdb Python SDK exposes AsyncSurreal as a factory rather than a class,
-# which trips strict mode; agno's structured-output typing is also dynamic.
+# The MCP SDK is dynamic enough that strict import typing is not useful here.
 warn_unused_configs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
@@ -65,7 +60,7 @@ no_implicit_optional = true
 check_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["agno.*", "uuid_extensions", "surrealdb"]
+module = ["mcp.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 

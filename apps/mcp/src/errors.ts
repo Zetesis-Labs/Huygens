@@ -17,15 +17,10 @@ import { ErrorCode as JsonRpcCode, McpError } from '@modelcontextprotocol/sdk/ty
 
 export type ErrorCode =
   | 'RAW_NOT_FOUND'
-  | 'RAW_ALREADY_PROCESSED'
   | 'NOTE_NOT_FOUND'
   | 'BLOCK_NOT_FOUND'
-  | 'NOTE_TYPE_NOT_FOUND'
-  | 'INTERNAL_REF_OUT_OF_BOUNDS'
-  | 'EXTERNAL_REF_OUT_OF_BOUNDS'
   | 'EMBEDDING_DIMENSION_MISMATCH'
   | 'EMBEDDING_PROVIDER_ERROR'
-  | 'LLM_PROVIDER_ERROR'
   | 'CONFIG_MISSING'
 
 export abstract class HuygensError extends Error {
@@ -46,13 +41,6 @@ export class RawNotFoundError extends HuygensError {
   }
 }
 
-export class RawAlreadyProcessedError extends HuygensError {
-  readonly code = 'RAW_ALREADY_PROCESSED' as const
-  constructor(raw_id: string) {
-    super(`raw_capture already processed: ${raw_id}`, { raw_id })
-  }
-}
-
 export class NoteNotFoundError extends HuygensError {
   readonly code = 'NOTE_NOT_FOUND' as const
   constructor(note_id: string) {
@@ -67,26 +55,6 @@ export class BlockNotFoundError extends HuygensError {
   }
 }
 
-export class InternalRefOutOfBoundsError extends HuygensError {
-  readonly code = 'INTERNAL_REF_OUT_OF_BOUNDS' as const
-  constructor(to_note_index: number, notes_count: number) {
-    super(`internal_ref to_note_index ${to_note_index} >= notes.length (${notes_count})`, {
-      to_note_index,
-      notes_count
-    })
-  }
-}
-
-export class ExternalRefOutOfBoundsError extends HuygensError {
-  readonly code = 'EXTERNAL_REF_OUT_OF_BOUNDS' as const
-  constructor(from_note_index: number, notes_count: number) {
-    super(`external_ref from_note_index ${from_note_index} >= notes.length (${notes_count})`, {
-      from_note_index,
-      notes_count
-    })
-  }
-}
-
 export class EmbeddingDimensionMismatchError extends HuygensError {
   readonly code = 'EMBEDDING_DIMENSION_MISMATCH' as const
   constructor(got: number | undefined, want: number) {
@@ -96,13 +64,6 @@ export class EmbeddingDimensionMismatchError extends HuygensError {
 
 export class EmbeddingProviderError extends HuygensError {
   readonly code = 'EMBEDDING_PROVIDER_ERROR' as const
-  constructor(provider: string, status: number, body: string) {
-    super(`${provider} ${status}: ${body.slice(0, 300)}`, { provider, status })
-  }
-}
-
-export class LlmProviderError extends HuygensError {
-  readonly code = 'LLM_PROVIDER_ERROR' as const
   constructor(provider: string, status: number, body: string) {
     super(`${provider} ${status}: ${body.slice(0, 300)}`, { provider, status })
   }

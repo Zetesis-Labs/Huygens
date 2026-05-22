@@ -8,13 +8,21 @@ Huygens es un **MCP (Model Context Protocol) server** que sirve como **memoria e
 
 ### Función
 
-El agente captura conversaciones libres como evidencia inmutable (`raw_capture`), sintetiza informes narrativos a partir de esos raws usando informes previos cercanos como contexto, y un worker pequeño traduce cada informe nuevo a mutaciones del grafo de tasks/projects/objetivos/ideas/references. **El informe es el artefacto central**; el worker es plomería. Modelo canónico en [`docs/MODEL.md`](../MODEL.md).
+El agente captura fragmentos como evidencia inmutable (`raw_capture`) en un
+inbox semántico. Cuando Rubén decide procesar el inbox, usuario y agente
+discuten los raws pendientes, los agrupan si procede, producen uno o varios
+**informe-blocks** narrativos aprobados, y solo después aplican propuestas
+visibles de cambios al grafo de tasks/projects/objetivos/ideas/references.
+**El informe-block es la pieza interpretativa central**; el worker autónomo
+queda fuera del alcance inmediato. Modelo canónico en [`docs/MODEL.md`](../MODEL.md).
 
 Las entradas son siempre Markdown. El sistema NO es un second-brain de conocimiento general — es una memoria operativa + estratégica del propio Rubén.
 
 ### Conceptos del dominio
 
-- **NoteType**: taxonomía de tipos. Los 10 tipos coexisten desde día uno (`task`, `project`, `area`, `routine`, `note`, `report`, `person`, `reference`, `objetivo`, `idea`). Solo `report` es estructuralmente especial — es el único que dispara la fase de topologización.
+- **NoteType**: taxonomía de tipos. El objetivo v2.1-lite usa 8 tipos:
+  `task`, `project`, `area`, `routine`, `idea`, `reference`, `person`,
+  `objective`. El schema actual aún conserva `note` y `report` como legacy.
 
 - **Topología primaria**: principio rector. Lo importante son las RELACIONES, no los nodos individuales. La memoria es un grafo dirigido con edges tipados, no una pila de documentos con campos de referencia.
 
@@ -45,14 +53,18 @@ Commit inicial: `707fadb`. En proceso de pivote (Mongo → Surreal).
 
 ### Decisiones cerradas
 
-1. **Captura = `raw_capture` inmutable**, no una `note`. La nota nace solo cuando un informe la materializa, o cuando el worker crea/actualiza nodos topologizando un informe.
-2. **Reports = Notes con `type=report`**, no modelo separado. Es el corazón del sistema.
+1. **Inbox = conjunto de `raw_capture` inmutables**, no notes. Capturar no
+   interpreta; procesar el inbox sí.
+2. **Informe-block = `block(kind=narrative)`**, no `note(type=report)`. Es la
+   pieza interpretativa entre raw y topología.
 3. **Rutinas fuera del schema v1**, solo el tipo seedeado para clasificar
 4. **Embeddings: BGE-M3 vía DeepInfra**. 1024 dims, 8192 ctx
 5. **BBDD: SurrealDB** (pivote desde MongoDB tras reconocer que esto es topología, no documentos)
 6. **Edges schemafull con FROM/TO**: las relaciones autorizadas las enforza el motor, no validación en código
-7. **Arquitectura MCP**: tres capas. Agente (prompt) + surrealmcp (oficial, CRUD genérico) + Huygens MCP (custom, sólo infraestructura: embed, chunk, vector_search, generate_report, get_report)
-8. **Worker = topologizador**, no clarificador. Lee informes sin topologizar, traduce la narrativa a mutaciones del grafo, emite `affects` edges. No toca raws directamente, no genera informes.
+7. **Arquitectura MCP**: el agente conversacional es cliente; el MCP Huygens es
+   la frontera de persistencia; SurrealDB guarda documento/grafo/vector/audit.
+8. **Agno/worker = futuro especialista**, no interfaz principal. No debe
+   topologizar autónomamente sin las reglas de revisión de `docs/CONVENTIONS.md`.
 
 ### Estructura del repo
 

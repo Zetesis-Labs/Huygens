@@ -7,8 +7,8 @@ import { getDb } from '../surreal'
 
 /**
  * LLM-friendly wrapper over vector_search. Returns a compact, deduped list
- * of existing notes the caller might want to link to via `external_refs`
- * during clarify instead of duplicating.
+ * of existing notes the caller might want to reference in a proposal instead
+ * of duplicating.
  *
  * The inner KNN over-fetches (K*3 blocks) so that after deduplicating by
  * parent note we still get up to K distinct notes. Each note is surfaced
@@ -72,6 +72,8 @@ export async function findRelatedImpl(input: FindRelatedInput): Promise<FindRela
       vector::distance::knn() AS distance
     FROM block
     WHERE embedding <|${innerK},${ef}|> $q
+      AND note IS NOT NONE
+      AND block_kind = 'descriptive'
   ) ORDER BY distance ASC`
 
   const [rows] = await db.query<[Row[]]>(sql, { q: queryVec })
@@ -82,6 +84,7 @@ export async function findRelatedImpl(input: FindRelatedInput): Promise<FindRela
   const bestByNote = new Map<string, Row>()
   for (const r of rows) {
     const noteId = String(r.note_id)
+    if (noteId === 'null' || noteId === 'undefined') continue
     if (!bestByNote.has(noteId)) bestByNote.set(noteId, r)
   }
 

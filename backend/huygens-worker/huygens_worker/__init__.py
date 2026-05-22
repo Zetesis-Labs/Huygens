@@ -1,7 +1,3 @@
-"""Huygens autonomous worker.
-
-Watches raw_capture via CHANGEFEED and, eventually, drives the clarify
-loop via Agno + an LLM. Iteration 0: subscribe + log + emit raw_claimed.
-"""
+"""Huygens worker shell for future specialized MCP agents."""
 
 __version__ = "0.2.0"

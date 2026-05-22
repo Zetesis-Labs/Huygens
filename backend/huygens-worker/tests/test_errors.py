@@ -10,8 +10,6 @@ from __future__ import annotations
 from huygens_worker.errors import (
     BlockNotFoundError,
     HuygensError,
-    InternalRefOutOfBoundsError,
-    RawAlreadyProcessedError,
     RawNotFoundError,
     huygens_error_from_structured,
 )
@@ -21,23 +19,21 @@ def test_known_code_yields_matching_subclass() -> None:
     err = huygens_error_from_structured(
         {
             "error": {
-                "code": "RAW_ALREADY_PROCESSED",
-                "message": "raw_capture already processed: raw_capture:abc",
+                "code": "RAW_NOT_FOUND",
+                "message": "raw_capture not found: raw_capture:abc",
                 "details": {"raw_id": "raw_capture:abc"},
             }
         }
     )
-    assert isinstance(err, RawAlreadyProcessedError)
-    assert err.code == "RAW_ALREADY_PROCESSED"
+    assert isinstance(err, RawNotFoundError)
+    assert err.code == "RAW_NOT_FOUND"
     assert err.details == {"raw_id": "raw_capture:abc"}
 
 
 def test_each_known_code_maps_to_its_subclass() -> None:
     cases = [
         ("RAW_NOT_FOUND", RawNotFoundError),
-        ("RAW_ALREADY_PROCESSED", RawAlreadyProcessedError),
         ("BLOCK_NOT_FOUND", BlockNotFoundError),
-        ("INTERNAL_REF_OUT_OF_BOUNDS", InternalRefOutOfBoundsError),
     ]
     for code, cls in cases:
         err = huygens_error_from_structured({"error": {"code": code, "message": "x"}})

@@ -1,6 +1,6 @@
 # Huygens Data Model
 
-> **⚠ Note for consuming agents:** the canonical model of how Huygens *flows* is described in `docs/MODEL.md` at the repo root, in Spanish — that's where the report-centered model lives (raw → report → worker topologizes). This document describes only the **physical schema currently in the database**, which is in transition toward that model. Where they diverge, MODEL.md describes the target.
+> **Note for consuming agents:** the canonical model of how Huygens flows is described in `docs/MODEL.md` at the repo root, in Spanish. This document is only the compact physical-schema summary exposed by the MCP.
 
 Two ontological planes (current schema).
 
@@ -10,7 +10,7 @@ Two ontological planes (current schema).
 
 ```
 raw_capture {
-  id, content, source_kind, source_ref?, created_at
+  id, content, source_kind, source_ref?, status, processed_at?, created_at
 }
 ```
 
@@ -27,16 +27,23 @@ note {
 }
 
 block {
-  id, note (→ note), content (markdown),
+  id, note? (→ note), block_kind, content (markdown),
   embedding (1024 f32, BGE-M3, HNSW indexed)
 }
 ```
 
-Every note has at least one block. The `block_order` defines render sequence. Each block is the **vectorizable unit** — search hits a block, then surfaces its parent note.
+Descriptive blocks belong to notes. Narrative blocks may stand alone and connect to notes through `about` and `affects`. Each block is the vectorizable unit.
 
-## Cross-plane edge
+## Cross-plane and graph edges
 
-Every committed note has at least one `derived_from` edge to its source `raw_capture`, carrying a `transformation` tag (`verbatim` | `extracted` | `summarized` | `inferred`). Provenance is not optional.
+- `derived_from`: `block -> raw_capture`
+- `about`: `block -> note`
+- `affects`: `block -> note`
+- `part_of`: `note -> note`
+- `blocked_by`: `note -> note`
+- `mentions`: `note|block -> note|block`
+
+Structural mutation should go through persisted proposals. `commit_proposal` is the approval boundary.
 
 ## Audit
 

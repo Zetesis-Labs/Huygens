@@ -12,30 +12,32 @@ from typing import Final, Literal, get_args
 NoteState = Literal["CLARIFIED", "ACTIVE", "WAITING", "SOMEDAY", "DONE", "ARCHIVED"]
 NOTE_STATES: Final[tuple[str, ...]] = get_args(NoteState)
 
+RawStatus = Literal["pending", "processed", "ignored", "deferred"]
+RAW_STATUSES: Final[tuple[str, ...]] = get_args(RawStatus)
+
+BlockKind = Literal["descriptive", "narrative"]
+BLOCK_KINDS: Final[tuple[str, ...]] = get_args(BlockKind)
+
+ProposalStatus = Literal["draft", "committed", "discarded"]
+PROPOSAL_STATUSES: Final[tuple[str, ...]] = get_args(ProposalStatus)
+
 NoteTypeSlug = Literal[
     "task",
     "project",
     "area",
     "routine",
-    "note",
-    "report",
-    "person",
-    "reference",
-    "objetivo",
     "idea",
+    "reference",
+    "person",
+    "objetivo",
 ]
 NOTE_TYPE_SLUGS: Final[tuple[str, ...]] = get_args(NoteTypeSlug)
 
-EdgeKind = Literal[
-    "mentions",
-    "supports",
-    "refutes",
-    "part_of",
-    "blocked_by",
-    "about",
-    "authored_by",
-]
+EdgeKind = Literal["part_of", "blocked_by", "mentions"]
 EDGE_KINDS: Final[tuple[str, ...]] = get_args(EdgeKind)
+
+TraceEdgeKind = Literal["derived_from", "about", "affects"]
+TRACE_EDGE_KINDS: Final[tuple[str, ...]] = get_args(TraceEdgeKind)
 
 Transformation = Literal["verbatim", "extracted", "summarized", "inferred"]
 TRANSFORMATIONS: Final[tuple[str, ...]] = get_args(Transformation)
@@ -45,15 +47,12 @@ SOURCE_KINDS: Final[tuple[str, ...]] = get_args(SourceKind)
 
 EventKind = Literal[
     "raw_received",
-    "raw_claimed",
-    "analysis_started",
-    "related_context_fetched",
-    "decomposition_proposed",
-    "human_review_requested",
-    "commit_attempted",
-    "commit_succeeded",
-    "commit_failed",
-    "worker_yielded",
+    "raw_status_changed",
+    "proposal_created",
+    "proposal_updated",
+    "proposal_discarded",
+    "proposal_committed",
+    "note_state_changed",
 ]
 EVENT_KINDS: Final[tuple[str, ...]] = get_args(EventKind)
 

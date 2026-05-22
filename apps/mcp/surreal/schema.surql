@@ -4,12 +4,12 @@
 --   1. raw_capture: lo que el usuario dijo literalmente (evidencia inmutable).
 --      Es el verdadero "inbox" — sin procesar, sin clasificar, sin segmentar.
 --   2. note + block + edges: la interpretación del agente sobre los raw_captures.
---      Es topología procesada — todo lo que aquí vive ya pasó el clarify.
+--      Es topología procesada — todo lo que aquí vive ya pasó una proposal aprobada.
 --
--- La transición entre planos es el `clarify` (procesamiento): el agente lee
--- raw_captures pendientes (processed_at IS NONE), genera Notes/Blocks/Edges,
--- crea edges `derived_from` (note|block → raw_capture) para trazar la procedencia,
--- y marca el raw_capture como procesado (`processed_at = time::now()`).
+-- La transición entre planos objetivo es deliberada: el agente lee
+-- raw_captures con `status = 'pending'`, persiste una proposal draft visible,
+-- y solo tras aprobación crea blocks narrativos + mutaciones mínimas del grafo.
+-- `processed_at` queda como campo legacy/compatibilidad.
 --
 -- Una Note es composición ordenada de Blocks (markdown auto-contenido).
 -- La topología (edges) puede apuntar a notes o a blocks indistintamente —
@@ -29,17 +29,24 @@ DEFINE FIELD OVERWRITE source_kind  ON raw_capture TYPE string
   ASSERT $value INSIDE ['chat', 'voice', 'manual', 'import', 'agent-self'];
 DEFINE FIELD OVERWRITE source_ref   ON raw_capture TYPE option<string>;
 DEFINE FIELD OVERWRITE created_at   ON raw_capture TYPE datetime DEFAULT time::now() READONLY;
--- processed_at: NONE = pendiente; datetime = ya procesado.
+DEFINE FIELD OVERWRITE status       ON raw_capture TYPE string
+  DEFAULT 'pending'
+  ASSERT $value INSIDE ['pending', 'processed', 'ignored', 'deferred'];
+-- processed_at legacy: la fuente de verdad del inbox es `status`.
 -- La procedencia (qué notes/blocks salieron de aquí) NO vive en este campo:
 -- vive en el edge `derived_from` (ver más abajo).
 DEFINE FIELD OVERWRITE processed_at ON raw_capture TYPE option<datetime>;
+
+-- Migración idempotente para raws creados antes de `status`.
+UPDATE raw_capture SET status = 'processed' WHERE status IS NONE AND processed_at IS NOT NONE;
+UPDATE raw_capture SET status = 'pending' WHERE status IS NONE AND processed_at IS NONE;
 
 -- Cleanup: la versión anterior usaba un array<record<note>> en este campo.
 -- Ahora la procedencia es un edge `derived_from`.
 REMOVE FIELD IF EXISTS processed_into ON TABLE raw_capture;
 
--- Índice para "dame el inbox real" en una query: WHERE processed_at IS NONE
-DEFINE INDEX OVERWRITE raw_capture_unprocessed ON raw_capture FIELDS processed_at;
+-- Índice para "dame el inbox real" en una query: WHERE status = 'pending'
+DEFINE INDEX OVERWRITE raw_capture_status      ON raw_capture FIELDS status;
 DEFINE INDEX OVERWRITE raw_capture_created     ON raw_capture FIELDS created_at;
 
 -- ─────────────────────────────────────────────────────────────────────────
@@ -95,21 +102,29 @@ DEFINE INDEX OVERWRITE note_mit_for  ON note FIELDS mit_for;
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- Block: unidad direccionable y vectorizable. Markdown auto-contenido.
--- Cada bloque pertenece a una note. El orden lo dicta note.block_order.
+-- En v2.1-lite hay dos usos:
+--   - descriptive: pertenece a una note y se renderiza vía note.block_order.
+--   - narrative: bloque aprobado desde uno o varios raw_capture; puede no
+--     pertenecer a una note, y se conecta al grafo con about/affects.
 -- ─────────────────────────────────────────────────────────────────────────
 
 DEFINE TABLE OVERWRITE block SCHEMAFULL CHANGEFEED 10y;
-DEFINE FIELD OVERWRITE note            ON block TYPE record<note>;
+DEFINE FIELD OVERWRITE note            ON block TYPE option<record<note>>;
+DEFINE FIELD OVERWRITE block_kind      ON block TYPE string
+  DEFAULT 'descriptive'
+  ASSERT $value INSIDE ['descriptive', 'narrative'];
 DEFINE FIELD OVERWRITE content         ON block TYPE string;
 -- Pilares Estratégicos dropeados al adoptar ZTD (ADR-0021). Limpieza del campo legacy.
 REMOVE FIELD IF EXISTS pillars ON TABLE block;
 DEFINE FIELD OVERWRITE embedding       ON block TYPE option<array<float>>;
 DEFINE FIELD OVERWRITE embedding_model ON block TYPE option<string>;
 DEFINE FIELD OVERWRITE dimensions      ON block TYPE option<int>;
+DEFINE FIELD OVERWRITE topologized_at  ON block TYPE option<datetime>;
 DEFINE FIELD OVERWRITE created_at      ON block TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE updated_at      ON block TYPE datetime VALUE time::now();
 
 DEFINE INDEX OVERWRITE block_note ON block FIELDS note;
+DEFINE INDEX OVERWRITE block_kind ON block FIELDS block_kind;
 -- Índice vectorial HNSW directamente sobre blocks (1024 dims, BGE-M3, cosine).
 -- Parámetros (kaig-inspired): EFC=efConstruction (calidad de construcción),
 -- M=conexiones por nodo en capas superiores, M0=conexiones en capa base.
@@ -123,8 +138,7 @@ DEFINE INDEX OVERWRITE block_embedding ON block
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- Edges schemafull: relaciones autorizadas.
--- Los edges semánticos (mentions/supports/refutes/etc) admiten note Y block
--- como FROM/TO, permitiendo trails Zettelkasten a nivel de bloque.
+-- V2.1-lite mantiene solo el vocabulario mínimo.
 --
 -- Cada edge table tiene un UNIQUE index sobre (in, out) (kaig-inspired) que
 -- impide duplicados: solo puede haber un edge de tipo X entre la misma pareja
@@ -147,34 +161,49 @@ DEFINE TABLE OVERWRITE mentions TYPE RELATION FROM note | block TO note | block 
 DEFINE FIELD OVERWRITE created_at ON mentions TYPE datetime DEFAULT time::now() READONLY;
 DEFINE INDEX OVERWRITE mentions_unique ON mentions FIELDS in, out UNIQUE;
 
--- supports: respaldo argumentativo. Zettel-trails clásicos.
-DEFINE TABLE OVERWRITE supports TYPE RELATION FROM note | block TO note | block SCHEMAFULL CHANGEFEED 10y;
-DEFINE FIELD OVERWRITE created_at ON supports TYPE datetime DEFAULT time::now() READONLY;
-DEFINE INDEX OVERWRITE supports_unique ON supports FIELDS in, out UNIQUE;
+-- Limpieza de edges legacy que no forman parte de v2.1-lite.
+REMOVE TABLE IF EXISTS supports;
+REMOVE TABLE IF EXISTS refutes;
+REMOVE TABLE IF EXISTS authored_by;
 
--- refutes: contradicción argumentativa.
-DEFINE TABLE OVERWRITE refutes TYPE RELATION FROM note | block TO note | block SCHEMAFULL CHANGEFEED 10y;
-DEFINE FIELD OVERWRITE created_at ON refutes TYPE datetime DEFAULT time::now() READONLY;
-DEFINE INDEX OVERWRITE refutes_unique ON refutes FIELDS in, out UNIQUE;
-
--- about: un Report cubre estos blocks/notes citados.
-DEFINE TABLE OVERWRITE about TYPE RELATION FROM note TO note | block SCHEMAFULL CHANGEFEED 10y;
+-- about: un block narrativo habla sobre una note.
+DEFINE TABLE OVERWRITE about TYPE RELATION FROM block TO note SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE created_at ON about TYPE datetime DEFAULT time::now() READONLY;
 DEFINE INDEX OVERWRITE about_unique ON about FIELDS in, out UNIQUE;
 
--- authored_by: atribución a Persons (que son notes con type=person).
-DEFINE TABLE OVERWRITE authored_by TYPE RELATION FROM note | block TO note SCHEMAFULL CHANGEFEED 10y;
-DEFINE FIELD OVERWRITE created_at ON authored_by TYPE datetime DEFAULT time::now() READONLY;
-DEFINE INDEX OVERWRITE authored_by_unique ON authored_by FIELDS in, out UNIQUE;
+-- affects: un bloque narrativo aprobado declara qué note queda afectada y cómo.
+DEFINE TABLE OVERWRITE affects TYPE RELATION FROM block TO note SCHEMAFULL CHANGEFEED 10y;
+DEFINE FIELD OVERWRITE action ON affects TYPE string
+  ASSERT $value INSIDE ['created', 'updated', 'state_changed', 'linked', 'archived'];
+DEFINE FIELD OVERWRITE summary ON affects TYPE option<string>;
+DEFINE FIELD OVERWRITE created_at ON affects TYPE datetime DEFAULT time::now() READONLY;
+DEFINE INDEX OVERWRITE affects_unique ON affects FIELDS in, out UNIQUE;
 
 -- derived_from: procedencia desde raw_capture. La auditabilidad cruda → estructurado.
--- Granularidad: note O block (un block específico puede ser verbatim de un raw concreto).
+-- Granularidad objetivo: block narrativo -> raw_capture.
 -- `transformation` permite al agente anotar cómo derivó (verbatim, extracted, summarized, inferred).
-DEFINE TABLE OVERWRITE derived_from TYPE RELATION FROM note | block TO raw_capture SCHEMAFULL CHANGEFEED 10y;
+DEFINE TABLE OVERWRITE derived_from TYPE RELATION FROM block TO raw_capture SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE created_at     ON derived_from TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE transformation ON derived_from TYPE option<string>
   ASSERT $value IS NONE OR $value INSIDE ['verbatim', 'extracted', 'summarized', 'inferred'];
 DEFINE INDEX OVERWRITE derived_from_unique ON derived_from FIELDS in, out UNIQUE;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- proposal: draft persistido de una sesión deliberada de procesamiento.
+-- No muta el grafo hasta commit_proposal, que representa aprobación explícita.
+-- ─────────────────────────────────────────────────────────────────────────
+
+DEFINE TABLE OVERWRITE proposal SCHEMAFULL CHANGEFEED 10y;
+DEFINE FIELD OVERWRITE status       ON proposal TYPE string
+  DEFAULT 'draft'
+  ASSERT $value INSIDE ['draft', 'committed', 'discarded'];
+DEFINE FIELD OVERWRITE raw_captures ON proposal TYPE array<record<raw_capture>> DEFAULT [];
+DEFINE FIELD OVERWRITE payload      ON proposal TYPE object FLEXIBLE;
+DEFINE FIELD OVERWRITE created_at   ON proposal TYPE datetime DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE updated_at   ON proposal TYPE datetime VALUE time::now();
+
+DEFINE INDEX OVERWRITE proposal_status  ON proposal FIELDS status;
+DEFINE INDEX OVERWRITE proposal_created ON proposal FIELDS created_at;
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- agent_event: trazabilidad de las decisiones del agente (worker + conversacional).
@@ -185,11 +214,10 @@ DEFINE INDEX OVERWRITE derived_from_unique ON derived_from FIELDS in, out UNIQUE
 DEFINE TABLE OVERWRITE agent_event SCHEMAFULL;
 DEFINE FIELD OVERWRITE kind ON agent_event TYPE string
   ASSERT $value INSIDE [
-    'raw_received', 'raw_claimed',
-    'analysis_started', 'related_context_fetched',
-    'decomposition_proposed', 'human_review_requested',
-    'commit_attempted', 'commit_succeeded', 'commit_failed',
-    'worker_yielded'
+    'raw_received',
+    'raw_status_changed',
+    'proposal_created', 'proposal_updated', 'proposal_discarded', 'proposal_committed',
+    'note_state_changed'
   ];
 DEFINE FIELD OVERWRITE actor ON agent_event TYPE string
   ASSERT $value INSIDE ['worker', 'conversational', 'user', 'system'];
@@ -223,8 +251,8 @@ DEFINE INDEX OVERWRITE agent_event_actor     ON agent_event FIELDS actor;
 --
 -- Tablas con CHANGEFEED 10y activo:
 --   - raw_capture, note, block
---   - derived_from, part_of, blocked_by, mentions, supports, refutes,
---     about, authored_by
+--   - derived_from, part_of, blocked_by, mentions, about, affects
+--   - proposal
 --
 -- Tablas SIN CHANGEFEED (deliberado):
 --   - note_type   (taxonomía editable, baja cardinalidad, sin valor histórico)

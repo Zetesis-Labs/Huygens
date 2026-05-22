@@ -1,31 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { NoteNotFoundError } from '../src/errors'
-import { captureImpl } from '../src/tools/capture'
-import { commitClarifyImpl } from '../src/tools/commit-clarify'
 import { updateNoteStateImpl } from '../src/tools/update-note-state'
-import { type TestDb, withFreshDb } from './_fixtures'
+import { insertNote, type TestDb, withFreshDb } from './_fixtures'
 
-async function makeNote(): Promise<string> {
-  const { raw_id } = await captureImpl({ content: 'x', source_kind: 'manual' })
-  const r = await commitClarifyImpl({
-    raw_id,
-    decomposition: {
-      notes: [
-        {
-          title: 't',
-          type_slug: 'task',
-          state: 'CLARIFIED',
-          blocks: [{ content: '# t' }],
-          transformation: 'extracted',
-          internal_refs: []
-        }
-      ],
-      external_refs: []
-    }
-  })
-  const id = r.notes_created[0]
-  if (!id) throw new Error('expected a note to be created')
-  return id
+async function makeNote(ctx: TestDb): Promise<string> {
+  const r = await insertNote(ctx.db, { title: 't', type_slug: 'task', blocks: ['# t'] })
+  return r.note_id
 }
 
 describe('updateNoteStateImpl', () => {
@@ -38,7 +18,7 @@ describe('updateNoteStateImpl', () => {
   })
 
   test('moves a note from CLARIFIED to ACTIVE and returns both states', async () => {
-    const note_id = await makeNote()
+    const note_id = await makeNote(ctx)
     const result = await updateNoteStateImpl({ note_id, state: 'ACTIVE' })
     expect(result.previous_state).toBe('CLARIFIED')
     expect(result.new_state).toBe('ACTIVE')
@@ -54,10 +34,10 @@ describe('updateNoteStateImpl', () => {
   })
 
   test('records an agent_event with the previous and new state', async () => {
-    const note_id = await makeNote()
+    const note_id = await makeNote(ctx)
     await updateNoteStateImpl({ note_id, state: 'WAITING', reason: 'blocked by Ana' })
     const [events] = await ctx.db.query<[{ kind: string; payload: Record<string, unknown> }[]]>(
-      'SELECT kind, payload FROM agent_event WHERE kind = "worker_yielded"'
+      'SELECT kind, payload FROM agent_event WHERE kind = "note_state_changed"'
     )
     expect(events).toHaveLength(1)
     expect(events[0]?.payload).toMatchObject({

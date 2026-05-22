@@ -102,10 +102,12 @@ La lista es deliberadamente corta. Solo lo que **requiere código** y **no es ra
 | `chunk_markdown` | `(text: string, size?: number, overlap?: number) → string[]` | Algoritmo de chunking semántico (header-aware, párrafo-aware). Determinista, no es razonamiento. |
 | `capture` | `(content: string, source_kind: string, source_ref?: string) → { raw_id }` | Inserta un `raw_capture` inmutable. Wrapper trivial pero conveniente. |
 | `vector_search` | `(query: string, filters?: Filters, limit?: number) → Block[]` | Embed-ea la query, lanza `SELECT … FROM block WHERE embedding <\|k\|> $q …` (HNSW nativo en SurrealDB), devuelve los blocks con metadata. Requiere driver, no se delega al agente. |
-| `generate_report` | `(raw_id: string, k_nearby?: number) → { report_id }` | Carga el raw, hace vector_search sobre informes existentes (top-k), arma el prompt con raw + informes cercanos, llama al LLM, crea `note(type=report)` + blocks + `derived_from` + `based_on`. Orquestación con LLM dentro. |
-| `get_report` | `(report_id: string, include_neighborhood?: bool) → ReportPayload` | Devuelve el informe rehidratado (blocks en orden) + opcionalmente el subgrafo cercano. Lo consume el worker al topologizar. |
+| `propose_narrative_block` | `(raw_id: string) → Proposal` | Objetivo v2.1-lite: carga el raw y propone un `block(kind=narrative)` revisable, sin mutar topología todavía. |
+| `commit_approved_proposal` | `(proposal_id | payload) → CommitResult` | Objetivo v2.1-lite: persiste el block narrativo aprobado, notes/edges mínimos y `affects`. |
 
-Nota: `generate_report` mezcla query + LLM + escritura. Podría descomponerse, pero el agente nunca lo ejecutaría paso a paso — siempre los compone juntos. Mejor un tool de orquestación.
+Nota: el código actual aún conserva `generate_report` como tool legacy que
+persiste `note_type:report`. No es la dirección objetivo descrita en
+`docs/MODEL.md`.
 
 ### Tools que NO viven en Huygens MCP
 

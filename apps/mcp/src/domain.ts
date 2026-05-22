@@ -9,24 +9,42 @@ export const NOTE_STATES = ['CLARIFIED', 'ACTIVE', 'WAITING', 'SOMEDAY', 'DONE',
 export type NoteState = (typeof NOTE_STATES)[number]
 export const NoteStateSchema = z.enum(NOTE_STATES)
 
+export const RAW_STATUSES = ['pending', 'processed', 'ignored', 'deferred'] as const
+export type RawStatus = (typeof RAW_STATUSES)[number]
+export const RawStatusSchema = z.enum(RAW_STATUSES)
+
+export const BLOCK_KINDS = ['descriptive', 'narrative'] as const
+export type BlockKind = (typeof BLOCK_KINDS)[number]
+export const BlockKindSchema = z.enum(BLOCK_KINDS)
+
+export const PROPOSAL_STATUSES = ['draft', 'committed', 'discarded'] as const
+export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number]
+export const ProposalStatusSchema = z.enum(PROPOSAL_STATUSES)
+
 export const NOTE_TYPE_SLUGS = [
   'task',
   'project',
   'area',
   'routine',
-  'note',
-  'report',
-  'person',
+  'idea',
   'reference',
-  'objetivo',
-  'idea'
+  'person',
+  'objetivo'
 ] as const
 export type NoteTypeSlug = (typeof NOTE_TYPE_SLUGS)[number]
 export const NoteTypeSlugSchema = z.enum(NOTE_TYPE_SLUGS)
 
-export const EDGE_KINDS = ['mentions', 'supports', 'refutes', 'part_of', 'blocked_by', 'about', 'authored_by'] as const
+export const EDGE_KINDS = ['part_of', 'blocked_by', 'mentions'] as const
 export type EdgeKind = (typeof EDGE_KINDS)[number]
 export const EdgeKindSchema = z.enum(EDGE_KINDS)
+
+export const TRACE_EDGE_KINDS = ['derived_from', 'about', 'affects'] as const
+export type TraceEdgeKind = (typeof TRACE_EDGE_KINDS)[number]
+export const TraceEdgeKindSchema = z.enum(TRACE_EDGE_KINDS)
+
+export const AFFECT_ACTIONS = ['created', 'updated', 'state_changed', 'linked', 'archived'] as const
+export type AffectAction = (typeof AFFECT_ACTIONS)[number]
+export const AffectActionSchema = z.enum(AFFECT_ACTIONS)
 
 export const TRANSFORMATIONS = ['verbatim', 'extracted', 'summarized', 'inferred'] as const
 export type Transformation = (typeof TRANSFORMATIONS)[number]
@@ -41,21 +59,19 @@ export const SourceKindSchema = z.enum(SOURCE_KINDS)
 export const RAW_CAPTURE_ID_RE = /^raw_capture:[A-Za-z0-9_-]+$/
 export const NOTE_ID_RE = /^note:[A-Za-z0-9_-]+$/
 export const BLOCK_ID_RE = /^block:[A-Za-z0-9_-]+$/
+export const PROPOSAL_ID_RE = /^proposal:[A-Za-z0-9_-]+$/
 export const RECORD_ID_RE = /^[a-z_]+:[A-Za-z0-9_-]+$/i
 
 // ─── Event taxonomy ─────────────────────────────────────────────────────
 
 export const EVENT_KINDS = [
   'raw_received',
-  'raw_claimed',
-  'analysis_started',
-  'related_context_fetched',
-  'decomposition_proposed',
-  'human_review_requested',
-  'commit_attempted',
-  'commit_succeeded',
-  'commit_failed',
-  'worker_yielded'
+  'raw_status_changed',
+  'proposal_created',
+  'proposal_updated',
+  'proposal_discarded',
+  'proposal_committed',
+  'note_state_changed'
 ] as const
 export type EventKind = (typeof EVENT_KINDS)[number]
 

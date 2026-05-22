@@ -1,51 +1,66 @@
 # Using Huygens
 
-Personal memory MCP. You capture raws (chat, voice, free text) and synthesize
-them into **reports** that document what changed in your thinking; a worker
-applies those reports to the typed graph.
+Huygens is a personal memory MCP. The conceptual model lives in
+[`docs/MODEL.md`](./docs/MODEL.md); agent operating rules live in
+[`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md).
 
-The conceptual model lives in [`docs/MODEL.md`](./docs/MODEL.md) — read it
-first. This doc is the minimum to get from a clean clone to "I just talked to
-my memory".
+Target direction:
 
-> **Note on current state**: the worker still runs in its legacy form
-> (clarifies raws directly into notes). The target per `docs/MODEL.md` is a
-> topologizer that reads reports and applies them to the graph. Until that
-> rewrite lands, the operational flow below describes what actually works
-> today; treat `docs/MODEL.md` as the direction of travel.
+```text
+capture during the day
+  -> raw_capture inbox
+  -> deliberate processing session
+  -> one or more approved narrative blocks
+  -> visible mutation proposal
+  -> graph commit
+```
+
+## Current State
+
+The v2.1-lite path is implemented in schema and MCP tools:
+
+- `raw_capture.status` drives the inbox.
+- `proposal` stores visible drafts.
+- `commit_proposal` is the approval/commit boundary.
+- `block.block_kind='narrative'` represents the approved informe-block.
+
+The legacy `raw -> clarify -> notes` path has been removed. There is no
+`commit_clarify`, no persistent `generate_report`, and no autonomous inbox
+worker.
 
 ## Boot
 
 ```bash
-# From the repo root, with the devcontainer running:
 docker compose -f .devcontainer/docker-compose.yml up -d
 ```
 
-The compose brings up four containers:
+The compose stack includes:
 
-| Service          | What                                                                |
-|------------------|---------------------------------------------------------------------|
-| `surrealdb`      | SurrealDB v3 with HNSW vectors + 10y CHANGEFEED                     |
-| `huygens-mcp`    | The TS MCP server on `http://localhost:3030/mcp` + `/healthz`       |
-| `huygens-worker` | Python service (legacy clarify; topologizer is the next rewrite)    |
-| `surrealdb-init` | One-shot chown so SurrealDB can write its rocksdb volume            |
+| Service | What |
+|---|---|
+| `surrealdb` | SurrealDB with graph/document/vector storage |
+| `huygens-mcp` | TS MCP server at `http://localhost:3030/mcp` |
+| `huygens-worker` | Python MCP shell for future specialized workers, excluded by default via profile |
+| `surrealdb-init` | One-shot volume preparation |
+| `app` | Devcontainer shell/runtime |
 
-First-time setup needs API keys. `apps/mcp/.env` needs `DEEPINFRA_API_KEY`
-(for BGE-M3 embeddings); `backend/huygens-worker/.env` needs
-`OPENAI_API_KEY`. Both files are gitignored; `.env.example` ships as the
-template.
+First-time setup needs API keys:
 
-Verify the stack is healthy:
+```text
+apps/mcp/.env                 DEEPINFRA_API_KEY
+backend/huygens-worker/.env   optional MCP worker shell config
+```
+
+Verify:
 
 ```bash
 docker compose -f .devcontainer/docker-compose.yml ps
-# All four containers should be Up; huygens-mcp + surrealdb should be (healthy)
 ```
 
-## Connecting your agent
+## Connecting An Agent
 
-Add Huygens to your MCP client config (`~/.claude.json` for Claude Code,
-similar for Cursor / Claude Desktop):
+Add Huygens to an MCP-capable client such as Claude Code, Codex, Hermes,
+Cursor or Claude Desktop.
 
 ```json
 {
@@ -58,102 +73,131 @@ similar for Cursor / Claude Desktop):
 }
 ```
 
-Restart the client. The MCP advertises tools for capture, raw inspection,
-report generation, chunking/embedding, indexing, and vector search.
-`generate_report` is the canonical path for turning a raw into a report
-(see `docs/MODEL.md` Fase 2).
+The user talks to the agent. The agent uses the MCP. The MCP persists in
+SurrealDB.
 
-## The day-to-day flow
+## Intended Day-To-Day Flow
 
 ### Capture
 
-Anywhere in a chat with your MCP-connected agent:
+User:
 
-> "Capture this: mañana cita con el dentista a las 11, y revisar la
-> propuesta del cliente antes del viernes."
-
-The agent calls `capture` with `source_kind: "chat"`. A `raw_capture` row
-lands in the inbox.
-
-### Synthesize a report
-
-When you've got enough material in a raw, ask your agent to generate a
-report from it. The agent calls `generate_report(raw_id, k_nearby=5)`: the
-MCP vector-searches the closest prior reports, prompts the LLM with the raw
-plus that context, and writes a new `note(type=report)` with `derived_from`
-to the raw and `based_on` to each prior report it used. Read it, accept it,
-regenerate if you don't like it.
-
-### Apply to the graph (legacy worker behavior)
-
-Today the worker still polls `raw_capture WHERE processed_at IS NONE` and
-clarifies raws directly into notes via `commit_clarify` + `index_block`.
-This pre-dates the report-centric model in `docs/MODEL.md` and will be
-replaced by the topologizer (which reads reports, not raws, and emits
-`affects` edges).
-
-Watch it live:
-
-```bash
-docker compose -f .devcontainer/docker-compose.yml logs -f huygens-worker
+```text
+Guarda que Govoy sigue bloqueado por Stripe y mañana tengo que escribirles.
 ```
 
-### Query
+Agent action:
 
-Ask your agent:
+```text
+capture(content, source_kind="chat")
+```
 
-> "¿Qué tengo sobre functores aplicativos?"
+Result: a `raw_capture` exists with `status='pending'`. No topology decision
+has been made yet.
 
-It calls `vector_search` with the query. Result is a ranked list of blocks
-with their parent note title + state + cosine similarity score. Filters
-available: parent note `state_in`, `type_slugs`, `updated_since`,
-`threshold`.
+### Process Inbox
 
-### Inspect the raw inbox
+When the user says:
 
-> "What's in the inbox?"
+```text
+Procesemos el inbox.
+```
 
-→ agent calls `list_inbox` (returns raw_captures with `processed_at IS NONE`,
-ordered ASC).
+The agent should inspect pending raws, usually via `list_inbox`, then discuss
+them with the user. Several raws can become one narrative block if they are
+about the same matter.
 
-> "Show me raw_capture:abc"
+Example inbox:
 
-→ agent calls `get_raw` (returns full content, source, processed_at, and the
-note ids derived from it).
+```text
+raw 1: Govoy sigue bloqueado por Stripe.
+raw 2: Mañana tengo que escribirles.
+raw 3: No quiero que Govoy se quede parado por esto.
+```
 
-## What's where in SurrealDB
+### Propose
 
-See `docs/MODEL.md` for the canonical entity model (`raw_capture`, `note`,
-`block`, the 10 `note_type`s, and the edge families: procedencia,
-cadenas de informes, mutaciones de topología, semánticos).
+The agent proposes:
 
-Observability:
+```text
+Raws:
+- raw 1
+- raw 2
+- raw 3
 
-- `agent_event` — every decision the worker (or the conversational agent)
-  makes, with `kind`, `actor`, `session_id` (UUIDv7), `subject`, `payload`,
-  `confidence`, `reasoning_summary`, `model`, `tokens_used`, `duration_ms`.
-- CHANGEFEED 10y on every critical table — `SHOW CHANGES FOR TABLE x SINCE
-  $vs` gives full state-diff replay.
+Narrative block:
+Govoy esta bloqueado por Stripe; Rubén quiere convertir el seguimiento a
+Stripe en una task explicita.
+
+Notes:
+- Project "Govoy"
+- Task "Escribir a Stripe"
+
+Edges:
+- block derived_from raw 1
+- block derived_from raw 2
+- block derived_from raw 3
+- block about Project "Govoy"
+- block affects Task "Escribir a Stripe"
+- Task "Escribir a Stripe" part_of Project "Govoy"
+```
+
+The agent persists the visible draft with `create_proposal` or updates it with
+`update_proposal`. The user approves, edits or discards the proposal.
+
+### Commit
+
+Only after approval should the agent call `commit_proposal`. This creates the
+narrative block, note creates/updates, `derived_from`, `about`, `affects`,
+minimal semantic edges, and marks the raws as `processed`.
+
+Raws that should not become topology can be handled with `set_raw_status`:
+
+```text
+ignored   no action needed
+deferred  keep for a later processing session
+processed manually closed as handled
+```
+
+## Worker Shell
+
+The worker is disabled by default. If explicitly enabled with `--profile worker`
+and `WORKER_ENABLED=true`, it connects to the MCP, logs available tools, and
+idles. It does not poll the inbox or topologize autonomously.
+
+```bash
+WORKER_ENABLED=true docker compose -f .devcontainer/docker-compose.yml --profile worker up -d huygens-worker
+docker compose -f .devcontainer/docker-compose.yml --profile worker logs -f huygens-worker
+```
+
+## Useful MCP Interactions Today
+
+```text
+capture       persist a raw_capture
+list_inbox    list raws by status, default pending
+set_raw_status mark raws ignored/deferred/processed without topology
+get_raw       inspect a raw and derived records
+create_proposal persist a visible draft without graph mutation
+update_proposal update a draft proposal
+get_proposal inspect a proposal
+discard_proposal discard a draft proposal
+commit_proposal approved graph commit
+vector_search search indexed blocks
+find_related  find existing notes related to a concept
+index_block    embed blocks after they should participate in vector search
+list_by_type  inspect notes by type
+list_mits     inspect MIT field usage
+```
 
 ## Troubleshooting
 
-**Worker logs "error: code=RAW_ALREADY_PROCESSED"** — concurrent worker or
-restart replay. Already silently handled (treated as success).
+**MCP unhealthy**: check `docker compose logs huygens-mcp`.
 
-**`vector_search` returns nothing for content you just captured** — the
-worker may not have processed it yet (wait 2-10s). If the worker has logs
-"committed X" but search still empty, check that `index_block` ran (search
-the worker log for "indexed N block(s)").
+**Vector search misses fresh content**: call `index_block` on blocks that should
+participate in vector search. `commit_proposal` persists graph changes; indexing
+is still explicit.
 
-**Worker can't reach OpenAI** — check `backend/huygens-worker/.env` has a
-valid `OPENAI_API_KEY`. Worker logs "ConfigMissingError" if it's missing
-entirely.
-
-**MCP unhealthy** — usually means it can't reach SurrealDB. Check
-`docker compose logs huygens-mcp`. The healthcheck only verifies the HTTP
-listener is up, not that DB queries work.
-
-**Stop & wipe everything** (dev only — destroys all your captured notes):
+**Wipe dev data**:
 
 ```bash
 docker compose -f .devcontainer/docker-compose.yml down -v

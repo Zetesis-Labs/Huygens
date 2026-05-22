@@ -4,8 +4,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 /**
  * Self-describing layer: the MCP serves both the LORE (how Huygens
  * understands itself) and the canonical PROMPTS (how an agent should
- * operate in different modes). Any consumer — the autonomous worker,
- * a conversational client like Claude Code, future agents — fetches
+ * operate in different modes). Any consumer — a conversational client like
+ * Claude Code or future specialized workers — fetches
  * these from here and stays in sync with us.
  */
 
@@ -13,13 +13,6 @@ type LoreEntry = { uri: string; name: string; description: string; path: string 
 type PromptEntry = { name: string; description: string; path: string }
 
 const LORE_ENTRIES: LoreEntry[] = [
-  {
-    uri: 'huygens://lore/clarify-spec',
-    name: 'clarify-spec',
-    description:
-      'Transitional spec: note types, transformations and edge taxonomy. Canonical flow lives in docs/MODEL.md.',
-    path: 'lore/clarify-spec.md'
-  },
   {
     uri: 'huygens://lore/data-model',
     name: 'data-model',
@@ -29,14 +22,7 @@ const LORE_ENTRIES: LoreEntry[] = [
   }
 ]
 
-const PROMPT_ENTRIES: PromptEntry[] = [
-  {
-    name: 'clarify-system',
-    description:
-      'Transitional system prompt for the clarify worker. PROMPT_ENTRIES will gain topologize-system when the topologizer worker is implemented.',
-    path: 'prompts/clarify-system.md'
-  }
-]
+const PROMPT_ENTRIES: PromptEntry[] = []
 
 function readDoc(relativePath: string): string {
   return readFileSync(new URL(`./${relativePath}`, import.meta.url), 'utf8')

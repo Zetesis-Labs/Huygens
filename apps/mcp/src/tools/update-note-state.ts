@@ -32,7 +32,7 @@ export async function updateNoteStateImpl(input: UpdateNoteStateInput): Promise<
   await db.query('UPDATE $id SET state = $state', { id: noteRef, state: input.state })
 
   await emitEvent({
-    kind: 'worker_yielded',
+    kind: 'note_state_changed',
     actor: 'conversational',
     session_id: newSessionId(),
     subject: noteRef,

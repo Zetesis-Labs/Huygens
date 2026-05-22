@@ -2,9 +2,17 @@
 
 Fecha de la pasada: 2026-05-21.
 
-Tras el shift al modelo report-centered (`docs/MODEL.md`), se hizo una poda agresiva del corpus documental con múltiples agentes en paralelo. Este doc lista qué se borró, qué se editó quirúrgicamente, y qué quedó pendiente — para que un próximo ciclo de agentes pueda reescribir las partes que faltan sin perderse en arqueología.
+> Nota posterior: este manifiesto es histórico. El modelo canónico actual es
+> v2.1-lite en [`docs/MODEL.md`](./MODEL.md): conserva informe-block, pero sin
+> reports como entidad persistida ni worker autónomo topologizando sin revisión.
 
-Si lees este doc para entender qué pasó: el resumen es que el sistema cambió de "worker autónomo clarifica raws en notas" a "agente genera informes, worker pequeño aplica informes al grafo". El modelo canónico vive en `docs/MODEL.md`. La doc anterior teñía todo de la abstracción vieja, así que se limpió.
+Tras el shift histórico al modelo report-centered, se hizo una poda agresiva del corpus documental con múltiples agentes en paralelo. Este doc lista qué se borró, qué se editó quirúrgicamente, y qué quedó pendiente — para que un próximo ciclo de agentes pueda reescribir las partes que faltan sin perderse en arqueología.
+
+Si lees este doc para entender qué pasó: el resumen histórico es que el sistema
+dejó atrás "worker autónomo clarifica raws en notas" y empezó a explorar una
+capa narrativa intermedia. La forma canónica actual de esa capa es
+`block(kind=narrative)`, descrita en `docs/MODEL.md`. La doc anterior teñía todo
+de abstracciones viejas, así que se limpió.
 
 ---
 

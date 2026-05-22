@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { Surreal } from 'surrealdb'
+import { type RecordId, StringRecordId, Surreal } from 'surrealdb'
 import { setDbOverride } from '../src/surreal'
 
 const SCHEMA_SQL = readFileSync(new URL('../surreal/schema.surql', import.meta.url), 'utf8')
@@ -10,6 +10,20 @@ export type TestDb = {
   namespace: string
   database: string
   cleanup: () => Promise<void>
+}
+
+export type InsertNoteInput = {
+  title: string
+  type_slug?: string
+  state?: string
+  blocks?: string[]
+  mit_for?: string
+  metadata?: Record<string, unknown>
+}
+
+export type InsertNoteResult = {
+  note_id: string
+  block_ids: string[]
 }
 
 /**
@@ -53,4 +67,32 @@ export async function withFreshDb(): Promise<TestDb> {
       await db.close()
     }
   }
+}
+
+export async function insertNote(db: Surreal, input: InsertNoteInput): Promise<InsertNoteResult> {
+  const data: Record<string, unknown> = {
+    title: input.title,
+    state: input.state ?? 'CLARIFIED'
+  }
+  if (input.type_slug) data.type = new StringRecordId(`note_type:${input.type_slug}`)
+  if (input.mit_for) data.mit_for = new Date(input.mit_for)
+  if (input.metadata) data.metadata = input.metadata
+
+  const [noteRows] = await db.query<[{ id: RecordId }[]]>('CREATE note CONTENT $data RETURN AFTER', { data })
+  const note = noteRows[0]
+  if (!note) throw new Error(`failed to insert note: ${input.title}`)
+
+  const blockContents = input.blocks ?? [input.title]
+  const blockRowsInput = blockContents.map(content => ({
+    note: note.id,
+    block_kind: 'descriptive',
+    content
+  }))
+  const [blockRows] = await db.query<[{ id: RecordId }[]]>('INSERT INTO block $rows RETURN AFTER', {
+    rows: blockRowsInput
+  })
+  const blockIds = blockRows.map(block => block.id)
+  await db.query('UPDATE $note SET block_order = $order', { note: note.id, order: blockIds })
+
+  return { note_id: String(note.id), block_ids: blockIds.map(String) }
 }

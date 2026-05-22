@@ -2,9 +2,15 @@
 
 > "Esto que tenemos es una topología, claramente, no es simplemente una BBDD. Quizá definir una topología inicial y luego ir definiendo las relaciones que autorizamos hacia los markdowns sea una aproximación con más futuro."
 
-> Nota de reframing posterior: **el informe es el artefacto primario; la topología es el byproduct de topologizar informes**. Lo que sigue en este documento describe por qué tratar las relaciones como ciudadanos de primera (frente a un store documental) sigue siendo cierto y necesario — pero el grafo no se construye directamente. Se construye porque un worker traduce informes a mutaciones. Ver [`docs/MODEL.md`](../../MODEL.md).
+> Nota de reframing posterior: en v2.1-lite el **informe-block** es la pieza
+> interpretativa primaria. La topología no se construye directamente desde el
+> raw: se construye tras aprobar un block narrativo y una propuesta visible de
+> mutaciones. Ver [`docs/MODEL.md`](../../MODEL.md).
 
-Este fichero documenta el principio que determinó el pivote de MongoDB a SurrealDB, la forma del schema, y la separación entre nodos y edges. El informe entra al grafo como un `note(type=report)` más, pero su rol es estructuralmente distinto: cada vez que existe uno nuevo, el worker lo lee y emite las mutaciones que pueblan el resto del grafo.
+Este fichero documenta el principio que determinó el pivote de MongoDB a
+SurrealDB, la forma del schema, y la separación entre nodos y edges. La parte
+obsoleta del texto hablaba de reports como `note(type=report)`; el modelo
+canónico actual reemplaza eso por `block(kind=narrative)`.
 
 ## El reframing
 
@@ -41,23 +47,25 @@ Esta es la lista inicial. Es ampliable — el árbol de tipos de relación crece
 | `PART_OF` | `Note` | `Note` | Una Task es PART_OF un Project; un Project es PART_OF un Area |
 | `BLOCKED_BY` | `Note` | `Note` | Esta nota espera por aquella |
 | `MENTIONS` | `Note` | `Note` | Referencia narrativa, débil |
-| `SUPPORTS` | `Note` | `Note` | Esta idea/evidencia respalda aquella |
-| `REFUTES` | `Note` | `Note` | Esta idea contradice aquella |
-| `ABOUT` | `Note` (típicamente un Report) | `Note` | Un Report cubre estas notas |
-| `AUTHORED_BY` | `Note` | `Person` (note con type=person) | Una nota es atribuible a alguien (e.g., una cita) |
-| `DERIVED_FROM` | `Note` | `raw_capture` | Procedencia: este note salió de aquel raw |
+| `ABOUT` | `Block(narrative)` | `Note` | Un informe-block habla sobre este sujeto |
+| `AFFECTS` | `Block(narrative)` | `Note` | Un informe-block justifica o causa cambios en esta note |
+| `DERIVED_FROM` | `Block` | `raw_capture` | Procedencia: este block salió de aquel raw |
 
 Algunas observaciones importantes sobre esta tabla:
 
 - **El `type` de un `note`** se modela como `record<note_type>` en la propia tabla `note`, no como edge. El árbol de tipos es identidad estable; promoverlo a edge añade overhead sin beneficio.
 
-- `BLOCKED_BY`, `SUPPORTS`, `REFUTES`, `MENTIONS` son los edges argumentativos / operativos entre Notes. Los emite el worker al topologizar informes — son los que dan vida al grafo. Sin ellos, Huygens sería una lista de markdowns sin tejido.
+- `BLOCKED_BY` y `MENTIONS` son los edges operativos mínimos entre Notes. En
+  v2.1-lite, `SUPPORTS` y `REFUTES` quedan fuera de scope hasta que el uso real
+  los justifique.
 
-- `AUTHORED_BY` cruza semánticamente `Note → Person`. `Person` ya es un Note (con type=person), así que la arista vive entre dos nodos del mismo table `note`. La distinción "FROM Note TO Person" es semántica, no estructural.
+- `AUTHORED_BY` fue una opción anterior. En v2.1-lite queda fuera de scope; si
+  hace falta atribución simple, se guarda en metadata o se usa `mentions`.
 
-- `DERIVED_FROM` es el único edge que cruza planos (de `note` a `raw_capture`). Lo emite el MCP cuando se materializa un informe a partir de un raw.
+- `DERIVED_FROM` es el edge que cruza desde interpretación hacia evidencia. En
+  el objetivo mínimo va de `block` a `raw_capture`.
 
-Edges centrales al modelo pendientes de implementar como tablas (descritos en [`docs/MODEL.md`](../../MODEL.md)): `based_on` (informe → informe previo usado como contexto) y `affects` (informe → cualquier note tocada por su topologización).
+`based_on` fue parte del modelo grande. En v2.1-lite queda pospuesto.
 
 ## Propiedades de edges
 

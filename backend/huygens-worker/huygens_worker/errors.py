@@ -5,8 +5,8 @@ message text is for humans and may change.
 
 Errors raised by the MCP server arrive here as ``mcp.shared.exceptions.McpError``
 with structured ``error.data = {"code": "RAW_ALREADY_PROCESSED", "details": {...}}``.
-``huygens_error_from_mcp`` rebuilds the right subclass so callers can
-``except RawAlreadyProcessedError`` instead of parsing strings.
+``huygens_error_from_mcp`` rebuilds the right subclass so callers can match on
+typed exceptions instead of parsing strings.
 
 KEEP IN SYNC with apps/mcp/src/errors.ts.
 """
@@ -30,24 +30,8 @@ class RawNotFoundError(HuygensError):
     code: ClassVar[str] = "RAW_NOT_FOUND"
 
 
-class RawAlreadyProcessedError(HuygensError):
-    code: ClassVar[str] = "RAW_ALREADY_PROCESSED"
-
-
 class BlockNotFoundError(HuygensError):
     code: ClassVar[str] = "BLOCK_NOT_FOUND"
-
-
-class NoteTypeNotFoundError(HuygensError):
-    code: ClassVar[str] = "NOTE_TYPE_NOT_FOUND"
-
-
-class InternalRefOutOfBoundsError(HuygensError):
-    code: ClassVar[str] = "INTERNAL_REF_OUT_OF_BOUNDS"
-
-
-class ExternalRefOutOfBoundsError(HuygensError):
-    code: ClassVar[str] = "EXTERNAL_REF_OUT_OF_BOUNDS"
 
 
 class EmbeddingDimensionMismatchError(HuygensError):
@@ -66,11 +50,7 @@ _CODE_TO_CLASS: dict[str, type[HuygensError]] = {
     cls.code: cls
     for cls in (
         RawNotFoundError,
-        RawAlreadyProcessedError,
         BlockNotFoundError,
-        NoteTypeNotFoundError,
-        InternalRefOutOfBoundsError,
-        ExternalRefOutOfBoundsError,
         EmbeddingDimensionMismatchError,
         EmbeddingProviderError,
         ConfigMissingError,

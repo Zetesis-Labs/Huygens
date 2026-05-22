@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { StringRecordId } from 'surrealdb'
 import { captureImpl } from '../src/tools/capture'
 import { listInboxImpl } from '../src/tools/list-inbox'
+import { setRawStatusImpl } from '../src/tools/set-raw-status'
 import { type TestDb, withFreshDb } from './_fixtures'
 
 describe('listInboxImpl', () => {
@@ -19,7 +20,7 @@ describe('listInboxImpl', () => {
     expect(rows).toEqual([])
   })
 
-  test('returns unprocessed raws ordered by created_at ASC', async () => {
+  test('returns pending raws ordered by created_at ASC', async () => {
     const a = await captureImpl({ content: 'first', source_kind: 'manual' })
     await new Promise(r => setTimeout(r, 10))
     const b = await captureImpl({ content: 'second', source_kind: 'manual' })
@@ -28,14 +29,27 @@ describe('listInboxImpl', () => {
     expect(rows.map(r => r.id)).toEqual([a.raw_id, b.raw_id])
   })
 
-  test('excludes raws with processed_at set', async () => {
+  test('excludes raws whose status is processed', async () => {
     const { raw_id } = await captureImpl({ content: 'done', source_kind: 'manual' })
-    await ctx.db.query('UPDATE $id SET processed_at = time::now()', {
+    await ctx.db.query("UPDATE $id SET status = 'processed', processed_at = time::now()", {
       id: new StringRecordId(raw_id)
     })
 
     const rows = await listInboxImpl({ limit: 20 })
     expect(rows).toEqual([])
+  })
+
+  test('can list deferred and ignored raws explicitly', async () => {
+    const deferred = await captureImpl({ content: 'later', source_kind: 'manual' })
+    const ignored = await captureImpl({ content: 'noise', source_kind: 'manual' })
+    await setRawStatusImpl({ raw_ids: [deferred.raw_id], status: 'deferred' })
+    await setRawStatusImpl({ raw_ids: [ignored.raw_id], status: 'ignored' })
+
+    const deferredRows = await listInboxImpl({ limit: 20, status: 'deferred' })
+    const ignoredRows = await listInboxImpl({ limit: 20, status: 'ignored' })
+
+    expect(deferredRows.map(r => r.id)).toEqual([deferred.raw_id])
+    expect(ignoredRows.map(r => r.id)).toEqual([ignored.raw_id])
   })
 
   test('source_kind filter narrows the result', async () => {

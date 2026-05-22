@@ -1,9 +1,8 @@
-"""MCP client wrapper — the worker's contract with the TS-side tools.
+"""Small MCP client wrapper for future specialized worker agents.
 
-Iter D replaced the in-process Python port of commit_clarify with a
-real MCP call so worker and conversational agents share the same
-implementation. This module is the only place that knows MCP
-protocol details; everything else just calls `commit_clarify_via_mcp`.
+The worker no longer owns inbox polling, interpretation, or direct database writes.
+Any future worker behavior must go through the MCP tools exposed by the TS
+server, using this module as the boundary.
 """
 
 from __future__ import annotations
@@ -17,47 +16,15 @@ from mcp.client.streamable_http import streamablehttp_client
 from mcp.shared.exceptions import McpError
 
 from .errors import HuygensError, huygens_error_from_mcp, huygens_error_from_structured
-from .schemas import Decomposition
 from .settings import settings
 
 log = logging.getLogger(__name__)
 
 
-def _decomposition_to_payload(decomposition: Decomposition) -> dict[str, Any]:
-    """Serialize the Pydantic decomposition to the JSON-friendly shape the
-    MCP tool expects. We strip pydantic's defaults to keep the wire format
-    minimal and to match the optional-field semantics the TS Zod schema
-    accepts."""
-    notes: list[dict[str, Any]] = []
-    for note in decomposition.notes:
-        entry: dict[str, Any] = {
-            "title": note.title,
-            "type_slug": note.type_slug,
-            "state": note.state,
-            "blocks": [{"content": b.content} for b in note.blocks],
-            "transformation": note.transformation,
-            "internal_refs": [
-                {"kind": r.kind, "to_note_index": r.to_note_index} for r in note.internal_refs
-            ],
-        }
-        if note.mit_for is not None:
-            entry["mit_for"] = note.mit_for
-        notes.append(entry)
-    external_refs = [
-        {
-            "from_note_index": ref.from_note_index,
-            "kind": ref.kind,
-            "to_external_id": ref.to_external_id,
-        }
-        for ref in decomposition.external_refs
-    ]
-    return {"notes": notes, "external_refs": external_refs}
-
-
 def _extract_json_block(text_blocks: list[str]) -> Any:
     """MCP tools include a trailing `\\n[raw JSON]\\n…` block as the
     machine-readable payload. Returns whatever was JSON-parsed there —
-    dict for commit_clarify/index_block, list for find_related."""
+    dict for object-returning tools, list for find_related."""
     for block in text_blocks:
         if "[raw JSON]" in block:
             _, _, body = block.partition("[raw JSON]")
@@ -65,31 +32,10 @@ def _extract_json_block(text_blocks: list[str]) -> Any:
     raise RuntimeError(f"MCP tool: no [raw JSON] block in response: {text_blocks!r}")
 
 
-async def commit_clarify_via_mcp(
-    raw_id: str,
-    decomposition: Decomposition,
-    session_id: str,
-    *,
-    reasoning_summary: str | None = None,
-    model: str | None = None,
-) -> dict[str, Any]:
-    arguments: dict[str, Any] = {
-        "raw_id": raw_id,
-        "decomposition": _decomposition_to_payload(decomposition),
-        "session_id": session_id,
-    }
-    if reasoning_summary is not None:
-        arguments["reasoning_summary"] = reasoning_summary
-    if model is not None:
-        arguments["model"] = model
-    return await _call_mcp_tool("commit_clarify", arguments)
-
-
 async def index_block_via_mcp(block_ids: list[str]) -> dict[str, Any]:
-    """Embed the blocks just produced by a clarify and persist their vectors.
+    """Embed blocks and persist their vectors.
 
-    The MCP enforces a max of 64 ids per call. The worker chunks larger
-    batches before calling.
+    The MCP enforces a max of 64 ids per call.
     """
     if not block_ids:
         return {"indexed": [], "dimensions": 0, "input_tokens": 0}
@@ -102,8 +48,7 @@ async def find_related_via_mcp(
     """Pre-fetch RAG: retrieve existing notes related to a concept.
 
     Returns an empty list (not an error) when the corpus has no matches
-    above threshold — the clarify prompt treats that as "this raw
-    introduces new ideas".
+    above threshold.
     """
     result = await _call_mcp_tool(
         "find_related", {"query": query, "k": k, "threshold": threshold}
@@ -114,13 +59,29 @@ async def find_related_via_mcp(
     return []
 
 
-async def get_prompt_via_mcp(name: str) -> str:
-    """Fetch a canonical prompt the MCP advertises (e.g. 'clarify-system').
+async def list_tools_via_mcp() -> list[str]:
+    try:
+        async with (
+            streamablehttp_client(settings.mcp_url) as (read, write, _),
+            ClientSession(read, write) as session,
+        ):
+            await session.initialize()
+            result = await session.list_tools()
+            return [tool.name for tool in result.tools]
+    except BaseExceptionGroup as eg:
+        for leaf in _flatten_exception_group(eg):
+            if isinstance(leaf, McpError):
+                raise huygens_error_from_mcp(leaf) from eg
+            if isinstance(leaf, HuygensError):
+                raise leaf from eg
+        raise
 
-    The prompt text is the single source of truth shared by the autonomous
-    worker and any conversational client. The MCP returns a list of messages;
-    we concatenate the text content of the user-role messages (the LORE +
-    workflow live there) and use the result as the agent's system prompt.
+
+async def get_prompt_via_mcp(name: str) -> str:
+    """Fetch a canonical prompt the MCP advertises.
+
+    The MCP returns a list of messages; we concatenate text content from the
+    user-role messages and use the result as the worker prompt.
     """
     try:
         async with (
@@ -147,7 +108,11 @@ async def get_prompt_via_mcp(name: str) -> str:
         raise
 
 
-async def _call_mcp_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+async def call_tool_via_mcp(name: str, arguments: dict[str, Any]) -> Any:
+    return await _call_mcp_tool(name, arguments)
+
+
+async def _call_mcp_tool(name: str, arguments: dict[str, Any]) -> Any:
     try:
         async with (
             streamablehttp_client(settings.mcp_url) as (read, write, _),
