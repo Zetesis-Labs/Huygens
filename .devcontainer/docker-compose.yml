@@ -99,6 +99,13 @@ services:
       SURREAL_USER: root
       SURREAL_PASS: root
       SURREALMCP_URL: http://surrealmcp:8080/mcp
+      # Must match the URL the surrealmcp upstream was started with — that
+      # service rejects any connect_endpoint URL different from its bound one.
+      SURREALMCP_DB_URL: ws://surrealdb:8000/rpc
+      SURREALMCP_DB_NS: huygens
+      SURREALMCP_DB_NAME: main
+      SURREALMCP_DB_USER: huygens_reader
+      SURREALMCP_DB_PASS: ${SURREAL_READER_PASS}
     ports:
       - "3030:3030"
     depends_on:
@@ -126,7 +133,9 @@ services:
     env_file:
       - ../apps/mcp/.env
     environment:
-      SURREALDB_URL: ws://surrealdb:8000
+      # SurrealDB ≥ 2.x serves WS at /rpc only. surrealmcp:v0.4.0 connects to
+      # this URL verbatim (no path inference), so the /rpc suffix is required.
+      SURREALDB_URL: ws://surrealdb:8000/rpc
       SURREALDB_NS: huygens
       SURREALDB_DB: main
       SURREALDB_USER: huygens_reader

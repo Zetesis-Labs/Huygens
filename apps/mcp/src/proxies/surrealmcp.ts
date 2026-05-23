@@ -11,9 +11,24 @@ export interface SurrealMcpProxyOptions {
   prefix?: string
   connectTimeoutMs?: number
   retryIntervalMs?: number
+  /**
+   * Optional SurrealDB endpoint that the proxy will pin via the upstream's
+   * `connect_endpoint` tool right after handshake. Required for surrealmcp
+   * v0.4.x: that release does not auto-connect from env vars; every session
+   * starts unbound and refuses query/select until connect_endpoint runs.
+   */
+  endpoint?: {
+    url: string
+    namespace?: string
+    database?: string
+    username?: string
+    password?: string
+  }
 }
 
-type ResolvedProxyOptions = Required<SurrealMcpProxyOptions>
+type ResolvedProxyOptions = Required<Omit<SurrealMcpProxyOptions, 'endpoint'>> & {
+  endpoint: SurrealMcpProxyOptions['endpoint']
+}
 
 interface ProxyState {
   client: Client | null
@@ -133,7 +148,8 @@ function resolveOptions(opts: SurrealMcpProxyOptions): ResolvedProxyOptions {
     url: opts.url,
     prefix: opts.prefix ?? 'query_',
     connectTimeoutMs: opts.connectTimeoutMs ?? 5000,
-    retryIntervalMs: opts.retryIntervalMs ?? 30_000
+    retryIntervalMs: opts.retryIntervalMs ?? 30_000,
+    endpoint: opts.endpoint
   }
 }
 
@@ -144,10 +160,29 @@ async function connectAndListTools(opts: ResolvedProxyOptions): Promise<{ client
   try {
     await withTimeout(client.connect(transport), opts.connectTimeoutMs)
     const { tools } = await withTimeout(client.listTools(), opts.connectTimeoutMs)
+    if (opts.endpoint) await pinUpstreamEndpoint(client, opts)
     return { client, tools: filterSurrealmcpTools(tools) }
   } catch (err) {
     await client.close().catch(() => {})
     throw err
+  }
+}
+
+async function pinUpstreamEndpoint(client: Client, opts: ResolvedProxyOptions): Promise<void> {
+  if (!opts.endpoint) return
+  const args: Record<string, unknown> = { endpoint: opts.endpoint.url }
+  if (opts.endpoint.namespace) args.namespace = opts.endpoint.namespace
+  if (opts.endpoint.database) args.database = opts.endpoint.database
+  if (opts.endpoint.username) args.username = opts.endpoint.username
+  if (opts.endpoint.password) args.password = opts.endpoint.password
+
+  const result = (await withTimeout(
+    client.callTool({ name: 'connect_endpoint', arguments: args }),
+    opts.connectTimeoutMs
+  )) as CallToolResult
+  if (result.isError) {
+    const text = result.content?.find(c => c.type === 'text')?.text ?? 'unknown error'
+    throw new Error(`connect_endpoint failed: ${text}`)
   }
 }
 

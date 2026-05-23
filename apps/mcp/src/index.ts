@@ -51,7 +51,19 @@ const httpServer = createHttpServer(async (req, res) => {
 
 const surrealmcpUrl = process.env.SURREALMCP_URL
 if (surrealmcpUrl) {
-  const result = await initSurrealmcpProxy({ url: surrealmcpUrl })
+  const endpointUrl = process.env.SURREALMCP_DB_URL ?? process.env.SURREAL_URL
+  const result = await initSurrealmcpProxy({
+    url: surrealmcpUrl,
+    endpoint: endpointUrl
+      ? {
+          url: endpointUrl,
+          namespace: process.env.SURREALMCP_DB_NS ?? process.env.SURREAL_NS,
+          database: process.env.SURREALMCP_DB_NAME ?? process.env.SURREAL_DB,
+          username: process.env.SURREALMCP_DB_USER,
+          password: process.env.SURREALMCP_DB_PASS
+        }
+      : undefined
+  })
   console.error(
     `[huygens-mcp] surrealmcp proxy: ${
       result.degraded ? 'degraded (will retry)' : `${result.toolsRegistered} read-only tools registered`
