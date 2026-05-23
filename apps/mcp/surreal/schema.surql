@@ -238,6 +238,14 @@ DEFINE INDEX OVERWRITE agent_event_subject   ON agent_event FIELDS subject;
 DEFINE INDEX OVERWRITE agent_event_actor     ON agent_event FIELDS actor;
 
 -- ─────────────────────────────────────────────────────────────────────────
+-- USERS: read-only user for the SurrealMCP proxy.
+-- The password is intentionally not versioned in this schema. Run
+-- `bun run db:define-reader` with SURREAL_READER_PASS or SURREALDB_PASS set.
+-- The script applies:
+--   DEFINE USER IF NOT EXISTS huygens_reader ON DATABASE PASSWORD <secret> ROLES VIEWER;
+-- ─────────────────────────────────────────────────────────────────────────
+
+-- ─────────────────────────────────────────────────────────────────────────
 -- CHANGEFEED: state-diff audit trail sobre tablas críticas (ADR-0020).
 -- Retention de 10y = efectivamente ilimitado para uso personal.
 -- Permite queries históricas: `SHOW CHANGES FOR TABLE x SINCE $t`

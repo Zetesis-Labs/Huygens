@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { registerLoreAndPrompts } from './lore-and-prompts'
+import { registerSurrealmcpProxy } from './proxies/surrealmcp'
 import { registerCapture } from './tools/capture'
 import { registerChunkMarkdown } from './tools/chunk-markdown'
 import { registerEmbedText } from './tools/embed-text'
@@ -33,6 +34,7 @@ export function createServer(): McpServer {
   registerUpdateNoteState(server)
   registerListMits(server)
   registerListByType(server)
+  registerSurrealmcpProxy(server)
 
   registerLoreAndPrompts(server)
 

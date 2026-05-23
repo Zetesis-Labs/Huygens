@@ -45,9 +45,10 @@ Resumen:
 - `huygens-mcp` registra dos familias de tools en el mismo `tools/list`:
   - Las **curadas** (`capture`, `list_inbox`, `create_proposal`, ...).
   - Las **proxied** (`query_select`, `query_query`, ...) con prefijo `query_`.
-- Las proxied delegan en `surrealmcp`, que a su vez golpea SurrealDB con un
-  usuario VIEWER y por tanto no puede mutar el grafo aunque la tool técnica
-  lo permita.
+- Las proxied delegan en `surrealmcp`, pero Huygens solo registra la allowlist
+  read-only (`query`, `select`, `info`). Además, el upstream golpea SurrealDB
+  con un usuario VIEWER, por lo que tampoco puede mutar el grafo vía
+  `query_query`.
 
 ## 2. Componentes
 
@@ -80,8 +81,8 @@ Responsabilidades:
 2. Hacer `listTools()` contra el upstream **una vez** al arranque del proceso
    y guardar el resultado en una caché de nivel módulo.
 3. Exportar `registerSurrealmcpProxy(server)` que, dado un `McpServer`,
-   registra desde la caché las tools con prefijo `query_` y un handler que
-   delega vía `client.callTool` reutilizando el client singleton.
+   registra desde la caché filtrada las tools con prefijo `query_` y un
+   handler que delega vía `client.callTool` reutilizando el client singleton.
 4. Reintentar conexión en background si el primer intento falla; al
    recuperarse, refresca la caché para que los siguientes `McpServer` la
    vean.
@@ -108,7 +109,7 @@ Variables esperadas (nombres del upstream `surrealmcp:v0.4.0`, ver
 `02-surrealmcp-upstream.md` § Configuración):
 
 ```bash
-SURREALDB_URL=ws://surrealdb:8000/rpc
+SURREALDB_URL=ws://surrealdb:8000
 SURREALDB_NS=huygens
 SURREALDB_DB=main
 SURREALDB_USER=huygens_reader
@@ -220,7 +221,7 @@ Las tools proxied se registran con prefijo `query_`:
 | `select`  | `query_select`   |
 | `query`   | `query_query`    |
 | `info`    | `query_info`     |
-| ...       | `query_*`        |
+| write/infra tools | ocultas |
 
 Razón del prefijo:
 
@@ -289,23 +290,27 @@ camino de fallo. Aceptable. Las requests posteriores son lookup en memoria.
 
 ### A3. Filtrar write tools del upstream en el proxy
 
-Decisión: **no filtrar**.
+Decisión: **filtrar por allowlist read-only**.
 
-Aunque SurrealMCP exponga tools de escritura, el usuario VIEWER en SurrealDB
-las rechazará. Razones para no añadir filtrado en huygens-mcp:
+Aunque SurrealMCP exponga tools de escritura, Huygens solo registra:
 
-- Menos código y menos mantenimiento.
-- Comportamiento transparente: si el upstream cambia su catálogo, el proxy se
-  adapta sin parches.
-- La fuente de verdad sobre qué tools existen vive en el upstream.
-- La seguridad real vive en SurrealDB (roles), no en una allowlist en TS.
+```ts
+new Set(['query', 'select', 'info'])
+```
+
+Razones:
+
+- El cliente no ve herramientas de mutación que no debe usar.
+- Las tools nuevas de upstream quedan ocultas por defecto hasta revisión.
+- La seguridad real sigue viviendo en SurrealDB (`ROLES VIEWER`), porque
+  `query_query` permite SurrealQL arbitrario y debe fallar al intentar writes.
 
 ### A4. Topología de red
 
 Decisión: SurrealMCP es **interno** al compose, sin puerto publicado.
 
 - `huygens-mcp` → `surrealmcp`: HTTP `http://surrealmcp:8080/mcp`.
-- `surrealmcp` → `surrealdb`: WS `ws://surrealdb:8000/rpc`.
+- `surrealmcp` → `surrealdb`: WS `ws://surrealdb:8000`.
 - Cliente externo → `huygens-mcp`: HTTP `http://localhost:3030/mcp`.
 
 Todo dentro del network `default_network` existente. No se publica el puerto

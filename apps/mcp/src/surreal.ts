@@ -39,7 +39,10 @@ async function reauth(db: Surreal): Promise<void> {
 function makeResilient(db: Surreal): Surreal {
   return new Proxy(db, {
     get(target, prop, receiver) {
-      if (prop !== 'query') return Reflect.get(target, prop, receiver)
+      if (prop !== 'query') {
+        const value = Reflect.get(target, prop, receiver)
+        return typeof value === 'function' ? value.bind(target) : value
+      }
       const original = target.query.bind(target) as Surreal['query']
       return async (...args: Parameters<Surreal['query']>) => {
         try {

@@ -4,7 +4,7 @@
 
 - Añadir un usuario `huygens_reader` con `ROLES VIEWER` en SurrealDB (scope `ON DATABASE`) inyectando el password vía env, sin commitear secretos.
 - Levantar un nuevo servicio `surrealmcp` (`surrealdb/surrealmcp:v0.4.0`) en `.devcontainer/docker-compose.yml`, en la misma `default_network` que `surrealdb` y `huygens-mcp`, configurado para hablar con SurrealDB usando ese reader.
-- Implementar `apps/mcp/src/proxies/surrealmcp.ts` como **singleton a nivel proceso**: un único `Client` y una caché de tools compartida. `initSurrealmcpProxy()` se llama una sola vez al arranque del proceso (hace `connect` + `listTools`) y `registerSurrealmcpProxy(server)` se llama por cada `createServer` (lookup en memoria, sin tocar el upstream).
+- Implementar `apps/mcp/src/proxies/surrealmcp.ts` como **singleton a nivel proceso**: un único `Client` y una caché filtrada de tools compartida. `initSurrealmcpProxy()` se llama una sola vez al arranque del proceso (hace `connect` + `listTools` + allowlist read-only) y `registerSurrealmcpProxy(server)` se llama por cada `createServer` (lookup en memoria, sin tocar el upstream).
 - Cablear `initSurrealmcpProxy()` en `apps/mcp/src/index.ts` antes de `httpServer.listen` y `registerSurrealmcpProxy(server)` dentro de `createServer` en `apps/mcp/src/server.ts:17`.
 - Modo degradado tolerante a fallos: si el upstream no responde al arranque, el MCP propio sigue arrancando con sus tools curadas; un loop de reconexión periódico re-intenta, refresca la caché singleton y los siguientes `createServer` ya ven las `query_*`.
 
@@ -48,16 +48,19 @@ import { closeDb, getDb } from '../src/surreal'
 
 const password = process.env.SURREAL_READER_PASS
 if (!password) {
-  console.error('SURREAL_READER_PASS is required')
+  console.error('SURREAL_READER_PASS or SURREALDB_PASS is required')
   process.exit(1)
+}
+
+function surrealStringLiteral(value: string): string {
+  return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
 }
 
 const db = await getDb()
 await db.query(
   `DEFINE USER IF NOT EXISTS huygens_reader ON DATABASE
-     PASSWORD $pass
-     ROLES VIEWER`,
-  { pass: password }
+     PASSWORD ${surrealStringLiteral(password)}
+     ROLES VIEWER`
 )
 console.log('[define-reader] huygens_reader ensured (VIEWER on DATABASE)')
 
@@ -132,15 +135,16 @@ Añadir el servicio tras `huygens-mcp` (línea 92), antes de `huygens-worker`:
     image: surrealdb/surrealmcp:v0.4.0
     restart: unless-stopped
     command:
-      - --transport
-      - http
+      - start
       - --bind-address
       - 0.0.0.0:8080
+      - --auth-disabled
     environment:
-      SURREALDB_URL: ws://surrealdb:8000/rpc
+      SURREALDB_URL: ws://surrealdb:8000
       SURREALDB_NS: huygens
       SURREALDB_DB: main
       SURREALDB_USER: huygens_reader
+      SURREAL_MCP_SERVER_URL: http://surrealmcp:8080
       SURREALDB_PASS: ${SURREAL_READER_PASS}
     depends_on:
       surrealdb:
@@ -228,6 +232,7 @@ interface ProxyState {
 }
 
 let state: ProxyState | null = null
+const READ_ONLY_UPSTREAM_TOOLS = new Set(['query', 'select', 'info'])
 
 export async function initSurrealmcpProxy(
   opts: SurrealMcpProxyOptions
@@ -242,8 +247,9 @@ export async function initSurrealmcpProxy(
   try {
     await withTimeout(client.connect(transport), connectTimeoutMs)
     const { tools } = await client.listTools()
-    state = { client, tools, prefix, degraded: false }
-    return { degraded: false, toolsRegistered: tools.length }
+    const visibleTools = tools.filter(tool => READ_ONLY_UPSTREAM_TOOLS.has(tool.name))
+    state = { client, tools: visibleTools, prefix, degraded: false }
+    return { degraded: false, toolsRegistered: visibleTools.length }
   } catch (err) {
     console.error('[surrealmcp-proxy] connect failed, entering degraded mode:', err)
     state = { client, tools: [], prefix, degraded: true }
@@ -260,8 +266,8 @@ export function registerSurrealmcpProxy(server: McpServer): void {
       `${prefix}${tool.name}`,
       {
         description: tool.description,
-        // Pass JSON Schema verbatim; SDK accepts raw JSON Schema here.
-        inputSchema: tool.inputSchema as never
+        // Convert upstream JSON Schema properties to a permissive Zod raw shape.
+        inputSchema: jsonSchemaToZodRawShape(tool.inputSchema)
       },
       async (args: unknown) => {
         try {
@@ -293,10 +299,11 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 
 Detalles a cubrir:
 
-- **JSON Schema upstream**: el SDK server (`@modelcontextprotocol/sdk@^1.18.0`,
-  ver `apps/mcp/package.json:16`) acepta tanto Zod shape como JSON Schema
-  crudo en `registerTool(name, { inputSchema })`. Pasar el JSON Schema
-  upstream verbatim sin convertir a Zod.
+- **JSON Schema upstream**: el SDK server acepta Zod/raw shape en
+  `registerTool(name, { inputSchema })`, no JSON Schema completo. Convertir
+  `tool.inputSchema.properties` a un raw shape permisivo (`z.unknown()` por
+  propiedad, opcional si no está en `required`) y delegar los argumentos al
+  upstream.
 - **Handler**: nunca lanzar; convertir errores a `{ isError: true,
   content: [{ type: 'text', text: ... }] }`. Esto deja el control de
   reconexión al loop background.
@@ -322,11 +329,12 @@ function startReconnectLoop(
     try {
       await client.connect(transport)
       const { tools } = await client.listTools()
+      const visibleTools = tools.filter(tool => READ_ONLY_UPSTREAM_TOOLS.has(tool.name))
       if (state) {
-        state.tools = tools
+        state.tools = visibleTools
         state.degraded = false
       }
-      console.error(`[surrealmcp-proxy] recovered: ${tools.length} tools available`)
+      console.error(`[surrealmcp-proxy] recovered: ${visibleTools.length} read-only tools available`)
       clearInterval(handle)
     } catch (err) {
       console.error('[surrealmcp-proxy] reconnect attempt failed:', err)
@@ -408,7 +416,9 @@ curl -sS http://localhost:3030/mcp \
 ```
 
 Debe listar las curadas (`capture`, `list_inbox`, `create_proposal`, etc.)
-y las `query_*` (p.ej. `query_select`, `query_query`).
+y solo las `query_*` allowlisted (p.ej. `query_select`, `query_query`, quizá
+`query_info`). No debe listar `query_create`, `query_update`, `query_delete`
+ni `query_relate`.
 
 ### 4.3 Llamada read-only OK
 
@@ -425,7 +435,7 @@ curl -sS http://localhost:3030/mcp \
 Resultado esperado: payload con (al menos) una fila o array vacío, sin
 `isError`.
 
-### 4.4 Llamada write FALLA por roles
+### 4.4 Write tool oculta
 
 ```bash
 curl -sS http://localhost:3030/mcp \
@@ -437,10 +447,25 @@ curl -sS http://localhost:3030/mcp \
   }'
 ```
 
+Resultado esperado: error de tool desconocida, porque `query_create` no está
+registrada en Huygens MCP.
+
+### 4.5 Write vía `query_query` FALLA por roles
+
+```bash
+curl -sS http://localhost:3030/mcp \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -d '{
+    "jsonrpc":"2.0","id":4,"method":"tools/call",
+    "params":{"name":"query_query","arguments":{"query":"CREATE note CONTENT { title: \"x\" }"}}
+  }'
+```
+
 Resultado esperado: `isError: true` con mensaje `Not enough permissions` (o
 equivalente) propagado desde SurrealDB.
 
-### 4.5 Test de degraded mode
+### 4.6 Test de degraded mode
 
 Apagar el upstream y reiniciar el MCP:
 
@@ -461,7 +486,7 @@ sleep 35
 docker logs huygens_devcontainer-huygens-mcp-1 --tail 20
 ```
 
-Debe aparecer `recovered: N tools available`.
+Debe aparecer `recovered: N read-only tools available`.
 
 ## Paso 5 — Lint/typecheck
 

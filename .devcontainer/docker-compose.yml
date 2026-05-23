@@ -77,11 +77,14 @@ services:
       SURREAL_DB: main
       SURREAL_USER: root
       SURREAL_PASS: root
+      SURREALMCP_URL: http://surrealmcp:8080/mcp
     ports:
       - "3030:3030"
     depends_on:
       surrealdb:
         condition: service_healthy
+      surrealmcp:
+        condition: service_started
     networks:
       - default_network
     healthcheck:
@@ -90,6 +93,28 @@ services:
       timeout: 5s
       retries: 30
       start_period: 10s
+
+  surrealmcp:
+    image: surrealdb/surrealmcp:v0.4.0
+    restart: unless-stopped
+    command:
+      - start
+      - --bind-address
+      - 0.0.0.0:8080
+      - --auth-disabled
+    env_file:
+      - ../apps/mcp/.env
+    environment:
+      SURREALDB_URL: ws://surrealdb:8000
+      SURREALDB_NS: huygens
+      SURREALDB_DB: main
+      SURREALDB_USER: huygens_reader
+      SURREAL_MCP_SERVER_URL: http://surrealmcp:8080
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    networks:
+      - default_network
 
   huygens-worker:
     profiles: ["worker"]

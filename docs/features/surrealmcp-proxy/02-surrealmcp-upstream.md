@@ -32,7 +32,7 @@ servicio a terceros habrá que revisar.
 
 | Variable | Descripción | Valor en nuestro setup |
 |---|---|---|
-| `SURREALDB_URL` | Endpoint del SurrealDB upstream | `ws://surrealdb:8000/rpc` |
+| `SURREALDB_URL` | Endpoint del SurrealDB upstream | `ws://surrealdb:8000` |
 | `SURREALDB_NS` | Namespace | `huygens` |
 | `SURREALDB_DB` | Database | `main` |
 | `SURREALDB_USER` | Usuario con permisos limitados | `huygens_reader` |
@@ -46,10 +46,10 @@ el upstream se autentica con un usuario `VIEWER` dedicado (ver más abajo).
 Por defecto `surrealmcp` arranca en transport **stdio**, pensado para
 clientes que lo lanzan como subproceso. Como el proxy de Huygens consume
 el upstream por HTTP a través del network del devcontainer, hay que
-forzar el modo HTTP:
+arrancarlo con el subcomando `start` y un bind address HTTP:
 
 ```bash
-surrealmcp --transport http --bind-address 0.0.0.0:8080
+surrealmcp start --bind-address 0.0.0.0:8080 --auth-disabled
 ```
 
 ### Endpoint final
@@ -74,28 +74,30 @@ hace el proxy de Huygens con cada tool cuando arranca con credenciales
 |---|---|---|---|
 | `query` | read | Ejecuta SurrealQL arbitrario | incluida |
 | `select` | read | `SELECT` sobre tabla/range | incluida |
-| `create` | write | `CREATE` / `INSERT` record | bloqueada por BD |
-| `update` | write | `UPDATE` parcial o total | bloqueada por BD |
-| `delete` | write | `DELETE` record | bloqueada por BD |
-| `merge` | write | `MERGE` sobre record existente | bloqueada por BD |
-| `patch` | write | `PATCH` (JSON Patch) | bloqueada por BD |
-| `insert` | write | `INSERT` bulk | bloqueada por BD |
-| `relate` | write | Crear edge `RELATE` | bloqueada por BD |
+| `create` | write | `CREATE` / `INSERT` record | oculta |
+| `update` | write | `UPDATE` parcial o total | oculta |
+| `delete` | write | `DELETE` record | oculta |
+| `merge` | write | `MERGE` sobre record existente | oculta |
+| `patch` | write | `PATCH` (JSON Patch) | oculta |
+| `insert` | write | `INSERT` bulk | oculta |
+| `relate` | write | Crear edge `RELATE` | oculta |
 | `info` | read | Metadatos de la conexión actual | incluida si existe |
 | `signin` / `use` | infra | Auth y switch de NS/DB | no expuestas al agente |
 
 Notas:
 
-- **No filtramos write tools en el proxy.** El auto-discovery del proxy
-  lista todas las tools que el upstream anuncia y las re-expone tal cual.
-  Las write tools fallarán a nivel SurrealDB con un error de permisos
-  porque el usuario es `VIEWER`. Es menos código y el comportamiento es
-  transparente: el agente ve qué tools existen y aprende cuáles fallan.
+- **Filtramos por allowlist read-only en el proxy.** El auto-discovery del
+  proxy lista todas las tools que el upstream anuncia, pero Huygens solo
+  re-expone `query`, `select` e `info` si existen. Las write tools no aparecen
+  en `tools/list`.
+- El usuario `VIEWER` sigue siendo la defensa real si alguien intenta mutar
+  usando `query_query` con SurrealQL crudo.
 - `info`, `signin`, `use` están listadas como "probablemente presentes":
   hay que confirmar tras un `tools/list` real contra v0.4.0 y ajustar
   esta tabla si difiere.
-- Si una versión futura añade nuevas tools, el proxy las publicará sin
-  cambios. Es deseable: no queremos acoplar el proxy a una lista fija.
+- Si una versión futura añade nuevas tools, el proxy las ocultará por defecto
+  hasta que revisemos explícitamente si son read-only y deben entrar en la
+  allowlist.
 
 ## Modelo de auth
 

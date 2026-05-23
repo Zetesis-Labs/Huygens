@@ -8,13 +8,14 @@ Estado: propuesto, en implementación. Última revisión: 2026-05-23.
   (`surrealdb/surrealmcp:v0.4.0`) como contenedor separado dentro del
   devcontainer.
 - Al boot, `huygens-mcp` se conecta al SurrealMCP upstream, auto-descubre sus
-  tools y las re-registra en el `McpServer` local con prefijo `query_*`.
+  tools, aplica una allowlist read-only y re-registra solo esas tools en el
+  `McpServer` local con prefijo `query_*`.
 - Los clientes (Claude Desktop, Hermes, Codex, etc.) ven en una sola lista las
   tools curadas de Huygens (`capture`, `create_proposal`, `commit_proposal`...)
   junto con las de exploración libre del grafo (`query_select`, `query_query`).
-- El proxy es **read-only por credenciales**: el contenedor upstream se
-  autentica como `huygens_reader` con rol `VIEWER` en SurrealDB. Las write
-  tools del upstream existen pero fallan a nivel BBDD.
+- El proxy es **read-only por diseño y por credenciales**: Huygens solo expone
+  `query`, `select` e `info` si existen en upstream; el contenedor upstream se
+  autentica además como `huygens_reader` con rol `VIEWER` en SurrealDB.
 - Si el upstream no arranca, el MCP de Huygens sigue funcionando en modo
   degradado: solo las tools curadas, sin `query_*`.
 
@@ -33,9 +34,9 @@ camino para mutar; la exploración deja de competir contra ellas.
 ## Restricciones
 
 - **Solo lectura**. El upstream expone también `create`, `update`, `delete`,
-  `relate`, etc. Se neutralizan a nivel SurrealDB: `huygens_reader` tiene
-  `ROLES VIEWER`. Cualquier intento de mutación falla con permission denied,
-  aunque el cliente la invoque.
+  `relate`, etc. Huygens no las registra, así que el cliente no las ve en
+  `tools/list`. Además, `huygens_reader` tiene `ROLES VIEWER`, de modo que un
+  intento de mutación vía `query_query` falla con permission denied.
 - **Mutación sigue siendo de Huygens**. Todo cambio al grafo pasa por el flujo
   `create_proposal` → `commit_proposal`. El proxy no es un atajo para saltarse
   la propuesta visible.
@@ -61,9 +62,9 @@ camino para mutar; la exploración deja de competir contra ellas.
 |    capture           |       |                      |
 |    list_inbox        |       |  tools:              |
 |    create_proposal   |       |    query, select,    |
-|    commit_proposal   |       |    (write tools      |
-|    ...               |       |     bloqueadas por   |
-|                      | --->  |     rol VIEWER)      |
+|    commit_proposal   |       |    info (si existe)  |
+|    ...               |       |                      |
+|                      | --->  |  write tools ocultas |
 |  - proxy             |       |                      |
 |    discover & expose |       +----------+-----------+
 |    como query_*      |                  |
@@ -98,8 +99,9 @@ camino para mutar; la exploración deja de competir contra ellas.
 2. Añadir el servicio `surrealmcp` al `docker-compose` del devcontainer.
 3. Implementar el cliente MCP→MCP en `apps/mcp` y el descubrimiento de tools al
    boot.
-4. Registrar las tools descubiertas con prefijo `query_*` en el `McpServer`
-   local; implementar modo degradado si el upstream no está disponible.
+4. Registrar solo las tools allowlisted con prefijo `query_*` en el
+   `McpServer` local; implementar modo degradado si el upstream no está
+   disponible.
 5. Probar desde Claude Desktop y Hermes que las tools `query_*` aparecen junto
    a las curadas y solo permiten lectura.
 6. Documentar en `CLAUDE.md` la convención `query_*` para que los agentes la
