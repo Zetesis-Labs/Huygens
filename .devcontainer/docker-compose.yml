@@ -7,7 +7,6 @@ services:
       - ..:/workspace:cached
       - node_modules:/workspace/node_modules:delegated
       - claude_memory:/root/.claude
-      - /var/run/docker.sock:/var/run/docker.sock
     command: sleep infinity
     environment:
       SURREAL_URL: ws://surrealdb:8000/rpc
@@ -15,11 +14,33 @@ services:
       SURREAL_DB: main
       SURREAL_USER: root
       SURREAL_PASS: root
+      DOCKER_HOST: tcp://dind:2375
     depends_on:
       surrealdb:
         condition: service_healthy
+      dind:
+        condition: service_healthy
     networks:
       - default_network
+
+  # Docker-in-Docker daemon. The app container talks to it via DOCKER_HOST
+  # (tcp://dind:2375), so the host's docker socket is no longer mounted.
+  # Privileged + an isolated /var/lib/docker volume — this daemon is
+  # independent from the host engine.
+  dind:
+    image: docker:dind
+    privileged: true
+    command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--tls=false"]
+    volumes:
+      - dind_data:/var/lib/docker
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD", "docker", "-H", "tcp://localhost:2375", "info"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
 
   # Init container: el named volume se crea como root y la imagen oficial
   # de SurrealDB corre como nonroot (uid 65532). Sin chown previo, RocksDB
@@ -139,6 +160,7 @@ volumes:
   node_modules:
   claude_memory:
   surrealdb_data:
+  dind_data:
 
 networks:
   default_network:
