@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { type RecordId, StringRecordId, Surreal } from 'surrealdb'
-import { setDbOverride } from '../src/surreal'
+import { setDbOverride, setReadOnlyDbOverride } from '../src/surreal'
 
 const SCHEMA_SQL = readFileSync(new URL('../surreal/schema.surql', import.meta.url), 'utf8')
 const SEED_SQL = readFileSync(new URL('../surreal/seed.surql', import.meta.url), 'utf8')
@@ -65,6 +65,47 @@ export async function withFreshDb(): Promise<TestDb> {
         // Best effort — surreal's REMOVE is idempotent in practice
       }
       await db.close()
+    }
+  }
+}
+
+export type TestDbWithReader = TestDb & {
+  reader: Surreal
+}
+
+/**
+ * Like `withFreshDb` but also provisions a fresh `huygens_reader` user
+ * (VIEWER on the test database) and installs a separate Surreal client
+ * signed in as that user as the read-only singleton. Cleanup closes both
+ * clients and drops the namespace.
+ */
+export async function withFreshDbAndReader(): Promise<TestDbWithReader> {
+  const ctx = await withFreshDb()
+  const readerPassword = `r-${Math.random().toString(36).slice(2, 10)}`
+  await ctx.db.query(
+    `DEFINE USER huygens_reader ON DATABASE PASSWORD '${readerPassword}' ROLES VIEWER`
+  )
+
+  const url = process.env.SURREAL_URL ?? 'ws://surrealdb:8000/rpc'
+  const reader = new Surreal()
+  await reader.connect(url)
+  await reader.signin({
+    username: 'huygens_reader',
+    password: readerPassword,
+    namespace: ctx.namespace,
+    database: ctx.database
+  })
+  await reader.use({ namespace: ctx.namespace, database: ctx.database })
+  setReadOnlyDbOverride(reader)
+
+  const baseCleanup = ctx.cleanup
+  return {
+    ...ctx,
+    reader,
+    async cleanup() {
+      setReadOnlyDbOverride(null)
+      await reader.close().catch(() => {})
+      await baseCleanup()
     }
   }
 }

@@ -46,6 +46,10 @@ class ConfigMissingError(HuygensError):
     code: ClassVar[str] = "CONFIG_MISSING"
 
 
+class QueryError(HuygensError):
+    code: ClassVar[str] = "QUERY_ERROR"
+
+
 _CODE_TO_CLASS: dict[str, type[HuygensError]] = {
     cls.code: cls
     for cls in (
@@ -54,6 +58,7 @@ _CODE_TO_CLASS: dict[str, type[HuygensError]] = {
         EmbeddingDimensionMismatchError,
         EmbeddingProviderError,
         ConfigMissingError,
+        QueryError,
     )
 }
 

@@ -34,11 +34,10 @@ services:
     restart: "no"
 
   surrealdb:
-    # Pinned to v2.6 because surrealmcp v0.4.0's bundled SurrealDB Rust SDK
-    # negotiates the legacy binary WS subprotocols (revision/msgpack) which
-    # SurrealDB 3.x dropped — the handshake fails with "Server sent no
-    # subprotocol". Stay on v2.6 until surrealmcp ships a 3.x-compatible SDK.
-    image: surrealdb/surrealdb:v2.6.5
+    # Latest stable. The previous pin to v2.6 was for surrealmcp v0.4.0
+    # compatibility; we replaced that proxy with native `query_*` tools in
+    # huygens-mcp, so the version cap no longer applies.
+    image: surrealdb/surrealdb:v3.0.5
     restart: unless-stopped
     # Sin override de user: la imagen ya corre como nonroot (uid 65532).
     # RocksDB persistente; bind a 0.0.0.0 para que `app` lo alcance por nombre.
@@ -81,26 +80,16 @@ services:
       SURREAL_DB: main
       SURREAL_USER: root
       SURREAL_PASS: root
-      SURREALMCP_URL: http://surrealmcp:8080/mcp
-      # Pinned by huygens-mcp at boot via the upstream's connect_endpoint —
-      # surrealmcp:v0.4.0 starts unbound and refuses query/select otherwise.
-      # SURREALMCP_DB_URL must match the upstream's own SURREALDB_URL.
-      # NOTE: surrealmcp:v0.4.0's bundled Rust SDK only authenticates against
-      # the ROOT scope — DB-scope users (huygens_reader) get "auth failed".
-      # Until upstream fixes that, the proxy connects as root; the read-only
-      # contract is enforced solely by Huygens' allowlist (query, select, info).
-      SURREALMCP_DB_URL: ws://surrealdb:8000/rpc
-      SURREALMCP_DB_NS: huygens
-      SURREALMCP_DB_NAME: main
-      SURREALMCP_DB_USER: root
-      SURREALMCP_DB_PASS: root
+      # `query_*` tools sign in as huygens_reader (VIEWER) so writes are
+      # rejected at the DB level. Create the user once with
+      # `bun run db:define-reader` and put SURREAL_READER_PASS in
+      # apps/mcp/.env (loaded via env_file above).
+      SURREAL_READER_USER: huygens_reader
     ports:
       - "3030:3030"
     depends_on:
       surrealdb:
         condition: service_healthy
-      surrealmcp:
-        condition: service_started
     networks:
       - default_network
     healthcheck:
@@ -109,28 +98,6 @@ services:
       timeout: 5s
       retries: 30
       start_period: 10s
-
-  surrealmcp:
-    image: surrealdb/surrealmcp:v0.4.0
-    restart: unless-stopped
-    command:
-      - start
-      - --bind-address
-      - 0.0.0.0:8080
-      - --auth-disabled
-    env_file:
-      - ../apps/mcp/.env
-    environment:
-      SURREALDB_URL: ws://surrealdb:8000/rpc
-      SURREALDB_NS: huygens
-      SURREALDB_DB: main
-      SURREALDB_USER: huygens_reader
-      SURREAL_MCP_SERVER_URL: http://surrealmcp:8080
-    depends_on:
-      surrealdb:
-        condition: service_healthy
-    networks:
-      - default_network
 
   huygens-worker:
     profiles: ["worker"]

@@ -1,6 +1,5 @@
 import { createServer as createHttpServer, type IncomingMessage } from 'node:http'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import { initSurrealmcpProxy } from './proxies/surrealmcp'
 import { createServer } from './server'
 
 const PORT = Number(process.env.MCP_PORT ?? 3030)
@@ -48,28 +47,6 @@ const httpServer = createHttpServer(async (req, res) => {
     }
   }
 })
-
-const surrealmcpUrl = process.env.SURREALMCP_URL
-if (surrealmcpUrl) {
-  const endpointUrl = process.env.SURREALMCP_DB_URL ?? process.env.SURREAL_URL
-  const result = await initSurrealmcpProxy({
-    url: surrealmcpUrl,
-    endpoint: endpointUrl
-      ? {
-          url: endpointUrl,
-          namespace: process.env.SURREALMCP_DB_NS ?? process.env.SURREAL_NS,
-          database: process.env.SURREALMCP_DB_NAME ?? process.env.SURREAL_DB,
-          username: process.env.SURREALMCP_DB_USER,
-          password: process.env.SURREALMCP_DB_PASS
-        }
-      : undefined
-  })
-  console.error(
-    `[huygens-mcp] surrealmcp proxy: ${
-      result.degraded ? 'degraded (will retry)' : `${result.toolsRegistered} read-only tools registered`
-    }`
-  )
-}
 
 httpServer.listen(PORT, () => {
   console.error(`[huygens-mcp] listening on http://0.0.0.0:${PORT}/mcp`)

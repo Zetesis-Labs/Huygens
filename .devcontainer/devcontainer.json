@@ -2,7 +2,7 @@
   "name": "Huygens",
   "dockerComposeFile": "docker-compose.yml",
   "service": "app",
-  "runServices": ["app", "surrealdb-init", "surrealdb", "surrealmcp", "huygens-mcp"],
+  "runServices": ["app", "surrealdb-init", "surrealdb", "huygens-mcp"],
   "workspaceFolder": "/workspace",
   "forwardPorts": [3030, 8000],
   "portsAttributes": {

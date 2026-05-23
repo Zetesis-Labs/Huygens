@@ -1,16 +1,60 @@
 import { Surreal } from 'surrealdb'
+import { ConfigMissingError } from './errors'
+
+type SurrealConfig = {
+  url: string
+  namespace: string
+  database: string
+  username: string
+  password: string
+  /**
+   * `root` users sign in without namespace/database; DB-scope users
+   * (huygens_reader) must include both. Picking the wrong shape causes
+   * SurrealDB to reject the credentials, so this is explicit per role.
+   */
+  scope: 'root' | 'database'
+}
 
 let cached: Surreal | null = null
 let override: Surreal | null = null
 
-function config() {
+let readerCached: Surreal | null = null
+let readerOverride: Surreal | null = null
+
+function rootConfig(): SurrealConfig {
   return {
     url: process.env.SURREAL_URL ?? 'ws://surrealdb:8000/rpc',
     namespace: process.env.SURREAL_NS ?? 'huygens',
     database: process.env.SURREAL_DB ?? 'main',
     username: process.env.SURREAL_USER ?? 'root',
-    password: process.env.SURREAL_PASS ?? 'root'
+    password: process.env.SURREAL_PASS ?? 'root',
+    scope: 'root'
   }
+}
+
+function readerConfig(): SurrealConfig {
+  const password = process.env.SURREAL_READER_PASS
+  if (!password) throw new ConfigMissingError('SURREAL_READER_PASS')
+  return {
+    url: process.env.SURREAL_URL ?? 'ws://surrealdb:8000/rpc',
+    namespace: process.env.SURREAL_NS ?? 'huygens',
+    database: process.env.SURREAL_DB ?? 'main',
+    username: process.env.SURREAL_READER_USER ?? 'huygens_reader',
+    password,
+    scope: 'database'
+  }
+}
+
+function signinAuth(cfg: SurrealConfig): Parameters<Surreal['signin']>[0] {
+  if (cfg.scope === 'database') {
+    return {
+      namespace: cfg.namespace,
+      database: cfg.database,
+      username: cfg.username,
+      password: cfg.password
+    }
+  }
+  return { username: cfg.username, password: cfg.password }
 }
 
 function isAuthError(err: unknown): boolean {
@@ -18,25 +62,25 @@ function isAuthError(err: unknown): boolean {
   return msg.includes('Anonymous access') || msg.includes('Not enough permissions')
 }
 
-async function reauth(db: Surreal): Promise<void> {
-  const { url, namespace, database, username, password } = config()
+async function reauthWith(db: Surreal, cfg: SurrealConfig): Promise<void> {
+  const auth = signinAuth(cfg)
   try {
-    await db.signin({ username, password })
-    await db.use({ namespace, database })
+    await db.signin(auth)
+    await db.use({ namespace: cfg.namespace, database: cfg.database })
     return
   } catch {
     // Sesion irrecuperable: cierra y reconecta de cero.
   }
   await db.close().catch(() => {})
-  await db.connect(url)
-  await db.signin({ username, password })
-  await db.use({ namespace, database })
+  await db.connect(cfg.url)
+  await db.signin(auth)
+  await db.use({ namespace: cfg.namespace, database: cfg.database })
 }
 
 // The SurrealDB SDK's RPC session can silently lose auth after an internal
 // reconnect (no re-signin is emitted). We wrap `query` so that on the first
 // auth error we reauthenticate and retry once.
-function makeResilient(db: Surreal): Surreal {
+function makeResilient(db: Surreal, getConfig: () => SurrealConfig, label: string): Surreal {
   return new Proxy(db, {
     get(target, prop, receiver) {
       if (prop !== 'query') {
@@ -49,8 +93,8 @@ function makeResilient(db: Surreal): Surreal {
           return await original(...args)
         } catch (err) {
           if (!isAuthError(err)) throw err
-          console.error('[huygens-mcp] surreal RPC lost auth, reauthenticating')
-          await reauth(target)
+          console.error(`[huygens-mcp] surreal RPC lost auth (${label}), reauthenticating`)
+          await reauthWith(target, getConfig())
           return await original(...args)
         }
       }
@@ -58,25 +102,51 @@ function makeResilient(db: Surreal): Surreal {
   }) as Surreal
 }
 
+async function connectClient(cfg: SurrealConfig): Promise<Surreal> {
+  const db = new Surreal()
+  await db.connect(cfg.url)
+  await db.signin(signinAuth(cfg))
+  await db.use({ namespace: cfg.namespace, database: cfg.database })
+  return db
+}
+
 export async function getDb(): Promise<Surreal> {
   if (override) return override
   if (cached) return cached
 
-  const { url, namespace, database, username, password } = config()
-
-  const db = new Surreal()
-  await db.connect(url)
-  await db.signin({ username, password })
-  await db.use({ namespace, database })
-
-  cached = makeResilient(db)
+  const cfg = rootConfig()
+  const db = await connectClient(cfg)
+  cached = makeResilient(db, rootConfig, 'root')
   return cached
+}
+
+/**
+ * Read-only Surreal client. Signs in as `huygens_reader` (VIEWER role on
+ * the database) so any write attempted through this connection — even via
+ * raw SurrealQL — is rejected by SurrealDB itself. This is the security
+ * boundary for the `query_*` tools; do not relax it to root.
+ *
+ * Requires `SURREAL_READER_PASS` in the environment. The user is created
+ * once with `bun run db:define-reader`.
+ */
+export async function getReadOnlyDb(): Promise<Surreal> {
+  if (readerOverride) return readerOverride
+  if (readerCached) return readerCached
+
+  const cfg = readerConfig()
+  const db = await connectClient(cfg)
+  readerCached = makeResilient(db, readerConfig, 'reader')
+  return readerCached
 }
 
 export async function closeDb(): Promise<void> {
   if (cached) {
     await cached.close()
     cached = null
+  }
+  if (readerCached) {
+    await readerCached.close()
+    readerCached = null
   }
 }
 
@@ -89,4 +159,9 @@ export async function closeDb(): Promise<void> {
  */
 export function setDbOverride(db: Surreal | null): void {
   override = db
+}
+
+/** Test seam for the read-only client. Mirrors `setDbOverride`. */
+export function setReadOnlyDbOverride(db: Surreal | null): void {
+  readerOverride = db
 }

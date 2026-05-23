@@ -22,6 +22,7 @@ export type ErrorCode =
   | 'EMBEDDING_DIMENSION_MISMATCH'
   | 'EMBEDDING_PROVIDER_ERROR'
   | 'CONFIG_MISSING'
+  | 'QUERY_ERROR'
 
 export abstract class HuygensError extends Error {
   abstract readonly code: ErrorCode
@@ -73,6 +74,13 @@ export class ConfigMissingError extends HuygensError {
   readonly code = 'CONFIG_MISSING' as const
   constructor(name: string) {
     super(`required config missing: ${name}`, { name })
+  }
+}
+
+export class QueryError extends HuygensError {
+  readonly code = 'QUERY_ERROR' as const
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(message, details)
   }
 }
 
