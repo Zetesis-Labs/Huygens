@@ -2,7 +2,7 @@
   "mcpServers": {
     "huygens": {
       "type": "http",
-      "url": "http://localhost:3030/mcp"
+      "url": "http://huygens-mcp:3030/mcp"
     }
   }
 }
