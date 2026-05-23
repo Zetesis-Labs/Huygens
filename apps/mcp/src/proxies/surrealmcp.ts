@@ -135,7 +135,11 @@ export function registerSurrealmcpProxy(server: McpServer): void {
           })) as CallToolResult
         } catch (err) {
           const msg = errorMessage(err)
-          if (currentOptions) void markDegraded(msg, currentOptions)
+          // Per-call failures (bad args, upstream tool error) are reported back
+          // verbatim. Only mark degraded for clear transport/connection
+          // failures so that one malformed arg doesn't blackhole every next
+          // call until the 30s reconnect tick.
+          if (isTransportError(err) && currentOptions) void markDegraded(msg, currentOptions)
           return toolError(`surrealmcp upstream error: ${msg}`)
         }
       }
@@ -244,16 +248,48 @@ function toToolArguments(args: unknown): Record<string, unknown> {
 }
 
 function jsonSchemaToZodRawShape(schema: Tool['inputSchema']): Record<string, z.ZodType> {
-  const properties = schema.properties ?? {}
+  const properties = (schema.properties ?? {}) as Record<string, unknown>
   const required = new Set(schema.required ?? [])
   const shape: Record<string, z.ZodType> = {}
 
-  for (const key of Object.keys(properties)) {
-    const value = z.unknown()
+  for (const [key, raw] of Object.entries(properties)) {
+    const base = jsonSchemaPropertyToZod(raw)
+    const isNullable = (raw as { nullable?: boolean })?.nullable === true
+    const value = isNullable ? base.nullable() : base
     shape[key] = required.has(key) ? value : value.optional()
   }
 
   return shape
+}
+
+/**
+ * Convert a single JSON-Schema property to a Zod schema. Keeping types
+ * (string/array/object) intact is required so the MCP client doesn't fall
+ * back to string serialization for complex args — surrealmcp's `targets`
+ * needs to round-trip as an array of strings, not as the JSON-stringified
+ * form of one.
+ */
+function jsonSchemaPropertyToZod(schema: unknown): z.ZodType {
+  if (!schema || typeof schema !== 'object') return z.unknown()
+  const s = schema as { type?: string | string[]; items?: unknown }
+  const type = Array.isArray(s.type) ? s.type[0] : s.type
+
+  switch (type) {
+    case 'string':
+      return z.string()
+    case 'number':
+      return z.number()
+    case 'integer':
+      return z.number().int()
+    case 'boolean':
+      return z.boolean()
+    case 'array':
+      return z.array(jsonSchemaPropertyToZod(s.items))
+    case 'object':
+      return z.record(z.string(), z.unknown())
+    default:
+      return z.unknown()
+  }
 }
 
 function describeProxiedTool(tool: Tool): string {
@@ -270,4 +306,26 @@ function toolError(text: string): CallToolResult {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+/**
+ * True for failures where the upstream client is no longer usable
+ * (transport closed, fetch failed, timeout). False for "the upstream
+ * answered but the tool errored" — those are payload-shaped problems we
+ * surface to the caller without tearing down the shared connection.
+ */
+function isTransportError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const msg = err.message.toLowerCase()
+  return (
+    msg.includes('fetch failed') ||
+    msg.includes('econnrefused') ||
+    msg.includes('econnreset') ||
+    msg.includes('socket hang up') ||
+    msg.includes('network') ||
+    msg.includes('timeout') ||
+    msg.includes('aborted') ||
+    msg.includes('transport') ||
+    msg.includes('closed')
+  )
 }
