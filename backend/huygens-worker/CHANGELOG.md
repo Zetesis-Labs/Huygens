@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.0](https://github.com/Zetesis-Labs/Huygens/compare/worker-v0.2.0...worker-v0.3.0) (2026-05-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **mcp:** replace surrealmcp proxy with native query_query
+
+### Features
+
+* **mcp:** replace surrealmcp proxy with native query_query ([d9e2376](https://github.com/Zetesis-Labs/Huygens/commit/d9e2376cc2b0504efa6ddf85c0c89414c264aad5))
+
+
+### Documentation
+
+* align all documentation with v2 report-centered model ([aea2c58](https://github.com/Zetesis-Labs/Huygens/commit/aea2c58eb85cfdaf0b2de7a402a29f9331b67e76))
+
 ## [0.2.0](https://github.com/Zetesis-Labs/Huygens/compare/worker-v0.1.0...worker-v0.2.0) (2026-05-21)
 
 

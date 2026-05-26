@@ -1,8 +1,9 @@
 apiVersion: v2
 name: huygens
-description: Personal memory MCP — SurrealDB + autonomous Agno worker + Streamable HTTP MCP server with typed tools + canonical prompts
+description: Personal memory MCP — SurrealDB + autonomous Agno worker +
+  Streamable HTTP MCP server with typed tools + canonical prompts
 type: application
-version: 0.1.0
+version: 0.1.1
 appVersion: "0.4.0"
 home: https://github.com/Zetesis-Labs/Huygens
 sources:

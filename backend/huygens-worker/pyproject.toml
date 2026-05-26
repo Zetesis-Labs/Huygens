@@ -1,6 +1,6 @@
 [project]
 name = "huygens-worker"
-version = "0.2.0"
+version = "0.3.0"
 description = "Worker shell for future specialized Huygens MCP agents."
 requires-python = ">=3.12"
 readme = "README.md"
