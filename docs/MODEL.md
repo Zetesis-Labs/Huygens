@@ -119,11 +119,15 @@ referencias.
 ```text
 note {
   id
-  type          // task | project | area | routine | idea | reference | person | objetivo
+  type               // task | project | area | routine | idea | reference | person | objetivo
   title
-  state         // CLARIFIED | ACTIVE | WAITING | SOMEDAY | DONE | ARCHIVED
-  block_order   // blocks descriptivos que forman su cuerpo
+  state              // CLARIFIED | ACTIVE | WAITING | SOMEDAY | DONE | ARCHIVED
+  block_order        // blocks descriptivos que forman su cuerpo
+  mit_for?           // option<datetime> — MIT (Most Important Task) para ese día (ADR-0023)
+  last_reviewed_at?  // option<datetime>
   metadata?
+  source_kind?       // para notas que no vienen de raw_capture
+  source_ref?
   created_at
   updated_at
 }
@@ -133,6 +137,11 @@ Los estados son ZTD como field. En esta fase casi todo puede vivir en
 `CLARIFIED`; no hay que construir el sistema completo de productividad todavía.
 Se mantiene el slug real `objetivo` durante esta migracion. No renombrarlo a
 `objective` sin una migracion especifica.
+
+`mit_for` es campo top-level indexado (no `metadata`). Convención ZTD: 1-3 MITs
+por día decididos por el usuario; el agente no los marca autonomamente. Un valor
+fecha-solo (`YYYY-MM-DD`) se persiste a medianoche UTC del día. El campo queda
+como rastro histórico: "fue MIT el día X".
 
 ### `block`
 
@@ -167,11 +176,11 @@ Solo estos edges son objetivo para v2.1-lite:
 
 | Edge | Forma | Para que sirve |
 |---|---|---|
-| `derived_from` | `block -> raw_capture` | Probar de que raw o raws salio una interpretacion. |
+| `derived_from` | `block -> raw_capture` | Probar de que raw o raws salio una interpretacion. Tiene campo `transformation` opcional (`verbatim | extracted | summarized | inferred`). |
 | `about` | `block -> note` | Decir sobre que sujetos habla un informe-block. |
-| `affects` | `block -> note` | Registrar que cambios causo o justifico el block. |
+| `affects` | `block -> note` | Registrar que cambios causo o justifico el block. Tiene campo `action` obligatorio (`created | updated | state_changed | linked | archived`) y `summary` opcional. |
 | `part_of` | `note -> note` | Jerarquia ZTD: task/project/area/objetivo. |
-| `blocked_by` | `note -> note` | Dependencias y esperas. |
+| `blocked_by` | `note -> note | block` | Dependencias y esperas. Tiene campos `since` y `reason` opcional. |
 | `mentions` | `note|block -> note|block` | Relacion debil cuando no merece un edge mas especifico. |
 
 `mentions` es el fallback deliberado. Antes de crear un edge nuevo, primero hay
@@ -179,6 +188,10 @@ que comprobar que aparece en conversaciones reales y responde a una query real.
 
 Un block narrativo puede tener varios `derived_from` si sintetiza varios raws
 del inbox en una sola interpretacion.
+
+Nota: `blocked_by` en schema admite `note | block` como destino (no solo note).
+En los ejemplos de este documento el destino suele ser una note, que es el caso
+habitual; pero el schema permite bloqueo por un bloque narrativo concreto.
 
 ## Fuera de scope por ahora
 
@@ -394,9 +407,19 @@ Reference "Paper sobre graph databases" mentions Project "Huygens"
 | `capture` | Crea `raw_capture` con `status='pending'`. |
 | `list_inbox` | Lista raws por `status`; default `pending`. |
 | `set_raw_status` | Permite `ignored`, `deferred`, `processed` sin crear topologia. |
+| `get_raw` | Detalle de un `raw_capture` por id + records derivados via `derived_from`. |
 | `create_proposal` / `update_proposal` | Persiste drafts visibles sin mutar el grafo. |
 | `get_proposal` / `discard_proposal` | Inspecciona o descarta drafts. |
-| `commit_proposal` | Aprobacion del usuario: crea blocks narrativos, notes/edges minimos y marca raws `processed`. |
+| `commit_proposal` | Aprobacion del usuario: transaccion atomica (BEGIN…COMMIT) que crea blocks narrativos, notes/edges minimos, marca raws `processed` y materializa `proposal.result` con los record ids reales + `temp_ids` {notes, blocks} + `versionstamp` + `committed_at`. |
+| `get_proposal_changes` | Recupera cambios exactos de una proposal commiteada: vista materializada (record ids resueltos a registros) + vista changefeed (delta de la transaccion). Opcion `format_d2` para render D2 (`code | svg | png | jpeg`) con dos vistas (`semantic | audit`). |
+| `update_note_state` | Mueve una note por los estados ZTD; registra un `agent_event`. |
+| `list_mits_for_date` | Lista las notes con `mit_for` en el dia dado (filtrable por estado). |
+| `list_notes_by_type` | Lista notes por type slug y estado; ordena por `updated_at` desc. |
+| `vector_search` | Busqueda semantica sobre blocks via embedding HNSW. |
+| `embed_text` / `index_block` | Genera embedding y lo persiste en un block. |
+| `find_related` | Bloques semanticamente proximos a un block dado. |
+| `chunk_markdown` | Trocea markdown en blocks. |
+| `query_query` | Query SurrealQL de lectura (read-only). |
 | `huygens-worker` | Shell MCP para futuros workers especializados; no procesa inbox ni llama Agno/OpenAI. |
 | `note_type:objetivo` | Slug real actual. No renombrar en esta migracion. |
 | `processed_at` en `raw_capture` | Compatibilidad. La fuente de verdad del inbox es `status`. |

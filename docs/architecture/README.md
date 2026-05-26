@@ -63,6 +63,7 @@ NO se añade ADR para:
 | [0021](./0021-adopt-ztd-drop-pillars.md) | Adopción de ZTD + drop de Pilares | Accepted | vision, data-model |
 | [0022](./0022-objetivo-and-idea-types.md) | Tipos Objetivo e Idea | Accepted | data-model |
 | [0023](./0023-mit-field-on-note.md) | Campo MIT en note (Most Important Task) | Accepted | data-model |
+| [0024](./0024-surrealkv-versioned-storage.md) | SurrealKV con `?versioned=true` como motor de almacenamiento | Accepted | database, infra |
 
 ## Status legend
 

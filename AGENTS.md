@@ -58,11 +58,35 @@ agente usa el MCP; el MCP persiste en SurrealDB. El worker Python queda
 reservado para workers especializados futuros que usen el MCP, no como interfaz
 principal.
 
-Tools MCP objetivo:
+Tools MCP disponibles:
 
 ```text
-capture -> list_inbox -> create/update/get/discard_proposal -> commit_proposal
-set_raw_status para ignored/deferred/processed sin crear topologia
+capture              raw ligero al inbox (status=pending)
+list_inbox           lista raws por status, default pending
+set_raw_status       ignored/deferred/processed sin topología
+get_raw              detalle completo de un raw + records derivados
+
+create_proposal      draft visible, no muta el grafo
+update_proposal      reemplaza payload de un draft
+get_proposal         diff legible + JSON
+discard_proposal     descarta draft sin mutar el grafo
+commit_proposal      tx atómica: crea blocks/notes/edges, marca raws processed;
+                       devuelve temp_ids {notes, blocks} → ids reales creados
+get_proposal_changes cambios exactos de una proposal commiteada:
+                       materialized (ids reales resueltos) + changefeed (delta);
+                       format_d2=code|svg|png|jpeg → grafo de cambios como D2 o imagen;
+                       d2_view=semantic|audit
+
+list_mits_for_date   tasks MIT del día (campo top-level mit_for, YYYY-MM-DD o ISO)
+list_notes_by_type   notas filtradas por type slug + state
+update_note_state    transición ZTD de una note; registra agent_event
+
+find_related         búsqueda semántica de notes similares (antes de crear duplicados)
+vector_search        K vecinos más cercanos en blocks vía HNSW cosine (BGE-M3)
+index_block          embebe 1..64 blocks con BGE-M3 y persiste embedding
+chunk_markdown       divide markdown en chunks con breadcrumb de cabeceras (sin BD)
+embed_text           embebe 1..64 strings con BGE-M3 (sin BD)
+query_query          SurrealQL de solo lectura (huygens_reader, VIEWER)
 ```
 
 ## Limpieza legacy
@@ -70,6 +94,10 @@ set_raw_status para ignored/deferred/processed sin crear topologia
 El flujo antiguo `raw -> clarify -> notes` fue retirado. No existen tools MCP
 `commit_clarify` ni `generate_report`, el seed ya no incluye `note`/`report`, y
 el worker no usa Agno/OpenAI ni procesa el inbox por polling.
+
+El campo `mit_for` es un campo **top-level** de `note` (datetime, indexado).
+No va en `metadata`. `commit_proposal` lo escribe directamente sobre el nodo;
+`list_mits_for_date` lo encuentra con `WHERE mit_for >= start AND mit_for < end`.
 
 ## Comandos clave (dentro del devcontainer)
 

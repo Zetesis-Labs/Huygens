@@ -145,11 +145,28 @@ Edges:
 The agent persists the visible draft with `create_proposal` or updates it with
 `update_proposal`. The user approves, edits or discards the proposal.
 
+`mit_for` is a first-class field in `note_creates` and `note_updates` inside
+the proposal payload. It accepts a calendar date (`YYYY-MM-DD`) or a full ISO
+datetime; a date-only value lands at that day's UTC midnight. On commit the
+value is written to the top-level indexed `note.mit_for` field, so
+`list_mits_for_date` can find it.
+
 ### Commit
 
-Only after approval should the agent call `commit_proposal`. This creates the
-narrative block, note creates/updates, `derived_from`, `about`, `affects`,
-minimal semantic edges, and marks the raws as `processed`.
+Only after approval should the agent call `commit_proposal`. The operation
+runs as a single atomic SurrealDB transaction (`BEGIN…COMMIT`): if anything
+fails the whole commit is rolled back. On success it:
+
+- Creates the narrative block(s), note creates/updates, `derived_from`,
+  `about`, `affects`, and minimal semantic edges.
+- Marks the raws as `processed`.
+- Stores the materialized `result` on the proposal: the real record ids
+  created (notes/blocks/edges), a `temp_ids` map
+  `{ notes: {temp_id→note:id}, blocks: {temp_id→block:id} }`,
+  `versionstamp`, and `committed_at`.
+
+After commit, call `get_proposal` to see the materialized result with real
+ids, or `get_proposal_changes` to see the full delta (JSON or D2 graph).
 
 Raws that should not become topology can be handled with `set_raw_status`:
 
@@ -173,20 +190,25 @@ docker compose -f .devcontainer/docker-compose.yml --profile worker logs -f huyg
 ## Useful MCP Interactions Today
 
 ```text
-capture       persist a raw_capture
-list_inbox    list raws by status, default pending
-set_raw_status mark raws ignored/deferred/processed without topology
-get_raw       inspect a raw and derived records
-create_proposal persist a visible draft without graph mutation
-update_proposal update a draft proposal
-get_proposal inspect a proposal
-discard_proposal discard a draft proposal
-commit_proposal approved graph commit
-vector_search search indexed blocks
-find_related  find existing notes related to a concept
-index_block    embed blocks after they should participate in vector search
-list_by_type  inspect notes by type
-list_mits     inspect MIT field usage
+capture              persist a raw_capture
+list_inbox           list raws by status, default pending
+set_raw_status       mark raws ignored/deferred/processed without topology
+get_raw              inspect a raw and derived records
+create_proposal      persist a visible draft without graph mutation
+update_proposal      update a draft proposal
+get_proposal         human-readable preview of the commit + raw JSON; for committed proposals also shows the materialized result (real ids)
+get_proposal_changes exact changes a committed proposal produced: JSON (materialized + changefeed views) or D2 graph (format_d2: "code"/"svg"/"png"/"jpeg"; d2_view: "semantic"/"audit")
+discard_proposal     discard a draft proposal
+commit_proposal      atomic approved graph commit (BEGIN…COMMIT, all-or-nothing); returns real record ids + temp_ids map
+update_note_state    move a note through ZTD states (CLARIFIED→ACTIVE→WAITING→SOMEDAY→DONE→ARCHIVED)
+list_mits_for_date   notes with mit_for on a given day (MITs)
+list_notes_by_type   inspect notes by type (task/project/objetivo/idea/…) and state
+find_related         find existing notes related to a concept (vector, deduped by note)
+vector_search        search indexed blocks via HNSW (BGE-M3, cosine)
+index_block          embed 1..64 blocks and persist embeddings for vector search
+query_query          read-only SurrealQL against the graph (VIEWER role)
+chunk_markdown       split markdown into heading-aware chunks (pure, no DB)
+embed_text           embed 1..64 strings with BGE-M3 (1024 dims)
 ```
 
 ## Troubleshooting

@@ -58,13 +58,19 @@ edges minimos a persistir
 
 El usuario debe aprobar esa propuesta o pedir ajustes.
 
+Tras `commit_proposal`, el MCP ejecuta una transaccion atomica (BEGIN…COMMIT):
+todas las mutaciones aterrizan juntas o ninguna. El resultado materializado
+queda en `proposal.result` con los record ids reales, el mapa `temp_ids`
+(temp_id → record id real) y el `versionstamp` de la transaccion. Para
+inspeccionar qué cambió exactamente usa `get_proposal_changes`.
+
 ### Mutaciones triviales
 
 Cambios simples y directos pueden aplicarse con menos ceremonia:
 
 ```text
-marcar task como DONE
-cambiar state de una note existente
+marcar task como DONE      → update_note_state
+cambiar state de una note  → update_note_state
 añadir un dato metadata claro pedido por el usuario
 ```
 
@@ -117,19 +123,46 @@ ARCHIVED
 Edges objetivo:
 
 ```text
-derived_from: block -> raw_capture
+derived_from: block -> raw_capture          (campo opcional: transformation = verbatim|extracted|summarized|inferred)
 about:        block -> note
-affects:      block -> note
+affects:      block -> note                 (campo obligatorio: action = created|updated|state_changed|linked|archived; summary opcional)
 part_of:      note -> note
-blocked_by:   note -> note
+blocked_by:   note -> note | block          (campos: since readonly, reason opcional)
 mentions:     note|block -> note|block
 ```
 
 `derived_from` puede repetirse para el mismo block si sintetiza varios raws del
 inbox.
 
+`blocked_by` admite como destino una `note` o un `block` (por ej. bloqueo
+referenciando un informe-block concreto). El caso habitual es note→note.
+
 No introducir nuevos edge types sin una razon concreta y aprobacion del usuario.
 Si una relacion es ambigua, usar `mentions`.
+
+## `mit_for`: campo top-level en note (ADR-0023)
+
+`mit_for` es un campo indexado de primera clase en `note`, no una clave en
+`metadata`. Representa "esta task es la Most Important Task (MIT) para ese dia".
+
+Reglas:
+
+```text
+- El USUARIO decide los MITs. El agente propone; el usuario aprueba.
+- Convencion ZTD: 1-3 MITs por dia, no mas.
+- Formato aceptado: YYYY-MM-DD (se persiste a medianoche UTC) o ISO datetime.
+- Mit_for = NONE → la note no es MIT (valor por defecto).
+- El campo permanece tras el dia como rastro historico; no se borra automaticamente.
+- Al menos 1 MIT deberia estar relacionado con un Objetivo activo (convencion, no enforced).
+```
+
+Para marcar un MIT en una propuesta, usa `mit_for` en `note_creates` o
+`note_updates` del payload. Para limpiar el MIT de una note existente, usa
+`mit_for: null` en `note_updates`.
+
+```text
+list_mits_for_date    → MITs activos/pendientes de un dia concreto
+```
 
 ## Como decidir field vs edge
 
@@ -144,7 +177,7 @@ Ejemplos:
 
 ```text
 state = ACTIVE              field
-mit_for = 2026-05-23        field
+mit_for = 2026-05-23        field (top-level indexado, no metadata)
 task part_of project        edge
 block derived_from raw      edge
 block affects note          edge
@@ -156,14 +189,29 @@ El flujo antiguo `raw -> clarify -> notes` fue retirado. Usa solo el flujo de
 inbox/proposal/commit:
 
 ```text
-capture            raw ligero al inbox, status=pending
-list_inbox         lee raws por status, default pending
-set_raw_status     ignored/deferred/processed sin topologia
-create_proposal    draft visible, no muta el grafo
-update_proposal    edita drafts
-get_proposal       inspecciona drafts o estado final
-discard_proposal   descarta drafts
-commit_proposal    aprobacion del usuario y commit al grafo
+capture                raw ligero al inbox, status=pending
+list_inbox             lee raws por status, default pending
+set_raw_status         ignored/deferred/processed sin topologia
+get_raw                detalle de un raw_capture + records derivados via derived_from
+
+create_proposal        draft visible, no muta el grafo
+update_proposal        edita drafts
+get_proposal           inspecciona drafts o estado final (preview legible + JSON)
+discard_proposal       descarta drafts
+commit_proposal        aprobacion del usuario: transaccion atomica, materializa result
+get_proposal_changes   cambios exactos de una proposal commiteada (materialized + changefeed + D2 opcional)
+
+update_note_state      mueve una note por los estados ZTD; registra agent_event
+list_mits_for_date     notas MIT del dia dado, filtradas por estado
+list_notes_by_type     notas por type slug y estado, ordenadas por updated_at
+
+embed_text             genera embedding para texto libre
+index_block            persiste embedding en un block
+vector_search          busqueda semantica sobre blocks (HNSW cosine)
+find_related           blocks semanticamente proximos a un block dado
+chunk_markdown         trocea markdown en blocks
+
+query_query            query SurrealQL de lectura (read-only)
 ```
 
 ## Prohibiciones en esta fase
