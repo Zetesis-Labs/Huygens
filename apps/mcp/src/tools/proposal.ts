@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { defineTool, jsonBlock } from './define-tool'
-import { getProposalChangesImpl, resolveContextLabels, resolveDraftLabels } from './proposal/changes'
+import { getProposalChangesImpl } from './proposal/changes'
 import { commitProposalImpl } from './proposal/commit'
 import { createProposalImpl, discardProposalImpl, getProposalImpl, updateProposalImpl } from './proposal/crud'
 import {
@@ -11,14 +11,12 @@ import {
   getProposalShape,
   updateProposalShape
 } from './proposal/schemas'
-import { renderProposalD2, renderProposalDraftD2, renderProposalSemanticD2 } from './proposal-d2'
-import { type D2Format, renderD2 } from './proposal-d2-render'
 import { renderProposalDiff } from './proposal-render'
 
 // Public surface of the proposal feature, re-exported so existing imports
 // (`./tools/proposal`) keep working after the split into proposal/*.
 export type { ProposalChanges } from './proposal/changes'
-export { getProposalChangesImpl, resolveContextLabels } from './proposal/changes'
+export { getProposalChangesImpl } from './proposal/changes'
 export { commitProposalImpl } from './proposal/commit'
 export { createProposalImpl, discardProposalImpl, getProposalImpl, updateProposalImpl } from './proposal/crud'
 export type {
@@ -68,63 +66,24 @@ export function registerProposalTools(server: McpServer): void {
   defineTool(
     server,
     'get_proposal',
-    'Fetch a persisted proposal: a deterministic, human-readable preview of what committing it will create and change, followed by the raw JSON. With format_d2, returns the proposed change graph instead: "code" the D2 source, "svg"/"png"/"jpeg" a rendered image (works on drafts, derived from the payload).',
+    'Fetch a persisted proposal: a deterministic, human-readable preview of what committing it will create and change, followed by the raw JSON.',
     getProposalShape,
     async args => {
       const proposal = await getProposalImpl(args)
       if (!proposal) return { content: [{ type: 'text', text: 'Proposal not found.' }] }
-      if (!args.format_d2) {
-        const text = `${renderProposalDiff(proposal)}\n\n---\n\n${JSON.stringify(proposal, null, 2)}`
-        return { content: [{ type: 'text', text }] }
-      }
-      const contextLabels = await resolveDraftLabels(proposal.payload)
-      const d2 = renderProposalDraftD2(proposal.id, proposal.payload, contextLabels)
-      if (args.format_d2 === 'code') {
-        return { content: [{ type: 'text', text: d2 }] }
-      }
-      try {
-        const { base64, mimeType } = await renderD2(d2, args.format_d2 as D2Format)
-        return { content: [{ type: 'image', data: base64, mimeType }] }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        return {
-          content: [
-            { type: 'text', text: `D2 render failed (${args.format_d2}): ${message}\n\n--- D2 source ---\n${d2}` }
-          ]
-        }
-      }
+      const text = `${renderProposalDiff(proposal)}\n\n---\n\n${JSON.stringify(proposal, null, 2)}`
+      return { content: [{ type: 'text', text }] }
     }
   )
 
   defineTool(
     server,
     'get_proposal_changes',
-    'Recover the exact changes a committed proposal produced. Default: JSON with two views — "materialized" (real record ids resolved to records) and "changefeed" (the transaction delta at the commit versionstamp). With format_d2: "code" returns the D2 diagram source; "svg"/"png"/"jpeg" return a rendered image of the change graph. Read-only.',
+    'Recover the exact changes a committed proposal produced: JSON with two views — "materialized" (real record ids resolved to records) and "changefeed" (the transaction delta at the commit versionstamp). Read-only.',
     getProposalChangesShape,
     async args => {
-      const changes = await getProposalChangesImpl({ proposal_id: args.proposal_id })
-      if (!args.format_d2) {
-        return { content: [{ type: 'text', text: JSON.stringify(changes, null, 2) }] }
-      }
-      const contextLabels = changes.materialized ? await resolveContextLabels(changes.materialized) : {}
-      const d2 =
-        args.d2_view === 'audit'
-          ? renderProposalD2(changes, contextLabels)
-          : renderProposalSemanticD2(changes, contextLabels)
-      if (args.format_d2 === 'code') {
-        return { content: [{ type: 'text', text: d2 }] }
-      }
-      try {
-        const { base64, mimeType } = await renderD2(d2, args.format_d2 as D2Format)
-        return { content: [{ type: 'image', data: base64, mimeType }] }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        return {
-          content: [
-            { type: 'text', text: `D2 render failed (${args.format_d2}): ${message}\n\n--- D2 source ---\n${d2}` }
-          ]
-        }
-      }
+      const changes = await getProposalChangesImpl(args)
+      return { content: [{ type: 'text', text: JSON.stringify(changes, null, 2) }] }
     }
   )
 

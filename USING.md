@@ -166,7 +166,8 @@ fails the whole commit is rolled back. On success it:
   `versionstamp`, and `committed_at`.
 
 After commit, call `get_proposal` to see the materialized result with real
-ids, or `get_proposal_changes` to see the full delta (JSON or D2 graph).
+ids, or `get_proposal_changes` to see the full delta (JSON: materialized +
+changefeed). Graphical visualization of the change lives in the dashboard.
 
 Raws that should not become topology can be handled with `set_raw_status`:
 
@@ -197,7 +198,7 @@ get_raw              inspect a raw and derived records
 create_proposal      persist a visible draft without graph mutation
 update_proposal      update a draft proposal
 get_proposal         human-readable preview of the commit + raw JSON; for committed proposals also shows the materialized result (real ids)
-get_proposal_changes exact changes a committed proposal produced: JSON (materialized + changefeed views) or D2 graph (format_d2: "code"/"svg"/"png"/"jpeg"; d2_view: "semantic"/"audit")
+get_proposal_changes exact changes a committed proposal produced: JSON (materialized + changefeed views); graphical view lives in the dashboard
 discard_proposal     discard a draft proposal
 commit_proposal      atomic approved graph commit (BEGIN…COMMIT, all-or-nothing); returns real record ids + temp_ids map
 update_note_state    move a note through ZTD states (CLARIFIED→ACTIVE→WAITING→SOMEDAY→DONE→ARCHIVED)

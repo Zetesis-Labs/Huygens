@@ -116,34 +116,10 @@ const proposalIdShape = {
   proposal_id: z.string().regex(PROPOSAL_ID_RE, 'Must be a record id like "proposal:abc123"')
 }
 
-export const getProposalShape = {
-  ...proposalIdShape,
-  format_d2: z
-    .enum(['code', 'svg', 'png', 'jpeg'])
-    .nullish()
-    .describe(
-      'Omit for the readable text diff + raw JSON. "code" returns the D2 source of the *proposed* change graph (works on drafts, derived from the payload); "svg"/"png"/"jpeg" return a rendered image of it.'
-    )
-}
-
+export const getProposalShape = proposalIdShape
 export const discardProposalShape = proposalIdShape
 export const commitProposalShape = proposalIdShape
-
-export const getProposalChangesShape = {
-  proposal_id: z.string().regex(PROPOSAL_ID_RE, 'Must be a record id like "proposal:abc123"'),
-  format_d2: z
-    .enum(['code', 'svg', 'png', 'jpeg'])
-    .nullish()
-    .describe(
-      'Omit for JSON (both views). "code" returns the D2 source; "svg"/"png"/"jpeg" return a rendered image of the change graph.'
-    ),
-  d2_view: z
-    .enum(['semantic', 'audit'])
-    .default('semantic')
-    .describe(
-      'Only with format_d2. "semantic" (default): what changed for the user — notes and their note↔note relations, the narrative as a caption, the source raw as a faint origin. "audit": the literal persistence graph (narrative block as hub, derived_from/about/affects edges) for traceability.'
-    )
-}
+export const getProposalChangesShape = proposalIdShape
 
 const createProposalSchema = z.object(createProposalShape)
 const updateProposalSchema = z.object(updateProposalShape)

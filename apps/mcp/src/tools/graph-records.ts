@@ -33,6 +33,7 @@ export type GraphNodeRecord = {
   id: RecordIdish
   title?: string
   type?: RecordIdish
+  state?: string
   content?: string
   block_kind?: string
 }

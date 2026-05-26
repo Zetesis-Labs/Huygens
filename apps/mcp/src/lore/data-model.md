@@ -101,12 +101,10 @@ create_proposal (status=draft)
 ```
 Use `temp_ids` to act on a just-created record without re-querying.
 
-**`get_proposal_changes`** (read-only, committed proposals only):
-- Default: JSON with `materialized` (real record ids resolved to records) + `changefeed` (delta at the commit versionstamp).
-- `format_d2=code` → D2 diagram source.
-- `format_d2=svg|png|jpeg` → rendered image.
-- `d2_view=semantic` (default): user-facing — notes and their relations, narrative caption, faint origin raw.
-- `d2_view=audit`: literal persistence graph (narrative block as hub, derived_from/about/affects).
+**`get_proposal_changes`** (read-only, committed proposals only): JSON with two
+views — `materialized` (real record ids resolved to records) and `changefeed`
+(the transaction delta at the commit versionstamp). Visual rendering of the
+change graph lives in the dashboard (React Flow), not in the MCP.
 
 ## Proposal payload schema
 

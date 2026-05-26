@@ -411,7 +411,7 @@ Reference "Paper sobre graph databases" mentions Project "Huygens"
 | `create_proposal` / `update_proposal` | Persiste drafts visibles sin mutar el grafo. |
 | `get_proposal` / `discard_proposal` | Inspecciona o descarta drafts. |
 | `commit_proposal` | Aprobacion del usuario: transaccion atomica (BEGIN…COMMIT) que crea blocks narrativos, notes/edges minimos, marca raws `processed` y materializa `proposal.result` con los record ids reales + `temp_ids` {notes, blocks} + `versionstamp` + `committed_at`. |
-| `get_proposal_changes` | Recupera cambios exactos de una proposal commiteada: vista materializada (record ids resueltos a registros) + vista changefeed (delta de la transaccion). Opcion `format_d2` para render D2 (`code | svg | png | jpeg`) con dos vistas (`semantic | audit`). |
+| `get_proposal_changes` | Recupera cambios exactos de una proposal commiteada: vista materializada (record ids resueltos a registros) + vista changefeed (delta de la transaccion). La visualizacion grafica del cambio vive en el dashboard (React Flow), no en el MCP. |
 | `update_note_state` | Mueve una note por los estados ZTD; registra un `agent_event`. |
 | `list_mits_for_date` | Lista las notes con `mit_for` en el dia dado (filtrable por estado). |
 | `list_notes_by_type` | Lista notes por type slug y estado; ordena por `updated_at` desc. |

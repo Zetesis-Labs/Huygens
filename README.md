@@ -42,10 +42,9 @@ El flujo v2.1-lite ya existe en schema/tools:
   commit creará/cambiará, seguido del JSON crudo. Para proposals ya
   commiteadas incluye además el resultado materializado.
 - `get_proposal_changes`: recupera los cambios exactos que produjo un commit.
-  Por defecto JSON con dos vistas: `materialized` (record ids resueltos a
-  registros) y `changefeed` (delta de la transacción). Con `format_d2`:
-  `"code"` → fuente D2; `"svg"/"png"/"jpeg"` → imagen del grafo de cambios.
-  Parámetro `d2_view`: `"semantic"` (por defecto) o `"audit"`.
+  JSON con dos vistas: `materialized` (record ids resueltos a registros) y
+  `changefeed` (delta de la transacción). La visualización gráfica del cambio
+  vive en el dashboard (React Flow), no en el MCP.
 
 El flujo legacy `raw -> clarify -> notes` fue retirado. No hay
 `commit_clarify`, no hay `generate_report` persistente y el seed ya no crea
@@ -61,7 +60,7 @@ get_raw             inspect a raw and derived records
 create_proposal     persist a visible draft (no graph mutation)
 update_proposal     update a draft proposal
 get_proposal        human-readable preview + raw JSON; result if committed
-get_proposal_changes changes produced by a committed proposal (JSON or D2 graph)
+get_proposal_changes changes produced by a committed proposal (JSON: materialized + changefeed)
 discard_proposal    discard a draft
 commit_proposal     atomic graph commit (BEGIN…COMMIT)
 update_note_state   move a note through ZTD states; records agent_event

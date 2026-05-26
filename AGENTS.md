@@ -74,8 +74,7 @@ commit_proposal      tx atómica: crea blocks/notes/edges, marca raws processed;
                        devuelve temp_ids {notes, blocks} → ids reales creados
 get_proposal_changes cambios exactos de una proposal commiteada:
                        materialized (ids reales resueltos) + changefeed (delta);
-                       format_d2=code|svg|png|jpeg → grafo de cambios como D2 o imagen;
-                       d2_view=semantic|audit
+                       la visualización gráfica vive en el dashboard (React Flow)
 
 list_mits_for_date   tasks MIT del día (campo top-level mit_for, YYYY-MM-DD o ISO)
 list_notes_by_type   notas filtradas por type slug + state
