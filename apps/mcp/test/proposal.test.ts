@@ -4,6 +4,7 @@ import {
   commitProposalImpl,
   createProposalImpl,
   discardProposalImpl,
+  getProposalChangesImpl,
   getProposalImpl,
   type ProposalPayload,
   updateProposalImpl
@@ -165,6 +166,49 @@ describe('proposal v2.1-lite flow', () => {
     expect(result?.committed_at).toBeTruthy()
     // versionstamp capture is best-effort (changefeed flush): a string, or null
     expect(result?.versionstamp == null || typeof result?.versionstamp === 'string').toBe(true)
+  })
+
+  test('get_proposal_changes recovers materialized records and the changefeed delta', async () => {
+    const rawIds = await captureMany(['raw one', 'raw two', 'raw three'])
+    const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
+    await commitProposalImpl({ proposal_id: created.id })
+
+    const changes = await getProposalChangesImpl({ proposal_id: created.id })
+    expect(changes.status).toBe('committed')
+
+    // Vía 1: materialized — real records resolved from the stored ids
+    expect(changes.materialized?.notes_created).toHaveLength(2)
+    expect(changes.materialized?.narrative_blocks_created).toHaveLength(1)
+    expect(changes.materialized?.semantic_edges).toHaveLength(2)
+    const note = changes.materialized?.notes_created[0] as { title?: string }
+    expect(typeof note?.title).toBe('string')
+
+    // Vía 2: changefeed — best-effort (available iff a versionstamp was captured)
+    if (changes.changefeed.available) {
+      expect(Object.keys(changes.changefeed.tables).length).toBeGreaterThan(0)
+    }
+  })
+
+  test('get_proposal_changes on a non-committed proposal returns no materialized result', async () => {
+    const rawIds = await captureMany(['solo raw'])
+    const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
+    const changes = await getProposalChangesImpl({ proposal_id: created.id })
+    expect(changes.materialized).toBeNull()
+    expect(changes.changefeed.available).toBe(false)
+  })
+
+  test('get_proposal_changes output is JSON-serializable (changefeed BigInt → string)', async () => {
+    const rawIds = await captureMany(['raw one', 'raw two', 'raw three'])
+    const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
+    await commitProposalImpl({ proposal_id: created.id })
+
+    const changes = await getProposalChangesImpl({ proposal_id: created.id })
+    expect(() => JSON.stringify(changes)).not.toThrow()
+    for (const rows of Object.values(changes.changefeed.tables)) {
+      for (const changeset of rows as Array<{ versionstamp?: unknown }>) {
+        expect(typeof changeset.versionstamp).not.toBe('bigint')
+      }
+    }
   })
 
   test('commit_proposal rejects non-draft proposals', async () => {
