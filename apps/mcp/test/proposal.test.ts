@@ -143,6 +143,30 @@ describe('proposal v2.1-lite flow', () => {
     expect(committed?.status).toBe('committed')
   })
 
+  test('commit_proposal materializes the result (real ids + versionstamp) on the proposal', async () => {
+    const rawIds = await captureMany(['raw one', 'raw two', 'raw three'])
+    const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
+
+    await commitProposalImpl({ proposal_id: created.id })
+
+    const committed = await getProposalImpl({ proposal_id: created.id })
+    const result = committed?.result
+    expect(result).toBeTruthy()
+    expect(result?.notes_created).toHaveLength(2)
+    expect(result?.narrative_blocks_created).toHaveLength(1)
+    expect(result?.descriptive_blocks_created).toHaveLength(1)
+    expect(result?.derived_from).toHaveLength(3)
+    expect(result?.about).toHaveLength(1)
+    expect(result?.affects).toHaveLength(1)
+    expect(result?.semantic_edges).toHaveLength(2)
+    // the stored ids are real records, not temp ids
+    expect(String(result?.notes_created[0])).toMatch(/^note:/)
+    expect(String(result?.semantic_edges[0])).toMatch(/^(part_of|blocked_by|mentions):/)
+    expect(result?.committed_at).toBeTruthy()
+    // versionstamp capture is best-effort (changefeed flush): a string, or null
+    expect(result?.versionstamp == null || typeof result?.versionstamp === 'string').toBe(true)
+  })
+
   test('commit_proposal rejects non-draft proposals', async () => {
     const rawIds = await captureMany(['a'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })

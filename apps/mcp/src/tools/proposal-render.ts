@@ -127,10 +127,33 @@ function summarySection(payload: ProposalPayload): string[] {
   ]
 }
 
+/** Materialized result of a committed proposal: the real record ids it produced. */
+function resultSection(detail: ProposalDetail): string[] {
+  const r = detail.result
+  if (!r) return []
+  const lines = ['Committed result:']
+  if (r.notes_created.length > 0) lines.push(`  • notes created:      ${r.notes_created.join(', ')}`)
+  if (r.notes_updated.length > 0) lines.push(`  • notes updated:      ${r.notes_updated.join(', ')}`)
+  if (r.narrative_blocks_created.length > 0)
+    lines.push(`  • narrative blocks:   ${r.narrative_blocks_created.join(', ')}`)
+  if (r.descriptive_blocks_created.length > 0)
+    lines.push(`  • descriptive blocks: ${r.descriptive_blocks_created.join(', ')}`)
+  const edges = r.derived_from.length + r.about.length + r.affects.length + r.semantic_edges.length
+  if (edges > 0) {
+    lines.push(
+      `  • edges: ${edges} (derived_from ${r.derived_from.length}, about ${r.about.length}, ` +
+        `affects ${r.affects.length}, semantic ${r.semantic_edges.length})`
+    )
+  }
+  lines.push(`  • versionstamp: ${r.versionstamp ?? '—'} · committed ${r.committed_at}`)
+  return lines
+}
+
 /**
  * Render a deterministic, human-readable preview of what committing this
  * proposal will create and change. Pure: same input → same output, no I/O.
- * Empty sections are omitted; the summary always shows the full tally.
+ * Empty sections are omitted; the summary always shows the full tally. For a
+ * committed proposal, the materialized result (real ids) is appended.
  */
 export function renderProposalDiff(detail: ProposalDetail): string {
   const { payload } = detail
@@ -143,7 +166,8 @@ export function renderProposalDiff(detail: ProposalDetail): string {
     narrativeSection(payload),
     edgeSection(payload, labels),
     topologySection(payload, labels),
-    summarySection(payload)
+    summarySection(payload),
+    resultSection(detail)
   ]
   return sections
     .filter(section => section.length > 0)

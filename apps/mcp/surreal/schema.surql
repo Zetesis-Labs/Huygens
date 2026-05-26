@@ -199,6 +199,9 @@ DEFINE FIELD OVERWRITE status       ON proposal TYPE string
   ASSERT $value INSIDE ['draft', 'committed', 'discarded'];
 DEFINE FIELD OVERWRITE raw_captures ON proposal TYPE array<record<raw_capture>> DEFAULT [];
 DEFINE FIELD OVERWRITE payload      ON proposal TYPE object FLEXIBLE;
+-- Resultado materializado del commit: IDs reales creados/tocados + committed_at.
+-- Permite responder "qué cambió este proposal" sin depender del changefeed.
+DEFINE FIELD OVERWRITE result       ON proposal TYPE option<object> FLEXIBLE;
 DEFINE FIELD OVERWRITE created_at   ON proposal TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE updated_at   ON proposal TYPE datetime VALUE time::now();
 

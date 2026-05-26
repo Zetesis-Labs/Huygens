@@ -1,13 +1,19 @@
 import { describe, expect, test } from 'bun:test'
-import type { ProposalDetail, ProposalPayload } from '../src/tools/proposal'
+import type { ProposalDetail, ProposalPayload, ProposalResult } from '../src/tools/proposal'
 import { renderProposalDiff } from '../src/tools/proposal-render'
 
-function detail(payload: ProposalPayload, status = 'draft', id = 'proposal:test'): ProposalDetail {
+function detail(
+  payload: ProposalPayload,
+  status = 'draft',
+  id = 'proposal:test',
+  result: ProposalResult | null = null
+): ProposalDetail {
   return {
     id,
     status,
     raw_captures: payload.raw_ids,
     payload,
+    result,
     created_at: '2026-05-24T00:00:00Z',
     updated_at: '2026-05-24T00:00:00Z'
   }
@@ -128,5 +134,29 @@ describe('renderProposalDiff', () => {
   test('is deterministic: same input produces identical output', () => {
     const payload = fullPayload()
     expect(renderProposalDiff(detail(payload))).toBe(renderProposalDiff(detail(payload)))
+  })
+
+  test('renders the materialized result for a committed proposal', () => {
+    const result: ProposalResult = {
+      notes_created: ['note:abc'],
+      notes_updated: ['note:existing'],
+      narrative_blocks_created: ['block:n1'],
+      descriptive_blocks_created: ['block:d1'],
+      derived_from: ['derived_from:1'],
+      about: ['about:1'],
+      affects: ['affects:1'],
+      semantic_edges: ['part_of:1', 'mentions:1'],
+      versionstamp: '116638335457689600',
+      committed_at: '2026-05-24T12:00:00Z'
+    }
+    const out = renderProposalDiff(detail(fullPayload(), 'committed', 'proposal:test', result))
+    expect(out).toContain('Committed result:')
+    expect(out).toContain('notes created:      note:abc')
+    expect(out).toContain('edges: 5 (derived_from 1, about 1, affects 1, semantic 2)')
+    expect(out).toContain('versionstamp: 116638335457689600')
+  })
+
+  test('omits the committed-result section when there is no result', () => {
+    expect(renderProposalDiff(detail(fullPayload()))).not.toContain('Committed result:')
   })
 })
