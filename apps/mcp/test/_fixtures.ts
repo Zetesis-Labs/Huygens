@@ -82,9 +82,7 @@ export type TestDbWithReader = TestDb & {
 export async function withFreshDbAndReader(): Promise<TestDbWithReader> {
   const ctx = await withFreshDb()
   const readerPassword = `r-${Math.random().toString(36).slice(2, 10)}`
-  await ctx.db.query(
-    `DEFINE USER huygens_reader ON DATABASE PASSWORD '${readerPassword}' ROLES VIEWER`
-  )
+  await ctx.db.query(`DEFINE USER huygens_reader ON DATABASE PASSWORD '${readerPassword}' ROLES VIEWER`)
 
   const url = process.env.SURREAL_URL ?? 'ws://surrealdb:8000/rpc'
   const reader = new Surreal()

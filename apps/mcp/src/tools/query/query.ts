@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { HuygensError, QueryError, huygensErrorToToolResult, toMcpError } from '../../errors'
+import { HuygensError, huygensErrorToToolResult, QueryError, toMcpError } from '../../errors'
 import { getReadOnlyDb } from '../../surreal'
 import { stringifySurrealResult } from './serialize'
 
@@ -14,7 +14,9 @@ export const queryQueryShape = {
   parameters: z
     .record(z.string(), z.unknown())
     .optional()
-    .describe('Optional bind variables referenced as $name in the query. Strings, numbers, arrays and objects are supported.')
+    .describe(
+      'Optional bind variables referenced as $name in the query. Strings, numbers, arrays and objects are supported.'
+    )
 }
 
 const queryQuerySchema = z.object(queryQueryShape)

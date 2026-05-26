@@ -54,9 +54,7 @@ describe('queryQueryImpl', () => {
     const created = (out[0] ?? []) as unknown[]
     expect(created).toEqual([])
 
-    const [rootRows] = await ctx.db.query<[{ count: number }[]]>(
-      'SELECT count() AS count FROM note GROUP ALL'
-    )
+    const [rootRows] = await ctx.db.query<[{ count: number }[]]>('SELECT count() AS count FROM note GROUP ALL')
     expect(rootRows[0]?.count ?? 0).toBe(0)
   })
 
