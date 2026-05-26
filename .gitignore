@@ -47,3 +47,6 @@ Thumbs.db
 
 # Devcontainer local overrides
 .devcontainer/.devcontainer.env.local
+
+# Local database backups (surreal export dumps)
+backups/

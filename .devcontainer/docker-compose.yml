@@ -30,7 +30,7 @@ services:
     user: "0:0"
     command: ["sh", "-c", "chown -R 65532:65532 /data/db && chmod 700 /data/db"]
     volumes:
-      - surrealdb_data:/data/db
+      - surrealkv_data:/data/db
     restart: "no"
 
   surrealdb:
@@ -49,11 +49,14 @@ services:
       - root
       - --bind
       - 0.0.0.0:8000
-      - rocksdb:/data/db
+      # SurrealKV con versionado: habilita time-travel (VERSION) y changefeed
+      # real. RocksDB no los soporta. Volumen nuevo (surrealkv_data); el viejo
+      # surrealdb_data queda intacto para rollback.
+      - "surrealkv:/data/db?versioned=true"
     ports:
       - "8000:8000"
     volumes:
-      - surrealdb_data:/data/db
+      - surrealkv_data:/data/db
     depends_on:
       surrealdb-init:
         condition: service_completed_successfully
@@ -121,7 +124,8 @@ services:
 volumes:
   node_modules:
   claude_memory:
-  surrealdb_data:
+  surrealdb_data:   # RocksDB legacy: conservado intacto para rollback
+  surrealkv_data:   # SurrealKV (versionado), motor activo
 
 networks:
   default_network:
