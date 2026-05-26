@@ -22,7 +22,14 @@ const LORE_ENTRIES: LoreEntry[] = [
   }
 ]
 
-const PROMPT_ENTRIES: PromptEntry[] = []
+const PROMPT_ENTRIES: PromptEntry[] = [
+  {
+    name: 'process_inbox',
+    description:
+      'Guion para una sesión deliberada de procesamiento del inbox: de raw_capture a informe-block + mutaciones propuestas y aprobadas.',
+    path: 'prompts/inbox-processing.md'
+  }
+]
 
 function readDoc(relativePath: string): string {
   return readFileSync(new URL(`./${relativePath}`, import.meta.url), 'utf8')

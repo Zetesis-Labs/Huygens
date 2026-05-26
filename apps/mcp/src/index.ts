@@ -1,6 +1,7 @@
 import { createServer as createHttpServer, type IncomingMessage } from 'node:http'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { createServer } from './server'
+import { assertSchemaReady } from './surreal'
 
 const PORT = Number(process.env.MCP_PORT ?? 3030)
 
@@ -48,6 +49,16 @@ const httpServer = createHttpServer(async (req, res) => {
   }
 })
 
-httpServer.listen(PORT, () => {
-  console.error(`[huygens-mcp] listening on http://0.0.0.0:${PORT}/mcp`)
+async function main(): Promise<void> {
+  // Fail fast and legibly if the schema isn't applied, instead of opaque errors
+  // surfacing later inside a tool.
+  await assertSchemaReady()
+  httpServer.listen(PORT, () => {
+    console.error(`[huygens-mcp] listening on http://0.0.0.0:${PORT}/mcp`)
+  })
+}
+
+main().catch(err => {
+  console.error('[huygens-mcp] startup failed:', err instanceof Error ? err.message : err)
+  process.exit(1)
 })

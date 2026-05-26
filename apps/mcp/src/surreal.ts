@@ -156,6 +156,39 @@ export async function selectByIds<T>(ids: string[]): Promise<T[]> {
   return rows ?? []
 }
 
+/** Tables the tools require. SCHEMALESS tables are created implicitly on first
+ * write, so a missing schema doesn't fail at boot — it fails later, opaquely,
+ * inside a tool. This list lets us fail fast and legibly instead. */
+const EXPECTED_TABLES = [
+  'note',
+  'block',
+  'raw_capture',
+  'proposal',
+  'note_type',
+  'agent_event',
+  'part_of',
+  'blocked_by',
+  'mentions',
+  'about',
+  'affects',
+  'derived_from'
+] as const
+
+/**
+ * Fail fast at startup if the schema hasn't been applied. Without this, a fresh
+ * DB lets `capture` "work" (implicit tables) while `commit_proposal`/`find_related`
+ * blow up later with an opaque error. Throws a clear, actionable message instead.
+ */
+export async function assertSchemaReady(): Promise<void> {
+  const db = await getDb()
+  const [info] = await db.query<[{ tables?: Record<string, unknown> }]>('INFO FOR DB')
+  const present = new Set(Object.keys(info?.tables ?? {}))
+  const missing = EXPECTED_TABLES.filter(t => !present.has(t))
+  if (missing.length > 0) {
+    throw new Error(`schema not initialised — missing tables: ${missing.join(', ')}. Run \`bun run db:apply\`.`)
+  }
+}
+
 export async function closeDb(): Promise<void> {
   if (cached) {
     await cached.close()
