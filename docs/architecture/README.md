@@ -64,6 +64,7 @@ NO se añade ADR para:
 | [0022](./0022-objetivo-and-idea-types.md) | Tipos Objetivo e Idea | Accepted | data-model |
 | [0023](./0023-mit-field-on-note.md) | Campo MIT en note (Most Important Task) | Accepted | data-model |
 | [0024](./0024-surrealkv-versioned-storage.md) | SurrealKV con `?versioned=true` como motor de almacenamiento | Accepted | database, infra |
+| [0025](./0025-temporal-context-reconstruction.md) | Reconstrucción del contexto temporal de un proposal (changefeed-replay, no `VERSION`) | Accepted | database, dashboard, time-travel |
 
 ## Status legend
 
