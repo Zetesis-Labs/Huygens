@@ -13,6 +13,8 @@ import {
 } from '../domain'
 import { emitEvent, newSessionId } from '../events'
 import { getDb } from '../surreal'
+import { renderProposalD2 } from './proposal-d2'
+import { type D2Format, renderD2 } from './proposal-d2-render'
 import { renderProposalDiff } from './proposal-render'
 
 type RecordRef = RecordId | StringRecordId
@@ -107,6 +109,16 @@ export const getProposalShape = {
 
 export const discardProposalShape = getProposalShape
 export const commitProposalShape = getProposalShape
+
+export const getProposalChangesShape = {
+  proposal_id: z.string().regex(PROPOSAL_ID_RE, 'Must be a record id like "proposal:abc123"'),
+  format_d2: z
+    .enum(['code', 'svg', 'png', 'jpeg'])
+    .nullish()
+    .describe(
+      'Omit for JSON (both views). "code" returns the D2 source; "svg"/"png"/"jpeg" return a rendered image of the change graph.'
+    )
+}
 
 const createProposalSchema = z.object(createProposalShape)
 const updateProposalSchema = z.object(updateProposalShape)
@@ -893,11 +905,28 @@ export function registerProposalTools(server: McpServer): void {
 
   server.tool(
     'get_proposal_changes',
-    'Recover the exact changes a committed proposal produced, two ways: "materialized" resolves the real record ids in proposal.result to their current records; "changefeed" returns the literal transaction delta at the commit versionstamp. Read-only.',
-    getProposalShape,
+    'Recover the exact changes a committed proposal produced. Default: JSON with two views — "materialized" (real record ids resolved to records) and "changefeed" (the transaction delta at the commit versionstamp). With format_d2: "code" returns the D2 diagram source; "svg"/"png"/"jpeg" return a rendered image of the change graph. Read-only.',
+    getProposalChangesShape,
     async args => {
-      const changes = await getProposalChangesImpl(args)
-      return { content: [{ type: 'text', text: JSON.stringify(changes, null, 2) }] }
+      const changes = await getProposalChangesImpl({ proposal_id: args.proposal_id })
+      if (!args.format_d2) {
+        return { content: [{ type: 'text', text: JSON.stringify(changes, null, 2) }] }
+      }
+      const d2 = renderProposalD2(changes)
+      if (args.format_d2 === 'code') {
+        return { content: [{ type: 'text', text: d2 }] }
+      }
+      try {
+        const { base64, mimeType } = await renderD2(d2, args.format_d2 as D2Format)
+        return { content: [{ type: 'image', data: base64, mimeType }] }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        return {
+          content: [
+            { type: 'text', text: `D2 render failed (${args.format_d2}): ${message}\n\n--- D2 source ---\n${d2}` }
+          ]
+        }
+      }
     }
   )
 
