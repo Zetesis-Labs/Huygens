@@ -1,9 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { renderProposalD2, renderProposalSemanticD2 } from './proposal-d2'
-import { type D2Format, renderD2 } from './proposal-d2-render'
-import { renderProposalDiff } from './proposal-render'
-import { resolveContextLabels } from './proposal/changes'
-import { getProposalChangesImpl } from './proposal/changes'
+import { getProposalChangesImpl, resolveContextLabels } from './proposal/changes'
 import { commitProposalImpl } from './proposal/commit'
 import { createProposalImpl, discardProposalImpl, getProposalImpl, updateProposalImpl } from './proposal/crud'
 import {
@@ -14,6 +10,9 @@ import {
   getProposalShape,
   updateProposalShape
 } from './proposal/schemas'
+import { renderProposalD2, renderProposalSemanticD2 } from './proposal-d2'
+import { type D2Format, renderD2 } from './proposal-d2-render'
+import { renderProposalDiff } from './proposal-render'
 
 // Public surface of the proposal feature, re-exported so existing imports
 // (`./tools/proposal`) keep working after the split into proposal/*.

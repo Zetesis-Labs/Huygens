@@ -1,4 +1,4 @@
-import { type RecordIdish, idStr, tableOf } from './graph-records'
+import { idStr, type RecordIdish, tableOf } from './graph-records'
 import type { ProposalChanges } from './proposal/changes'
 
 /** A record id ("note:abc-1") → a valid D2 key ("note_abc_1"). */
@@ -113,10 +113,7 @@ class D2Graph {
  * already lives in the note they describe; the diagram keeps the evidence →
  * interpretation (narrative) → topology shape. Same input → same output.
  */
-export function renderProposalD2(
-  changes: ProposalChanges,
-  contextLabels: Record<string, string> = {}
-): string {
+export function renderProposalD2(changes: ProposalChanges, contextLabels: Record<string, string> = {}): string {
   const m = changes.materialized
   if (!m) {
     return `# ${changes.proposal_id}: no materialized result (not committed, or committed before this feature)`
@@ -146,10 +143,7 @@ export function renderProposalD2(
  * `derived_from`) is intentionally dropped — see `renderProposalD2` for that
  * literal audit view.
  */
-export function renderProposalSemanticD2(
-  changes: ProposalChanges,
-  contextLabels: Record<string, string> = {}
-): string {
+export function renderProposalSemanticD2(changes: ProposalChanges, contextLabels: Record<string, string> = {}): string {
   const m = changes.materialized
   if (!m) {
     return `# ${changes.proposal_id}: no materialized result (not committed, or committed before this feature)`

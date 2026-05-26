@@ -2,12 +2,12 @@ import { type RecordId, StringRecordId } from 'surrealdb'
 import { BLOCK_ID_RE, NOTE_ID_RE } from '../../domain'
 import { emitEvent, newSessionId } from '../../events'
 import { getDb } from '../../surreal'
+import { idStr, type RecordIdish } from '../graph-records'
 import {
   type CommitProposalInput,
   type CommitProposalResult,
   type NoteCreate,
   type ProposalPayload,
-  type ProposalResult,
   proposalPayloadSchema
 } from './schemas'
 import { fetchProposal, requireDraftProposal } from './store'
@@ -241,7 +241,8 @@ function buildCommitTx(
   return new CommitTx().build(payload, proposalId)
 }
 
-const ids = (xs: unknown): string[] => (Array.isArray(xs) ? xs.map(String) : [])
+/** Normalize a result field (RecordId[] at runtime) to plain id strings. */
+const toIdStrings = (xs?: RecordIdish[]): string[] => (xs ?? []).map(idStr)
 
 export async function commitProposalImpl(input: CommitProposalInput): Promise<CommitProposalResult> {
   const db = await getDb()
@@ -265,7 +266,7 @@ export async function commitProposalImpl(input: CommitProposalInput): Promise<Co
   }
 
   const committed = await fetchProposal(input.proposal_id)
-  const result = (committed?.result ?? null) as ProposalResult | null
+  const result = committed?.result ?? null
 
   await emitEvent({
     kind: 'proposal_committed',
@@ -278,13 +279,13 @@ export async function commitProposalImpl(input: CommitProposalInput): Promise<Co
   return {
     proposal_id: input.proposal_id,
     raw_ids_processed: payload.raw_ids,
-    narrative_blocks_created: ids(result?.narrative_blocks_created),
-    notes_created: ids(result?.notes_created),
-    notes_updated: ids(result?.notes_updated),
-    descriptive_blocks_created: ids(result?.descriptive_blocks_created),
-    derived_from_created: ids(result?.derived_from).length,
-    about_created: ids(result?.about).length,
-    affects_created: ids(result?.affects).length,
-    semantic_edges_created: ids(result?.semantic_edges).length
+    narrative_blocks_created: toIdStrings(result?.narrative_blocks_created),
+    notes_created: toIdStrings(result?.notes_created),
+    notes_updated: toIdStrings(result?.notes_updated),
+    descriptive_blocks_created: toIdStrings(result?.descriptive_blocks_created),
+    derived_from_created: toIdStrings(result?.derived_from).length,
+    about_created: toIdStrings(result?.about).length,
+    affects_created: toIdStrings(result?.affects).length,
+    semantic_edges_created: toIdStrings(result?.semantic_edges).length
   }
 }

@@ -6,8 +6,8 @@ import {
   type GetProposalInput,
   type ProposalDetail,
   type ProposalRow,
-  type UpdateProposalInput,
-  proposalPayloadSchema
+  proposalPayloadSchema,
+  type UpdateProposalInput
 } from './schemas'
 import { fetchProposal, requireDraftProposal, toProposalDetail, toProposalRef, toRawRef } from './store'
 import { assertRawCapturesExist, validatePayload } from './validation'

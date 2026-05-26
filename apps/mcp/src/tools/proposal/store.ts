@@ -1,5 +1,6 @@
 import { StringRecordId } from 'surrealdb'
 import { getDb } from '../../surreal'
+import { idStr } from '../graph-records'
 import type { ProposalDetail, ProposalRow } from './schemas'
 
 export function toRawRef(rawId: string): StringRecordId {
@@ -24,9 +25,9 @@ function stringifyDate(value: Date | string): string {
 
 export function toProposalDetail(row: ProposalRow): ProposalDetail {
   return {
-    id: String(row.id),
+    id: idStr(row.id),
     status: row.status,
-    raw_captures: row.raw_captures.map(String),
+    raw_captures: row.raw_captures.map(idStr),
     payload: row.payload,
     result: row.result ?? null,
     created_at: stringifyDate(row.created_at),

@@ -75,6 +75,49 @@ async function materializeResult(result: ProposalResult): Promise<NonNullable<Pr
   }
 }
 
+/** Ids of every node the commit created or updated. */
+function mutatedNodeIds(m: NonNullable<ProposalChanges['materialized']>): Set<string> {
+  const ids = new Set<string>()
+  for (const node of [
+    ...m.notes_created,
+    ...m.notes_updated,
+    ...m.narrative_blocks_created,
+    ...m.descriptive_blocks_created
+  ]) {
+    ids.add(idStr(node.id))
+  }
+  return ids
+}
+
+/** Edge endpoints that aren't part of the commit — the records to label as context. */
+function contextEndpointIds(m: NonNullable<ProposalChanges['materialized']>, mutated: Set<string>): string[] {
+  const endpoints = new Set<string>()
+  for (const edge of [...m.derived_from, ...m.about, ...m.affects, ...m.semantic_edges]) {
+    for (const id of [idStr(edge.in), idStr(edge.out)]) {
+      if (id && !mutated.has(id)) endpoints.add(id)
+    }
+  }
+  return [...endpoints]
+}
+
+/** Human label for a context record, by table; null for tables we don't label. */
+function contextLabel(row: GraphNodeRecord): string | null {
+  const id = idStr(row.id)
+  switch (tableOf(id)) {
+    case 'raw_capture':
+      return `raw · ${row.content ?? ''}`
+    case 'note': {
+      const type = idStr(row.type).replace(/^note_type:/, '')
+      const title = row.title ?? ''
+      return type ? `${type} · ${title}` : title || id
+    }
+    case 'block':
+      return `block · ${row.content ?? ''}`
+    default:
+      return null
+  }
+}
+
 /** Resolve human labels (id → text) for edge endpoints that are *context* —
  * i.e. records referenced by the commit's edges but not created/updated by it
  * (the source raw_capture, a pre-existing parent note). Lets the D2 renderer
@@ -82,28 +125,11 @@ async function materializeResult(result: ProposalResult): Promise<NonNullable<Pr
 export async function resolveContextLabels(
   m: NonNullable<ProposalChanges['materialized']>
 ): Promise<Record<string, string>> {
-  const created = new Set<string>()
-  for (const node of [...m.notes_created, ...m.notes_updated, ...m.narrative_blocks_created, ...m.descriptive_blocks_created]) {
-    created.add(idStr(node.id))
-  }
-  const endpoints = new Set<string>()
-  for (const edge of [...m.derived_from, ...m.about, ...m.affects, ...m.semantic_edges]) {
-    for (const id of [idStr(edge.in), idStr(edge.out)]) {
-      if (id && !created.has(id)) endpoints.add(id)
-    }
-  }
+  const endpoints = contextEndpointIds(m, mutatedNodeIds(m))
   const labels: Record<string, string> = {}
-  for (const row of await selectByIds<GraphNodeRecord>([...endpoints])) {
-    const id = idStr(row.id)
-    if (tableOf(id) === 'raw_capture') {
-      labels[id] = `raw · ${row.content ?? ''}`
-    } else if (tableOf(id) === 'note') {
-      const type = idStr(row.type).replace(/^note_type:/, '')
-      const title = row.title ?? ''
-      labels[id] = type ? `${type} · ${title}` : title || id
-    } else if (tableOf(id) === 'block') {
-      labels[id] = `block · ${row.content ?? ''}`
-    }
+  for (const row of await selectByIds<GraphNodeRecord>(endpoints)) {
+    const label = contextLabel(row)
+    if (label) labels[idStr(row.id)] = label
   }
   return labels
 }
