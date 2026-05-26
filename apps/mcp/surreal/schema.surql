@@ -146,9 +146,12 @@ DEFINE INDEX OVERWRITE block_embedding ON block
 -- ─────────────────────────────────────────────────────────────────────────
 
 -- part_of: jerarquía macro (Area → Project → Task). Solo entre notes.
+-- Padre único: el índice UNIQUE sobre `in` impide que una nota tenga más de un
+-- padre → part_of es un bosque/árbol jerárquico (sin multi-padre), no un DAG.
 DEFINE TABLE OVERWRITE part_of TYPE RELATION FROM note TO note SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE created_at ON part_of TYPE datetime DEFAULT time::now() READONLY;
 DEFINE INDEX OVERWRITE part_of_unique ON part_of FIELDS in, out UNIQUE;
+DEFINE INDEX OVERWRITE part_of_single_parent ON part_of FIELDS in UNIQUE;
 
 -- blocked_by: una task/proyecto bloqueado por algo concreto (puede ser un bloque).
 DEFINE TABLE OVERWRITE blocked_by TYPE RELATION FROM note TO note | block SCHEMAFULL CHANGEFEED 10y;
