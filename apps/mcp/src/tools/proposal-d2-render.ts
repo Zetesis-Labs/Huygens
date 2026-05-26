@@ -20,6 +20,9 @@ async function run(cmd: string[]): Promise<void> {
  * container: `d2` → SVG, `rsvg-convert` → PNG (good embedded-font fidelity),
  * ImageMagick `convert` → JPEG (from the PNG). All work on temp files inside the
  * container; nothing leaks to the host. Returns base64 + mime for MCP image content.
+ *
+ * Layout: ELK ("Layered" algorithm) over the default dagre — its orthogonal
+ * routing keeps the change graph readable with fewer edge crossings.
  */
 export async function renderD2(d2: string, format: D2Format): Promise<RenderedD2> {
   const dir = await mkdtemp(join(tmpdir(), 'huygens-d2-'))
@@ -27,7 +30,7 @@ export async function renderD2(d2: string, format: D2Format): Promise<RenderedD2
     const d2Path = join(dir, 'diagram.d2')
     const svgPath = join(dir, 'diagram.svg')
     await Bun.write(d2Path, d2)
-    await run(['d2', '--pad', '24', d2Path, svgPath])
+    await run(['d2', '--layout', 'elk', '--pad', '30', d2Path, svgPath])
 
     if (format === 'svg') {
       const svg = await Bun.file(svgPath).text()

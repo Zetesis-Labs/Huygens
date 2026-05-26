@@ -13,7 +13,7 @@ import {
 } from '../domain'
 import { emitEvent, newSessionId } from '../events'
 import { getDb } from '../surreal'
-import { renderProposalD2 } from './proposal-d2'
+import { renderProposalD2, renderProposalSemanticD2 } from './proposal-d2'
 import { type D2Format, renderD2 } from './proposal-d2-render'
 import { renderProposalDiff } from './proposal-render'
 
@@ -117,6 +117,12 @@ export const getProposalChangesShape = {
     .nullish()
     .describe(
       'Omit for JSON (both views). "code" returns the D2 source; "svg"/"png"/"jpeg" return a rendered image of the change graph.'
+    ),
+  d2_view: z
+    .enum(['semantic', 'audit'])
+    .default('semantic')
+    .describe(
+      'Only with format_d2. "semantic" (default): what changed for the user — notes and their note↔note relations, the narrative as a caption, the source raw as a faint origin. "audit": the literal persistence graph (narrative block as hub, derived_from/about/affects edges) for traceability.'
     )
 }
 
@@ -819,6 +825,62 @@ async function materializeResult(result: ProposalResult): Promise<NonNullable<Pr
   }
 }
 
+/** Resolve human labels (id → text) for edge endpoints that are *context* —
+ * i.e. records referenced by the commit's edges but not created/updated by it
+ * (the source raw_capture, a pre-existing parent note). Lets the D2 renderer
+ * label them with real text instead of the bare record id. Read-only. */
+async function resolveContextLabels(
+  m: NonNullable<ProposalChanges['materialized']>
+): Promise<Record<string, string>> {
+  const recId = (r: unknown): string | null => {
+    const id = (r as { id?: unknown } | null)?.id
+    return id == null ? null : String(id)
+  }
+  const created = new Set<string>()
+  for (const group of [m.notes_created, m.notes_updated, m.narrative_blocks_created, m.descriptive_blocks_created]) {
+    for (const r of Array.isArray(group) ? group : []) {
+      const id = recId(r)
+      if (id) created.add(id)
+    }
+  }
+  const endpoints = new Set<string>()
+  for (const group of [m.derived_from, m.about, m.affects, m.semantic_edges]) {
+    for (const e of Array.isArray(group) ? group : []) {
+      for (const side of ['in', 'out'] as const) {
+        const v = (e as { in?: unknown; out?: unknown })?.[side]
+        if (v == null) continue
+        const id = String(v)
+        if (!created.has(id)) endpoints.add(id)
+      }
+    }
+  }
+  if (endpoints.size === 0) return {}
+  const db = await getDb()
+  const refs = [...endpoints].map(id => new StringRecordId(id))
+  // NOTE: a field projection over a bound record-id array (`SELECT a,b FROM $ids`)
+  // makes SurrealDB reject the query with "Specify a database to use". `SELECT *`
+  // works, so fetch the whole record and pick fields in JS (as resolveRecords does).
+  const [rows] = await db.query<[Array<{ id: unknown; title?: unknown; content?: unknown; type?: unknown }>]>(
+    'SELECT * FROM $ids',
+    { ids: refs }
+  )
+  const labels: Record<string, string> = {}
+  for (const row of rows ?? []) {
+    const id = String(row.id)
+    const table = id.split(':')[0]
+    if (table === 'raw_capture') {
+      labels[id] = `raw · ${String(row.content ?? '')}`
+    } else if (table === 'note') {
+      const t = String(row.type ?? '').replace(/^note_type:/, '')
+      const title = String(row.title ?? '')
+      labels[id] = t ? `${t} · ${title}` : title || id
+    } else if (table === 'block') {
+      labels[id] = `block · ${String(row.content ?? '')}`
+    }
+  }
+  return labels
+}
+
 async function changefeedForResult(result: ProposalResult): Promise<ProposalChanges['changefeed']> {
   if (!result.versionstamp) {
     return {
@@ -912,7 +974,11 @@ export function registerProposalTools(server: McpServer): void {
       if (!args.format_d2) {
         return { content: [{ type: 'text', text: JSON.stringify(changes, null, 2) }] }
       }
-      const d2 = renderProposalD2(changes)
+      const contextLabels = changes.materialized ? await resolveContextLabels(changes.materialized) : {}
+      const d2 =
+        args.d2_view === 'audit'
+          ? renderProposalD2(changes, contextLabels)
+          : renderProposalSemanticD2(changes, contextLabels)
       if (args.format_d2 === 'code') {
         return { content: [{ type: 'text', text: d2 }] }
       }
