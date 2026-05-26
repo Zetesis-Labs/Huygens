@@ -12,6 +12,7 @@ import { registerListMits } from './tools/list-mits'
 import { registerProposalTools } from './tools/proposal'
 import { registerQueryQuery } from './tools/query/query'
 import { registerSetRawStatus } from './tools/set-raw-status'
+import { registerTraceProvenance } from './tools/trace-provenance'
 import { registerUpdateNoteState } from './tools/update-note-state'
 import { registerVectorSearch } from './tools/vector-search'
 
@@ -25,6 +26,7 @@ export function createServer(): McpServer {
   registerListInbox(server)
   registerSetRawStatus(server)
   registerGetRaw(server)
+  registerTraceProvenance(server)
   registerProposalTools(server)
   registerChunkMarkdown(server)
   registerEmbedText(server)
