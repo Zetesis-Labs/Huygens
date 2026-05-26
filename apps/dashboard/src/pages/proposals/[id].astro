@@ -1,8 +1,8 @@
 ---
 import ChangeGraph from '../../components/ChangeGraph.tsx'
-import { proposalToFlow } from '../../lib/graph'
+import { mergeExistingEdges, proposalToFlow } from '../../lib/graph'
 import { type LaidOutGraph, layoutGraph } from '../../lib/layout'
-import { getProposal, resolveLabels } from '../../lib/surreal'
+import { existingEdgesAmong, getProposal, resolveLabels } from '../../lib/surreal'
 
 const { id } = Astro.params
 let proposal = null as Awaited<ReturnType<typeof getProposal>>
@@ -12,7 +12,12 @@ try {
   proposal = id ? await getProposal(id) : null
   if (proposal) {
     const labels = await resolveLabels(proposal)
-    laidOut = layoutGraph(proposalToFlow(proposal, labels))
+    const flow = proposalToFlow(proposal, labels)
+    // Hydrate with relations that already exist in the KG between these nodes
+    // (real record ids only; created notes don't exist yet) → dashed edges.
+    const realIds = flow.nodes.map(n => n.id).filter(nid => nid.includes(':'))
+    const existing = await existingEdgesAmong(realIds)
+    laidOut = await layoutGraph(mergeExistingEdges(flow, existing))
   }
 } catch (e) {
   error = e instanceof Error ? e.message : String(e)

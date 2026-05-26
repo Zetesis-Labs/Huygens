@@ -1,4 +1,4 @@
-import type { Proposal } from './surreal'
+import type { ExistingEdge, Proposal } from './surreal'
 
 /** Provenance of a node within this proposal. Drives the border: created/updated
  * (the proposal mutates the note) → solid; context (pre-existing, only linked by
@@ -17,7 +17,9 @@ export type FlowNodeData = {
 }
 
 export type FlowNode = { id: string; data: FlowNodeData }
-export type FlowEdge = { id: string; source: string; target: string; label: string }
+/** `preexisting`: the relation already existed in the KG (not created by this
+ * proposal) → rendered dashed. */
+export type FlowEdge = { id: string; source: string; target: string; label: string; preexisting?: boolean }
 export type FlowGraph = { nodes: FlowNode[]; edges: FlowEdge[] }
 
 /** Human label + type of an existing record a proposal references. */
@@ -112,4 +114,29 @@ export function proposalToFlow(p: Proposal, labels: Record<string, RefInfo> = {}
   }
 
   return { nodes: [...nodes.values()], edges }
+}
+
+/**
+ * Add relations that already existed in the KG between the graph's nodes
+ * (`existing`) as dashed `preexisting` edges. Skips any already present as a
+ * proposal edge, and any whose endpoints aren't both in the graph. Pure.
+ */
+export function mergeExistingEdges(flow: FlowGraph, existing: ExistingEdge[]): FlowGraph {
+  const nodeIds = new Set(flow.nodes.map(n => n.id))
+  const seen = new Set(flow.edges.map(e => `${e.source}->${e.target}:${e.label}`))
+  const extra: FlowEdge[] = []
+  for (const e of existing) {
+    if (!nodeIds.has(e.source) || !nodeIds.has(e.target)) continue
+    const key = `${e.source}->${e.target}:${e.kind}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    extra.push({
+      id: `existing:${key}:${extra.length}`,
+      source: e.source,
+      target: e.target,
+      label: e.kind,
+      preexisting: true
+    })
+  }
+  return { nodes: flow.nodes, edges: [...flow.edges, ...extra] }
 }

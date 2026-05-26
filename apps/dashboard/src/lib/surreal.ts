@@ -87,8 +87,6 @@ export type Proposal = {
       descriptive_blocks_append: { content: string }[]
     }[]
     edges: { kind: string; from: string; to: string; reason?: string }[]
-    about: { block_temp_id: string; note_ref: string }[]
-    affects: { block_temp_id: string; note_ref: string; action: string; summary?: string }[]
   }
 }
 
@@ -149,4 +147,26 @@ export async function resolveLabels(p: Proposal): Promise<Record<string, { type:
   for (const r of raws ?? []) labels[String(r.id)] = { type: 'raw', title: (r.content ?? '').slice(0, 60) }
   for (const r of blocks ?? []) labels[String(r.id)] = { type: 'block', title: (r.content ?? '').slice(0, 60) }
   return labels
+}
+
+export type ExistingEdge = { source: string; target: string; kind: string }
+
+/**
+ * Relations that already exist in the KG between the given records — used to
+ * hydrate the proposal graph with pre-existing edges (part_of / blocked_by /
+ * mentions) that the proposal didn't create, so notes that are related in the
+ * graph don't appear disconnected. Only edges with *both* endpoints in the set
+ * are returned. Read-only.
+ */
+export async function existingEdgesAmong(ids: string[]): Promise<ExistingEdge[]> {
+  if (ids.length < 2) return []
+  const db = await getDb()
+  const params = { ids: ids.map(s => new StringRecordId(s)) }
+  const [rows] = await db.query<[Array<{ in: unknown; out: unknown; kind: string }>]>(
+    `SELECT in, out, meta::tb(id) AS kind
+     FROM part_of, blocked_by, mentions
+     WHERE in IN $ids AND out IN $ids`,
+    params
+  )
+  return (rows ?? []).map(r => ({ source: String(r.in), target: String(r.out), kind: r.kind }))
 }
