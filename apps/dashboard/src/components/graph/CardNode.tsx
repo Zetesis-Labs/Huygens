@@ -1,36 +1,7 @@
 import { Handle, type NodeProps, Position } from '@xyflow/react'
-import {
-  Bookmark,
-  Compass,
-  FileText,
-  FolderKanban,
-  Inbox,
-  Lightbulb,
-  ListTodo,
-  type LucideIcon,
-  Repeat,
-  Square,
-  Target,
-  User
-} from 'lucide-react'
+import { FileText } from 'lucide-react'
 import type { FlowNodeData } from '../../lib/graph'
-
-// Icon + colour by note type (the node's identity). Border style encodes
-// provenance: solid = the proposal creates/updates it, dashed = pre-existing
-// context only linked by an edge.
-const TYPE_STYLE: Record<string, { Icon: LucideIcon; color: string; bg: string }> = {
-  task: { Icon: ListTodo, color: '#2563eb', bg: '#eaf1fe' },
-  project: { Icon: FolderKanban, color: '#7c3aed', bg: '#f1eafe' },
-  area: { Icon: Compass, color: '#0d9488', bg: '#e6f7f4' },
-  routine: { Icon: Repeat, color: '#d97706', bg: '#fdf0e3' },
-  idea: { Icon: Lightbulb, color: '#ca8a04', bg: '#fdf8e3' },
-  reference: { Icon: Bookmark, color: '#475569', bg: '#eef1f5' },
-  person: { Icon: User, color: '#db2777', bg: '#fceaf3' },
-  objetivo: { Icon: Target, color: '#dc2626', bg: '#fdeaea' },
-  raw: { Icon: Inbox, color: '#5b6b8c', bg: '#f0f2f5' },
-  block: { Icon: FileText, color: '#5b6b8c', bg: '#f0f2f5' },
-  _: { Icon: Square, color: '#5b6b8c', bg: '#f4f4f6' }
-}
+import { TYPE_STYLE } from './styles'
 
 /** A note/context card: type icon (corner chip), provenance badge + border,
  * change lines, and a footer hinting at descriptive blocks when present. */

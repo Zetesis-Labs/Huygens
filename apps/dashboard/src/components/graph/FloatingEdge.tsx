@@ -11,17 +11,7 @@ import {
 } from '@xyflow/react'
 import { useEffect, useRef, useState } from 'react'
 import type { PositionedEdge } from '../../lib/layout'
-
-// Colour + width by relation KIND: part_of is the structural backbone (thick,
-// strong), blocked_by a dependency (medium), mentions the weak fallback (thin,
-// faint). The other dimension is provenance: pre-existing (hydrated) edges are
-// dashed + faded; edges the proposal creates are solid.
-const KIND_STYLE: Record<string, { stroke: string; strokeWidth: number }> = {
-  part_of: { stroke: '#4338ca', strokeWidth: 2.6 },
-  blocked_by: { stroke: '#dc2626', strokeWidth: 2 },
-  mentions: { stroke: '#94a3b8', strokeWidth: 1.25 }
-}
-const FALLBACK_EDGE = { stroke: '#5b6b8c', strokeWidth: 1.5 }
+import { FALLBACK_EDGE, KIND_STYLE } from './styles'
 
 type Point = { x: number; y: number }
 
@@ -118,7 +108,7 @@ export const edgeTypes = { routed: FloatingEdge }
 
 /** Map laid-out edges to React Flow edges, styled by relation kind; pre-existing
  * (hydrated) relations are drawn dashed + faded to set them apart from the ones
- * the proposal creates. */
+ * the proposal creates. `data.preexisting` lets the canvas toggle them. */
 export function toReactFlowEdges(edges: PositionedEdge[]): Edge[] {
   return edges.map(e => {
     const ks = KIND_STYLE[e.label] ?? FALLBACK_EDGE
@@ -128,6 +118,7 @@ export function toReactFlowEdges(edges: PositionedEdge[]): Edge[] {
       target: e.target,
       label: e.label,
       type: 'routed',
+      data: { preexisting: Boolean(e.preexisting) },
       style: e.preexisting ? { ...ks, strokeDasharray: '6 4', opacity: 0.6 } : ks,
       markerEnd: { type: MarkerType.ArrowClosed, color: ks.stroke }
     }
