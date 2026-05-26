@@ -1,0 +1,57 @@
+---
+import { listProposals } from '../lib/surreal'
+
+let proposals = [] as Awaited<ReturnType<typeof listProposals>>
+let error: string | null = null
+try {
+  proposals = await listProposals()
+} catch (e) {
+  error = e instanceof Error ? e.message : String(e)
+}
+
+const STATUS_COLOR: Record<string, string> = {
+  draft: '#9a7d0a',
+  committed: '#2e7d32',
+  discarded: '#8a93a6'
+}
+---
+
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Huygens · Proposals</title>
+    <style>
+      :root { color-scheme: light; }
+      body { font-family: system-ui, sans-serif; margin: 0; background: #fafbfc; color: #1f2530; }
+      header { padding: 20px 28px; border-bottom: 1px solid #e6e8eb; }
+      h1 { margin: 0; font-size: 20px; }
+      main { padding: 20px 28px; max-width: 880px; }
+      .row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid #e6e8eb; border-radius: 10px; margin-bottom: 8px; background: #fff; text-decoration: none; color: inherit; }
+      .row:hover { border-color: #2f54eb; }
+      .badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; color: #fff; }
+      .info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+      .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .id { font-family: ui-monospace, monospace; font-size: 11px; color: #9aa3b2; }
+      .meta { margin-left: auto; font-size: 12px; color: #6b7280; white-space: nowrap; }
+      .err { color: #b91c1c; }
+    </style>
+  </head>
+  <body>
+    <header><h1>Huygens · Proposals</h1></header>
+    <main>
+      {error && <p class="err">No pude leer SurrealDB: {error}</p>}
+      {!error && proposals.length === 0 && <p>No hay proposals todavía.</p>}
+      {proposals.map(p => (
+        <a class="row" href={`/proposals/${p.id}`}>
+          <span class="badge" style={`background:${STATUS_COLOR[p.status] ?? '#5b6b8c'}`}>{p.status}</span>
+          <span class="info">
+            <span class="title">{p.title}</span>
+            <span class="id">{p.id}</span>
+          </span>
+          <span class="meta">{p.raw_count} raw · {new Date(p.created_at).toLocaleString('es-ES')}</span>
+        </a>
+      ))}
+    </main>
+  </body>
+</html>

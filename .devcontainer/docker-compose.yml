@@ -102,6 +102,31 @@ services:
       retries: 30
       start_period: 10s
 
+  huygens-dashboard:
+    image: oven/bun:1-debian
+    working_dir: /workspace
+    # Dev server with live source (workspace bind). SSR reads SurrealDB as the
+    # read-only reader; bound to 0.0.0.0:4321 and the port is published.
+    command: ["sh", "-c", "bun --filter '@huygens/dashboard' dev"]
+    restart: unless-stopped
+    env_file:
+      - ../apps/mcp/.env
+    environment:
+      SURREAL_URL: ws://surrealdb:8000/rpc
+      SURREAL_NS: huygens
+      SURREAL_DB: main
+      SURREAL_READER_USER: huygens_reader
+    ports:
+      - "4321:4321"
+    volumes:
+      - ..:/workspace:cached
+      - node_modules:/workspace/node_modules:delegated
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    networks:
+      - default_network
+
   huygens-worker:
     profiles: ["worker"]
     build:

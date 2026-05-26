@@ -2,7 +2,7 @@
   "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
   "files": {
     "ignoreUnknown": true,
-    "includes": ["apps/**", "!**/node_modules", "!**/dist", "!**/.next", "!**/generated"]
+    "includes": ["apps/**", "!**/node_modules", "!**/dist", "!**/.next", "!**/generated", "!**/.astro", "!**/*.astro"]
   },
   "formatter": {
     "indentStyle": "space",
@@ -37,6 +37,10 @@
       "correctness": {
         "noUnusedVariables": "warn",
         "noUnusedImports": "warn"
+      },
+      "a11y": {
+        "useKeyWithClickEvents": "off",
+        "noStaticElementInteractions": "off"
       }
     }
   }
