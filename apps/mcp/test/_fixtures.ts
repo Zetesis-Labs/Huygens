@@ -26,6 +26,24 @@ export type InsertNoteResult = {
   block_ids: string[]
 }
 
+const TEST_NAMESPACE_RE = /^huygens_(test|e2e)_[a-z0-9]+$/
+
+/**
+ * Guard against a test ever operating on the production graph. Test namespaces
+ * are throwaway (`huygens_test_<random>`); this refuses anything that is not
+ * one — above all the production namespace `huygens` — so a misconfigured test
+ * can never read, write, or (worst of all) REMOVE NAMESPACE the real data.
+ * Data isolation here is by namespace, so the server may be shared with prod.
+ */
+export function assertTestNamespace(namespace: string): void {
+  if (!TEST_NAMESPACE_RE.test(namespace)) {
+    throw new Error(
+      `refusing to run tests against namespace "${namespace}": expected a throwaway ` +
+        'huygens_test_<id>. Tests must go through withFreshDb/withFreshDbAndReader.'
+    )
+  }
+}
+
 /**
  * Create a fresh SurrealDB namespace + database for a single test, apply
  * schema + seed, install it as the override `getDb()` returns, and return
@@ -38,6 +56,7 @@ export async function withFreshDb(): Promise<TestDb> {
   const suffix = Math.random().toString(36).slice(2, 10)
   const namespace = `huygens_test_${suffix}`
   const database = 'main'
+  assertTestNamespace(namespace) // never let a test touch the production graph
 
   const url = process.env.SURREAL_URL ?? 'ws://surrealdb:8000/rpc'
   const username = process.env.SURREAL_USER ?? 'root'
