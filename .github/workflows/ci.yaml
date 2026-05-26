@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Fast, self-contained gate: no database, no secrets. Catches type and style
+  # regressions on every PR.
+  static:
+    runs-on: cardano-runners
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint & format (biome)
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+  # Test gate: runs the MCP test suite against a throwaway SurrealDB. The
+  # find-related/vector tests embed text via DeepInfra, so DEEPINFRA_API_KEY
+  # must be configured as a repository secret.
+  test:
+    runs-on: cardano-runners
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Start SurrealDB
+        run: |
+          docker run -d --name surrealdb -p 8000:8000 \
+            surrealdb/surrealdb:latest \
+            start --user root --pass root --bind 0.0.0.0:8000 memory
+
+      - name: Wait for SurrealDB to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec surrealdb /surreal isready --endpoint http://localhost:8000; then
+              echo "SurrealDB ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "SurrealDB did not become ready in time" >&2
+          docker logs surrealdb >&2 || true
+          exit 1
+
+      - name: Run tests
+        env:
+          SURREAL_URL: ws://localhost:8000/rpc
+          SURREAL_NS: huygens
+          SURREAL_DB: main
+          SURREAL_USER: root
+          SURREAL_PASS: root
+          DEEPINFRA_API_KEY: ${{ secrets.DEEPINFRA_API_KEY }}
+        run: bun run test
+
+      - name: Stop SurrealDB
+        if: always()
+        run: docker rm -f surrealdb || true
