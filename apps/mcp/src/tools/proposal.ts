@@ -13,6 +13,7 @@ import {
 } from '../domain'
 import { emitEvent, newSessionId } from '../events'
 import { getDb } from '../surreal'
+import { renderProposalDiff } from './proposal-render'
 
 type RecordRef = RecordId | StringRecordId
 
@@ -667,10 +668,17 @@ export function registerProposalTools(server: McpServer): void {
     }
   )
 
-  server.tool('get_proposal', 'Fetch a persisted proposal draft or its final status.', getProposalShape, async args => {
-    const proposal = await getProposalImpl(args)
-    return { content: [{ type: 'text', text: proposal ? JSON.stringify(proposal, null, 2) : 'Proposal not found.' }] }
-  })
+  server.tool(
+    'get_proposal',
+    'Fetch a persisted proposal: a deterministic, human-readable preview of what committing it will create and change, followed by the raw JSON.',
+    getProposalShape,
+    async args => {
+      const proposal = await getProposalImpl(args)
+      if (!proposal) return { content: [{ type: 'text', text: 'Proposal not found.' }] }
+      const text = `${renderProposalDiff(proposal)}\n\n---\n\n${JSON.stringify(proposal, null, 2)}`
+      return { content: [{ type: 'text', text }] }
+    }
+  )
 
   server.tool(
     'discard_proposal',
