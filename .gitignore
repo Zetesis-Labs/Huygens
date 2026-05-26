@@ -12,6 +12,9 @@ build/
 out/
 *.tsbuildinfo
 
+# Astro generated cache
+.astro/
+
 # Python
 __pycache__/
 *.py[cod]
