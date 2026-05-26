@@ -3,6 +3,7 @@ import { type RecordId, StringRecordId } from 'surrealdb'
 import { z } from 'zod'
 import { RAW_CAPTURE_ID_RE } from '../domain'
 import { getDb } from '../surreal'
+import { defineTool, jsonBlock } from './define-tool'
 import { idStr, isoString, isoStringOrNull } from './graph-records'
 
 export const getRawShape = {
@@ -67,18 +68,15 @@ export async function getRawImpl(input: GetRawInput): Promise<RawDetail | null> 
 }
 
 export function registerGetRaw(server: McpServer): void {
-  server.tool(
+  defineTool(
+    server,
     'get_raw',
     'Fetch full detail of a single raw_capture by id, plus the records derived from it (usually narrative blocks).',
     getRawShape,
     async args => {
       const raw = await getRawImpl(args)
-      if (!raw) {
-        return { content: [{ type: 'text', text: `Not found: ${args.raw_id}` }] }
-      }
-      return {
-        content: [{ type: 'text', text: JSON.stringify(raw, null, 2) }]
-      }
+      if (!raw) return { content: [{ type: 'text', text: `Not found: ${args.raw_id}` }] }
+      return { content: [jsonBlock(raw)] }
     }
   )
 }

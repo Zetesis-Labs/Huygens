@@ -2,8 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { RecordId } from 'surrealdb'
 import { z } from 'zod'
 import { embedTexts } from '../embeddings'
-import { HuygensError, huygensErrorToToolResult, toMcpError } from '../errors'
 import { getDb } from '../surreal'
+import { defineTool } from './define-tool'
 import { idStr } from './graph-records'
 
 /**
@@ -117,22 +117,18 @@ function summarize(hits: FindRelatedHit[]): string {
 }
 
 export function registerFindRelated(server: McpServer): void {
-  server.tool(
+  defineTool(
+    server,
     'find_related',
     'Find existing notes related to a concept. Use BEFORE creating a new note about a topic — if the top hit has score >= ~0.65, link to it via external_refs instead of duplicating. Returns up to K notes, deduped by parent, sorted by descending similarity.',
     findRelatedShape,
     async args => {
-      try {
-        const hits = await findRelatedImpl(args)
-        return {
-          content: [
-            { type: 'text', text: summarize(hits) },
-            { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(hits, null, 2)}` }
-          ]
-        }
-      } catch (err) {
-        if (err instanceof HuygensError) return huygensErrorToToolResult(err)
-        throw toMcpError(err)
+      const hits = await findRelatedImpl(args)
+      return {
+        content: [
+          { type: 'text', text: summarize(hits) },
+          { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(hits, null, 2)}` }
+        ]
       }
     }
   )

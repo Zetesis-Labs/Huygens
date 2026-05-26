@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { SourceKindSchema } from '../domain'
 import { emitEvent, newSessionId } from '../events'
 import { getDb } from '../surreal'
+import { defineTool } from './define-tool'
 
 export const captureShape = {
   content: z.string().min(1).describe('The literal user input — no interpretation, no segmentation'),
@@ -37,7 +38,8 @@ export async function captureImpl(input: CaptureInput): Promise<{ raw_id: string
 }
 
 export function registerCapture(server: McpServer): void {
-  server.tool(
+  defineTool(
+    server,
     'capture',
     'Persist a raw user input as a pending raw_capture (Plane 1: evidence). No interpretation, no segmentation. The raw stays in the inbox until a proposal is committed.',
     captureShape,

@@ -2,8 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { RecordId } from 'surrealdb'
 import { z } from 'zod'
 import { NoteStateSchema } from '../domain'
-import { HuygensError, huygensErrorToToolResult, toMcpError } from '../errors'
 import { getDb } from '../surreal'
+import { defineTool } from './define-tool'
 import { idStr, isoString } from './graph-records'
 
 const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -73,22 +73,18 @@ function summarize(mits: MitRow[], date: string): string {
 }
 
 export function registerListMits(server: McpServer): void {
-  server.tool(
+  defineTool(
+    server,
     'list_mits_for_date',
     "What's my Most Important Task list for a given day? Returns notes with mit_for on that date, in active-ish states.",
     listMitsShape,
     async args => {
-      try {
-        const mits = await listMitsImpl(args)
-        return {
-          content: [
-            { type: 'text', text: summarize(mits, args.date) },
-            { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(mits, null, 2)}` }
-          ]
-        }
-      } catch (err) {
-        if (err instanceof HuygensError) return huygensErrorToToolResult(err)
-        throw toMcpError(err)
+      const mits = await listMitsImpl(args)
+      return {
+        content: [
+          { type: 'text', text: summarize(mits, args.date) },
+          { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(mits, null, 2)}` }
+        ]
       }
     }
   )

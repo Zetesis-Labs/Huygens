@@ -2,8 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { RecordId } from 'surrealdb'
 import { z } from 'zod'
 import { NoteStateSchema, NoteTypeSlugSchema } from '../domain'
-import { HuygensError, huygensErrorToToolResult, toMcpError } from '../errors'
 import { getDb } from '../surreal'
+import { defineTool } from './define-tool'
 import { idStr, isoString, isoStringOrNull } from './graph-records'
 
 export const listByTypeShape = {
@@ -64,22 +64,18 @@ function summarize(notes: NoteRow[], typeSlug: string): string {
 }
 
 export function registerListByType(server: McpServer): void {
-  server.tool(
+  defineTool(
+    server,
     'list_notes_by_type',
     'List notes filtered by type (task / project / objetivo / idea / …) and state. Defaults to currently-actionable. Ordered by most recently updated.',
     listByTypeShape,
     async args => {
-      try {
-        const notes = await listByTypeImpl(args)
-        return {
-          content: [
-            { type: 'text', text: summarize(notes, args.type_slug) },
-            { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(notes, null, 2)}` }
-          ]
-        }
-      } catch (err) {
-        if (err instanceof HuygensError) return huygensErrorToToolResult(err)
-        throw toMcpError(err)
+      const notes = await listByTypeImpl(args)
+      return {
+        content: [
+          { type: 'text', text: summarize(notes, args.type_slug) },
+          { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(notes, null, 2)}` }
+        ]
       }
     }
   )

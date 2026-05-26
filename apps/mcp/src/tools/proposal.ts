@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { defineTool, jsonBlock } from './define-tool'
 import { getProposalChangesImpl, resolveContextLabels } from './proposal/changes'
 import { commitProposalImpl } from './proposal/commit'
 import { createProposalImpl, discardProposalImpl, getProposalImpl, updateProposalImpl } from './proposal/crud'
@@ -42,27 +43,30 @@ export {
 } from './proposal/schemas'
 
 export function registerProposalTools(server: McpServer): void {
-  server.tool(
+  defineTool(
+    server,
     'create_proposal',
     'Persist a visible draft proposal from inbox raw_capture ids. Does not mutate notes, blocks, or graph edges.',
     createProposalShape,
     async args => {
       const proposal = await createProposalImpl(args)
-      return { content: [{ type: 'text', text: JSON.stringify(proposal, null, 2) }] }
+      return { content: [jsonBlock(proposal)] }
     }
   )
 
-  server.tool(
+  defineTool(
+    server,
     'update_proposal',
     'Update a draft proposal payload. Rejected once the proposal is committed or discarded.',
     updateProposalShape,
     async args => {
       const proposal = await updateProposalImpl(args)
-      return { content: [{ type: 'text', text: JSON.stringify(proposal, null, 2) }] }
+      return { content: [jsonBlock(proposal)] }
     }
   )
 
-  server.tool(
+  defineTool(
+    server,
     'get_proposal',
     'Fetch a persisted proposal: a deterministic, human-readable preview of what committing it will create and change, followed by the raw JSON.',
     getProposalShape,
@@ -74,7 +78,8 @@ export function registerProposalTools(server: McpServer): void {
     }
   )
 
-  server.tool(
+  defineTool(
+    server,
     'get_proposal_changes',
     'Recover the exact changes a committed proposal produced. Default: JSON with two views — "materialized" (real record ids resolved to records) and "changefeed" (the transaction delta at the commit versionstamp). With format_d2: "code" returns the D2 diagram source; "svg"/"png"/"jpeg" return a rendered image of the change graph. Read-only.',
     getProposalChangesShape,
@@ -105,23 +110,25 @@ export function registerProposalTools(server: McpServer): void {
     }
   )
 
-  server.tool(
+  defineTool(
+    server,
     'discard_proposal',
     'Discard a draft proposal without mutating notes, blocks, or graph edges.',
     discardProposalShape,
     async args => {
       const proposal = await discardProposalImpl(args)
-      return { content: [{ type: 'text', text: JSON.stringify(proposal, null, 2) }] }
+      return { content: [jsonBlock(proposal)] }
     }
   )
 
-  server.tool(
+  defineTool(
+    server,
     'commit_proposal',
     'Commit an approved proposal: create narrative blocks, apply minimal note/edge mutations, link provenance, and mark raws processed.',
     commitProposalShape,
     async args => {
       const result = await commitProposalImpl(args)
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
+      return { content: [jsonBlock(result)] }
     }
   )
 }

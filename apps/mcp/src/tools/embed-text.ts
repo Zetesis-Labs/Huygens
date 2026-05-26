@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { type EmbedResult, embedTexts } from '../embeddings'
-import { HuygensError, huygensErrorToToolResult, toMcpError } from '../errors'
+import { defineTool } from './define-tool'
 
 export const embedTextShape = {
   texts: z.array(z.string().min(1)).min(1).max(64).describe('1..64 strings to embed in one batched call')
@@ -15,37 +15,25 @@ export async function embedTextImpl(input: EmbedTextInput): Promise<EmbedResult>
 }
 
 export function registerEmbedText(server: McpServer): void {
-  server.tool(
+  defineTool(
+    server,
     'embed_text',
     'Embed 1..64 strings with BGE-M3 (1024 dims, normalized). Returns embeddings + model + input_tokens.',
     embedTextShape,
     async args => {
-      try {
-        const result = await embedTextImpl(args)
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Embedded ${result.embeddings.length} input(s) with ${result.model} (${result.dimensions} dims, ${result.input_tokens} input tokens)`
-            },
-            {
-              type: 'text',
-              text: `\n[raw JSON]\n${JSON.stringify(
-                {
-                  model: result.model,
-                  dimensions: result.dimensions,
-                  input_tokens: result.input_tokens,
-                  count: result.embeddings.length
-                },
-                null,
-                2
-              )}`
-            }
-          ]
-        }
-      } catch (err) {
-        if (err instanceof HuygensError) return huygensErrorToToolResult(err)
-        throw toMcpError(err)
+      const result = await embedTextImpl(args)
+      const summary = `Embedded ${result.embeddings.length} input(s) with ${result.model} (${result.dimensions} dims, ${result.input_tokens} input tokens)`
+      const meta = {
+        model: result.model,
+        dimensions: result.dimensions,
+        input_tokens: result.input_tokens,
+        count: result.embeddings.length
+      }
+      return {
+        content: [
+          { type: 'text', text: summary },
+          { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(meta, null, 2)}` }
+        ]
       }
     }
   )

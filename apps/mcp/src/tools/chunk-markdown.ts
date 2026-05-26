@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { type Chunk, chunkMarkdown } from '../chunk'
+import { defineTool } from './define-tool'
 
 export const chunkMarkdownShape = {
   text: z.string().min(1).describe('Markdown text to split'),
@@ -21,7 +22,8 @@ export function chunkMarkdownImpl(input: ChunkMarkdownInput): Chunk[] {
 }
 
 export function registerChunkMarkdown(server: McpServer): void {
-  server.tool(
+  defineTool(
+    server,
     'chunk_markdown',
     'Split markdown into heading-aware chunks (each preserves its heading breadcrumb). Pure function — no DB.',
     chunkMarkdownShape,

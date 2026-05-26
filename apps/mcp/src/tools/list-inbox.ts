@@ -3,6 +3,7 @@ import type { RecordId } from 'surrealdb'
 import { z } from 'zod'
 import { RawStatusSchema, SourceKindSchema } from '../domain'
 import { getDb } from '../surreal'
+import { defineTool } from './define-tool'
 import { idStr, isoString, isoStringOrNull } from './graph-records'
 
 export const listInboxShape = {
@@ -71,7 +72,8 @@ function summarize(rows: InboxRow[], status: string): string {
 }
 
 export function registerListInbox(server: McpServer): void {
-  server.tool(
+  defineTool(
+    server,
     'list_inbox',
     'List raw_captures by explicit inbox status. Defaults to pending. The real GTD/ZTD inbox.',
     listInboxShape,

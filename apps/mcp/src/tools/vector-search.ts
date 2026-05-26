@@ -3,8 +3,8 @@ import type { RecordId } from 'surrealdb'
 import { z } from 'zod'
 import { NoteStateSchema } from '../domain'
 import { embedTexts } from '../embeddings'
-import { HuygensError, huygensErrorToToolResult, toMcpError } from '../errors'
 import { getDb } from '../surreal'
+import { defineTool } from './define-tool'
 import { idStr } from './graph-records'
 
 export const vectorSearchShape = {
@@ -123,22 +123,18 @@ function summarize(hits: SearchHit[]): string {
 }
 
 export function registerVectorSearch(server: McpServer): void {
-  server.tool(
+  defineTool(
+    server,
     'vector_search',
     'Embed the query with BGE-M3 and find the K nearest blocks via HNSW (cosine). Optional filters by note state, type slug, and updated-since.',
     vectorSearchShape,
     async args => {
-      try {
-        const hits = await vectorSearchImpl(args)
-        return {
-          content: [
-            { type: 'text', text: summarize(hits) },
-            { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(hits, null, 2)}` }
-          ]
-        }
-      } catch (err) {
-        if (err instanceof HuygensError) return huygensErrorToToolResult(err)
-        throw toMcpError(err)
+      const hits = await vectorSearchImpl(args)
+      return {
+        content: [
+          { type: 'text', text: summarize(hits) },
+          { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(hits, null, 2)}` }
+        ]
       }
     }
   )

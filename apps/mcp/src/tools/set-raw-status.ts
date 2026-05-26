@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { RAW_CAPTURE_ID_RE, RawStatusSchema } from '../domain'
 import { emitEvent, newSessionId } from '../events'
 import { getDb } from '../surreal'
+import { defineTool, jsonBlock } from './define-tool'
 import { idStr, isoStringOrNull } from './graph-records'
 
 export const setRawStatusShape = {
@@ -74,15 +75,14 @@ export async function setRawStatusImpl(input: SetRawStatusInput): Promise<RawSta
 }
 
 export function registerSetRawStatus(server: McpServer): void {
-  server.tool(
+  defineTool(
+    server,
     'set_raw_status',
     'Change explicit inbox status for one or more raw_capture records. Does not create notes, blocks, or graph edges.',
     setRawStatusShape,
     async args => {
       const rows = await setRawStatusImpl(args)
-      return {
-        content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }]
-      }
+      return { content: [jsonBlock(rows)] }
     }
   )
 }

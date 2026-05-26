@@ -2,9 +2,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StringRecordId } from 'surrealdb'
 import { z } from 'zod'
 import { NOTE_ID_RE, NoteStateSchema } from '../domain'
-import { HuygensError, huygensErrorToToolResult, NoteNotFoundError, toMcpError } from '../errors'
+import { NoteNotFoundError } from '../errors'
 import { emitEvent, newSessionId } from '../events'
 import { getDb } from '../surreal'
+import { defineTool } from './define-tool'
 
 export const updateNoteStateShape = {
   note_id: z.string().regex(NOTE_ID_RE, 'Must be a note record id'),
@@ -48,25 +49,18 @@ export async function updateNoteStateImpl(input: UpdateNoteStateInput): Promise<
 }
 
 export function registerUpdateNoteState(server: McpServer): void {
-  server.tool(
+  defineTool(
+    server,
     'update_note_state',
     'Move a note through the ZTD state machine (CLARIFIED → ACTIVE → WAITING → SOMEDAY → DONE → ARCHIVED). Records the transition as an agent_event.',
     updateNoteStateShape,
     async args => {
-      try {
-        const result = await updateNoteStateImpl(args)
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `${result.note_id}: ${result.previous_state} → ${result.new_state}`
-            },
-            { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(result, null, 2)}` }
-          ]
-        }
-      } catch (err) {
-        if (err instanceof HuygensError) return huygensErrorToToolResult(err)
-        throw toMcpError(err)
+      const result = await updateNoteStateImpl(args)
+      return {
+        content: [
+          { type: 'text', text: `${result.note_id}: ${result.previous_state} → ${result.new_state}` },
+          { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(result, null, 2)}` }
+        ]
       }
     }
   )
