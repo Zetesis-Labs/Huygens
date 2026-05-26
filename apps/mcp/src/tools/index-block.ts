@@ -5,6 +5,7 @@ import { BLOCK_ID_RE } from '../domain'
 import { embedTexts } from '../embeddings'
 import { BlockNotFoundError, HuygensError, huygensErrorToToolResult, toMcpError } from '../errors'
 import { getDb } from '../surreal'
+import { idStr, type RecordIdish } from './graph-records'
 
 export const indexBlockShape = {
   block_ids: z
@@ -28,17 +29,17 @@ export async function indexBlockImpl(input: IndexBlockInput): Promise<IndexBlock
   const db = await getDb()
   const refs = input.block_ids.map(id => new StringRecordId(id))
 
-  const [rows] = await db.query<[{ id: { toString(): string }; content: string }[]]>(
+  const [rows] = await db.query<[{ id: RecordIdish; content: string }[]]>(
     'SELECT id, content FROM block WHERE id IN $ids',
     { ids: refs }
   )
   if (rows.length !== input.block_ids.length) {
-    const found = new Set(rows.map(r => String(r.id)))
+    const found = new Set(rows.map(r => idStr(r.id)))
     const missing = input.block_ids.filter(id => !found.has(id))
     throw new BlockNotFoundError(missing)
   }
 
-  const byId = new Map(rows.map(r => [String(r.id), r.content]))
+  const byId = new Map(rows.map(r => [idStr(r.id), r.content]))
   const orderedContents = input.block_ids.map(id => {
     const c = byId.get(id)
     if (c == null) throw new Error(`internal: missing content for ${id}`)

@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { NoteStateSchema } from '../domain'
 import { HuygensError, huygensErrorToToolResult, toMcpError } from '../errors'
 import { getDb } from '../surreal'
+import { idStr, isoString } from './graph-records'
 
 const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -58,12 +59,17 @@ export async function listMitsImpl(input: ListMitsInput): Promise<MitRow[]> {
   )
 
   return rows.map(r => ({
-    id: String(r.id),
+    id: idStr(r.id),
     title: r.title,
     type_slug: r.type_slug,
     state: r.state,
-    mit_for: r.mit_for instanceof Date ? r.mit_for.toISOString() : String(r.mit_for)
+    mit_for: isoString(r.mit_for)
   }))
+}
+
+function summarize(mits: MitRow[], date: string): string {
+  if (mits.length === 0) return `No MITs for ${date}.`
+  return mits.map(m => `- [${m.state}] ${m.id} — ${m.title} (${m.type_slug ?? 'untyped'})`).join('\n')
 }
 
 export function registerListMits(server: McpServer): void {
@@ -74,13 +80,9 @@ export function registerListMits(server: McpServer): void {
     async args => {
       try {
         const mits = await listMitsImpl(args)
-        const summary =
-          mits.length === 0
-            ? `No MITs for ${args.date}.`
-            : mits.map(m => `- [${m.state}] ${m.id} — ${m.title} (${m.type_slug ?? 'untyped'})`).join('\n')
         return {
           content: [
-            { type: 'text', text: summary },
+            { type: 'text', text: summarize(mits, args.date) },
             { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(mits, null, 2)}` }
           ]
         }

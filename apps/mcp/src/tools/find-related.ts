@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { embedTexts } from '../embeddings'
 import { HuygensError, huygensErrorToToolResult, toMcpError } from '../errors'
 import { getDb } from '../surreal'
+import { idStr } from './graph-records'
 
 /**
  * LLM-friendly wrapper over vector_search. Returns a compact, deduped list
@@ -83,14 +84,14 @@ export async function findRelatedImpl(input: FindRelatedInput): Promise<FindRela
   // hit per note is the best one.
   const bestByNote = new Map<string, Row>()
   for (const r of rows) {
-    const noteId = String(r.note_id)
+    const noteId = idStr(r.note_id)
     if (noteId === 'null' || noteId === 'undefined') continue
     if (!bestByNote.has(noteId)) bestByNote.set(noteId, r)
   }
 
   return Array.from(bestByNote.values())
     .map(r => ({
-      note_id: String(r.note_id),
+      note_id: idStr(r.note_id),
       title: r.note_title,
       type_slug: r.note_type_slug,
       state: r.note_state,
@@ -105,6 +106,16 @@ export async function findRelatedImpl(input: FindRelatedInput): Promise<FindRela
     .slice(0, k)
 }
 
+function summarize(hits: FindRelatedHit[]): string {
+  if (hits.length === 0) return 'No related notes above threshold.'
+  return hits
+    .map(
+      (h, i) =>
+        `${i + 1}. [${h.score.toFixed(3)}] ${h.note_id} — ${h.title} (${h.type_slug ?? 'untyped'}, ${h.state})\n   ${h.snippet}`
+    )
+    .join('\n')
+}
+
 export function registerFindRelated(server: McpServer): void {
   server.tool(
     'find_related',
@@ -113,18 +124,9 @@ export function registerFindRelated(server: McpServer): void {
     async args => {
       try {
         const hits = await findRelatedImpl(args)
-        const summary =
-          hits.length === 0
-            ? 'No related notes above threshold.'
-            : hits
-                .map(
-                  (h, i) =>
-                    `${i + 1}. [${h.score.toFixed(3)}] ${h.note_id} — ${h.title} (${h.type_slug ?? 'untyped'}, ${h.state})\n   ${h.snippet}`
-                )
-                .join('\n')
         return {
           content: [
-            { type: 'text', text: summary },
+            { type: 'text', text: summarize(hits) },
             { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(hits, null, 2)}` }
           ]
         }

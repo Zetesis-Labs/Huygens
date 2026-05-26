@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { NoteStateSchema, NoteTypeSlugSchema } from '../domain'
 import { HuygensError, huygensErrorToToolResult, toMcpError } from '../errors'
 import { getDb } from '../surreal'
+import { idStr, isoString, isoStringOrNull } from './graph-records'
 
 export const listByTypeShape = {
   type_slug: NoteTypeSlugSchema.describe('Note type to filter by (task / project / objetivo / …)'),
@@ -47,12 +48,19 @@ export async function listByTypeImpl(input: ListByTypeInput): Promise<NoteRow[]>
   )
 
   return rows.map(r => ({
-    id: String(r.id),
+    id: idStr(r.id),
     title: r.title,
     state: r.state,
-    mit_for: r.mit_for == null ? null : r.mit_for instanceof Date ? r.mit_for.toISOString() : String(r.mit_for),
-    updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at)
+    mit_for: isoStringOrNull(r.mit_for),
+    updated_at: isoString(r.updated_at)
   }))
+}
+
+function summarize(notes: NoteRow[], typeSlug: string): string {
+  if (notes.length === 0) return `No ${typeSlug} notes match.`
+  return notes
+    .map(n => `- [${n.state}] ${n.id} — ${n.title}${n.mit_for ? ` (MIT ${n.mit_for.slice(0, 10)})` : ''}`)
+    .join('\n')
 }
 
 export function registerListByType(server: McpServer): void {
@@ -63,15 +71,9 @@ export function registerListByType(server: McpServer): void {
     async args => {
       try {
         const notes = await listByTypeImpl(args)
-        const summary =
-          notes.length === 0
-            ? `No ${args.type_slug} notes match.`
-            : notes
-                .map(n => `- [${n.state}] ${n.id} — ${n.title}${n.mit_for ? ` (MIT ${n.mit_for.slice(0, 10)})` : ''}`)
-                .join('\n')
         return {
           content: [
-            { type: 'text', text: summary },
+            { type: 'text', text: summarize(notes, args.type_slug) },
             { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(notes, null, 2)}` }
           ]
         }

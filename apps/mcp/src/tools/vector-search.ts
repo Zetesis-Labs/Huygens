@@ -5,6 +5,7 @@ import { NoteStateSchema } from '../domain'
 import { embedTexts } from '../embeddings'
 import { HuygensError, huygensErrorToToolResult, toMcpError } from '../errors'
 import { getDb } from '../surreal'
+import { idStr } from './graph-records'
 
 export const vectorSearchShape = {
   query: z.string().min(1).describe('Natural-language query to embed and search'),
@@ -99,9 +100,9 @@ export async function vectorSearchImpl(input: VectorSearchInput): Promise<Search
   const [rows] = await db.query<[Row[]]>(sql, bindings)
 
   const hits: SearchHit[] = rows.map(r => ({
-    block_id: String(r.id),
+    block_id: idStr(r.id),
     block_kind: r.block_kind,
-    note_id: r.note_id ? String(r.note_id) : null,
+    note_id: r.note_id ? idStr(r.note_id) : null,
     note_title: r.note_title ?? null,
     note_state: r.note_state ?? null,
     content: r.content,
@@ -109,6 +110,16 @@ export async function vectorSearchImpl(input: VectorSearchInput): Promise<Search
   }))
 
   return input.threshold != null ? hits.filter(h => h.score >= (input.threshold ?? 0)) : hits
+}
+
+function summarize(hits: SearchHit[]): string {
+  if (hits.length === 0) return 'No matches.'
+  return hits
+    .map(
+      h =>
+        `- [${h.score.toFixed(3)}] ${h.note_title ?? h.block_id} (${h.note_state ?? h.block_kind}) :: ${h.content.slice(0, 100).replace(/\n/g, ' ')}${h.content.length > 100 ? '…' : ''}`
+    )
+    .join('\n')
 }
 
 export function registerVectorSearch(server: McpServer): void {
@@ -119,18 +130,9 @@ export function registerVectorSearch(server: McpServer): void {
     async args => {
       try {
         const hits = await vectorSearchImpl(args)
-        const summary =
-          hits.length === 0
-            ? 'No matches.'
-            : hits
-                .map(
-                  h =>
-                    `- [${h.score.toFixed(3)}] ${h.note_title ?? h.block_id} (${h.note_state ?? h.block_kind}) :: ${h.content.slice(0, 100).replace(/\n/g, ' ')}${h.content.length > 100 ? '…' : ''}`
-                )
-                .join('\n')
         return {
           content: [
-            { type: 'text', text: summary },
+            { type: 'text', text: summarize(hits) },
             { type: 'text', text: `\n[raw JSON]\n${JSON.stringify(hits, null, 2)}` }
           ]
         }

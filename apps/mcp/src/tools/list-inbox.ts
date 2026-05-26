@@ -3,6 +3,7 @@ import type { RecordId } from 'surrealdb'
 import { z } from 'zod'
 import { RawStatusSchema, SourceKindSchema } from '../domain'
 import { getDb } from '../surreal'
+import { idStr, isoString, isoStringOrNull } from './graph-records'
 
 export const listInboxShape = {
   limit: z.number().int().positive().max(100).default(20).describe('Maximum raws to return'),
@@ -49,15 +50,24 @@ export async function listInboxImpl(input: ListInboxInput): Promise<InboxRow[]> 
   )
 
   return rows.map(r => ({
-    id: String(r.id),
+    id: idStr(r.id),
     content: r.content,
     source_kind: r.source_kind,
     source_ref: r.source_ref,
     status: r.status,
-    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
-    processed_at:
-      r.processed_at instanceof Date ? r.processed_at.toISOString() : r.processed_at ? String(r.processed_at) : null
+    created_at: isoString(r.created_at),
+    processed_at: isoStringOrNull(r.processed_at)
   }))
+}
+
+function summarize(rows: InboxRow[], status: string): string {
+  if (rows.length === 0) return `No raws with status=${status}.`
+  return rows
+    .map(
+      r =>
+        `- ${r.id} (${r.status}, ${r.source_kind}, ${r.created_at}): ${r.content.slice(0, 80)}${r.content.length > 80 ? '...' : ''}`
+    )
+    .join('\n')
 }
 
 export function registerListInbox(server: McpServer): void {
@@ -67,18 +77,9 @@ export function registerListInbox(server: McpServer): void {
     listInboxShape,
     async args => {
       const rows = await listInboxImpl(args)
-      const summary =
-        rows.length === 0
-          ? `No raws with status=${args.status ?? 'pending'}.`
-          : rows
-              .map(
-                r =>
-                  `- ${r.id} (${r.status}, ${r.source_kind}, ${r.created_at}): ${r.content.slice(0, 80)}${r.content.length > 80 ? '...' : ''}`
-              )
-              .join('\n')
       return {
         content: [
-          { type: 'text', text: summary },
+          { type: 'text', text: summarize(rows, args.status ?? 'pending') },
           { type: 'text', text: `\n[raw JSON for programmatic use]\n${JSON.stringify(rows, null, 2)}` }
         ]
       }

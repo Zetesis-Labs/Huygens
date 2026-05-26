@@ -3,6 +3,7 @@ import { type RecordId, StringRecordId } from 'surrealdb'
 import { z } from 'zod'
 import { RAW_CAPTURE_ID_RE } from '../domain'
 import { getDb } from '../surreal'
+import { idStr, isoString, isoStringOrNull } from './graph-records'
 
 export const getRawShape = {
   raw_id: z
@@ -54,19 +55,14 @@ export async function getRawImpl(input: GetRawInput): Promise<RawDetail | null> 
   })
 
   return {
-    id: String(raw.id),
+    id: idStr(raw.id),
     content: raw.content,
     source_kind: raw.source_kind,
     source_ref: raw.source_ref,
     status: raw.status,
-    created_at: raw.created_at instanceof Date ? raw.created_at.toISOString() : String(raw.created_at),
-    processed_at:
-      raw.processed_at instanceof Date
-        ? raw.processed_at.toISOString()
-        : raw.processed_at
-          ? String(raw.processed_at)
-          : null,
-    derived_records: derivedRows.map(d => String(d.in))
+    created_at: isoString(raw.created_at),
+    processed_at: isoStringOrNull(raw.processed_at),
+    derived_records: derivedRows.map(d => idStr(d.in))
   }
 }
 

@@ -14,6 +14,16 @@ export function tableOf(id: RecordIdish): string {
   return idStr(id).split(':')[0] ?? ''
 }
 
+/** A SurrealDB datetime (a Date at runtime) → ISO string. */
+export function isoString(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : String(value)
+}
+
+/** Like isoString, but passes null/undefined through as null. */
+export function isoStringOrNull(value: Date | string | null | undefined): string | null {
+  return value == null ? null : isoString(value)
+}
+
 /**
  * A graph node (note / block / raw_capture) as returned by `SELECT *`. Only the
  * fields the change views read are named; the record keeps any other fields at

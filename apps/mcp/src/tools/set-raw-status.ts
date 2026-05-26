@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { RAW_CAPTURE_ID_RE, RawStatusSchema } from '../domain'
 import { emitEvent, newSessionId } from '../events'
 import { getDb } from '../surreal'
+import { idStr, isoStringOrNull } from './graph-records'
 
 export const setRawStatusShape = {
   raw_ids: z
@@ -33,11 +34,6 @@ function toRawRef(rawId: string): StringRecordId {
   return new StringRecordId(rawId)
 }
 
-function asIso(value: Date | string | null | undefined): string | null {
-  if (value instanceof Date) return value.toISOString()
-  return value == null ? null : String(value)
-}
-
 export async function setRawStatusImpl(input: SetRawStatusInput): Promise<RawStatusRow[]> {
   const db = await getDb()
   const refs = input.raw_ids.map(toRawRef)
@@ -45,7 +41,7 @@ export async function setRawStatusImpl(input: SetRawStatusInput): Promise<RawSta
   const [existing] = await db.query<[{ id: RecordId }[]]>('SELECT id FROM raw_capture WHERE id IN $ids', {
     ids: refs
   })
-  const existingIds = new Set(existing.map(row => String(row.id)))
+  const existingIds = new Set(existing.map(row => idStr(row.id)))
   const missing = input.raw_ids.filter(id => !existingIds.has(id))
   if (missing.length > 0) {
     throw new Error(`raw_capture not found: ${missing.join(', ')}`)
@@ -71,9 +67,9 @@ export async function setRawStatusImpl(input: SetRawStatusInput): Promise<RawSta
   })
 
   return rows.map(row => ({
-    id: String(row.id),
+    id: idStr(row.id),
     status: row.status,
-    processed_at: asIso(row.processed_at)
+    processed_at: isoStringOrNull(row.processed_at)
   }))
 }
 
