@@ -1,12 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { StringRecordId } from 'surrealdb'
+import { StringRecordId, type Surreal } from 'surrealdb'
 import { z } from 'zod'
 import { BLOCK_ID_RE } from '../domain'
 import { embedTexts } from '../embeddings'
 import { BlockNotFoundError } from '../errors'
-import { getDb } from '../surreal'
+import { blockEmbeddingContext } from '../serialize'
+import { getDb, selectByIds } from '../surreal'
 import { defineTool } from './define-tool'
-import { idStr, type RecordIdish } from './graph-records'
+import { type GraphNodeRecord, idStr, type RecordIdish } from './graph-records'
 
 export const indexBlockShape = {
   block_ids: z
@@ -26,28 +27,122 @@ export type IndexBlockResult = {
   input_tokens: number
 }
 
+type BlockRow = { id: RecordIdish; content: string; block_kind?: string; note?: RecordIdish }
+type OwnerInfo = { rec: GraphNodeRecord; parentId?: string }
+
+/** The embedding context header for one block (see buildBlockContexts). */
+function headerForBlock(
+  row: BlockRow,
+  ownerMap: Map<string, OwnerInfo>,
+  aboutByBlock: Map<string, string[]>,
+  noteRec: Map<string, GraphNodeRecord>
+): string {
+  if (row.block_kind === 'narrative') {
+    const subjects: GraphNodeRecord[] = []
+    for (const n of aboutByBlock.get(idStr(row.id)) ?? []) {
+      const rec = noteRec.get(n)
+      if (rec) subjects.push(rec)
+    }
+    return blockEmbeddingContext(subjects, [])
+  }
+  if (!row.note) return ''
+  const owner = ownerMap.get(idStr(row.note))
+  if (!owner) return ''
+  const parents: GraphNodeRecord[] = []
+  if (owner.parentId) {
+    const p = noteRec.get(owner.parentId)
+    if (p) parents.push(p)
+  }
+  return blockEmbeddingContext([owner.rec], parents)
+}
+
+// Owner notes (for descriptive blocks) + the id of their single part_of parent.
+async function fetchOwners(db: Surreal, ownerIds: Set<string>): Promise<Map<string, OwnerInfo>> {
+  const map = new Map<string, OwnerInfo>()
+  if (ownerIds.size === 0) return map
+  const refs = [...ownerIds].map(s => new StringRecordId(s))
+  const [owners] = await db.query<[(GraphNodeRecord & { parents?: RecordIdish[] })[]]>(
+    'SELECT id, title, type, state, ->part_of->note AS parents FROM note WHERE id IN $ids',
+    { ids: refs }
+  )
+  for (const o of owners ?? []) {
+    map.set(idStr(o.id), { rec: o, parentId: o.parents?.[0] ? idStr(o.parents[0]) : undefined })
+  }
+  return map
+}
+
+// Notes each narrative block is `about`.
+async function fetchAboutByBlock(db: Surreal, narrativeIds: string[]): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>()
+  if (narrativeIds.length === 0) return map
+  const refs = narrativeIds.map(s => new StringRecordId(s))
+  const [rows] = await db.query<[{ in: RecordIdish; out: RecordIdish }[]]>(
+    'SELECT in, out FROM about WHERE in IN $ids',
+    {
+      ids: refs
+    }
+  )
+  for (const a of rows ?? []) {
+    const block = idStr(a.in)
+    map.set(block, [...(map.get(block) ?? []), idStr(a.out)])
+  }
+  return map
+}
+
+/**
+ * A context header per block, so the embedded vector carries the block's subject
+ * and its place in the hierarchy instead of an orphan fragment (see the retrieval
+ * roadmap / "Talk like a Graph"). Descriptive blocks → their owning note + its
+ * `part_of` parent; narrative blocks → the notes they are `about`. One level of
+ * parent for now; deepening the breadcrumb is a follow-up.
+ */
+async function buildBlockContexts(db: Surreal, rows: BlockRow[]): Promise<Map<string, string>> {
+  const ownerIds = new Set<string>()
+  const narrativeIds: string[] = []
+  for (const r of rows) {
+    if (r.block_kind === 'narrative') narrativeIds.push(idStr(r.id))
+    else if (r.note) ownerIds.add(idStr(r.note))
+  }
+
+  const ownerMap = await fetchOwners(db, ownerIds)
+  const aboutByBlock = await fetchAboutByBlock(db, narrativeIds)
+
+  // Resolve labels for the referenced notes (parents + about targets).
+  const noteIds = new Set<string>()
+  for (const v of ownerMap.values()) if (v.parentId) noteIds.add(v.parentId)
+  for (const ns of aboutByBlock.values()) for (const n of ns) noteIds.add(n)
+  const noteRec = new Map<string, GraphNodeRecord>(
+    (await selectByIds<GraphNodeRecord>([...noteIds])).map(r => [idStr(r.id), r])
+  )
+
+  const out = new Map<string, string>()
+  for (const r of rows) out.set(idStr(r.id), headerForBlock(r, ownerMap, aboutByBlock, noteRec))
+  return out
+}
+
 export async function indexBlockImpl(input: IndexBlockInput): Promise<IndexBlockResult> {
   const db = await getDb()
   const refs = input.block_ids.map(id => new StringRecordId(id))
 
-  const [rows] = await db.query<[{ id: RecordIdish; content: string }[]]>(
-    'SELECT id, content FROM block WHERE id IN $ids',
-    { ids: refs }
-  )
+  const [rows] = await db.query<[BlockRow[]]>('SELECT id, content, block_kind, note FROM block WHERE id IN $ids', {
+    ids: refs
+  })
   if (rows.length !== input.block_ids.length) {
     const found = new Set(rows.map(r => idStr(r.id)))
     const missing = input.block_ids.filter(id => !found.has(id))
     throw new BlockNotFoundError(missing)
   }
 
+  const contexts = await buildBlockContexts(db, rows)
   const byId = new Map(rows.map(r => [idStr(r.id), r.content]))
-  const orderedContents = input.block_ids.map(id => {
-    const c = byId.get(id)
-    if (c == null) throw new Error(`internal: missing content for ${id}`)
-    return c
+  const orderedTexts = input.block_ids.map(id => {
+    const content = byId.get(id)
+    if (content == null) throw new Error(`internal: missing content for ${id}`)
+    const header = contexts.get(id) ?? ''
+    return header ? `${header}\n\n${content}` : content
   })
 
-  const result = await embedTexts(orderedContents)
+  const result = await embedTexts(orderedTexts)
 
   for (let i = 0; i < input.block_ids.length; i++) {
     await db.query('UPDATE $id SET embedding = $emb, embedding_model = $model, dimensions = $dim', {
