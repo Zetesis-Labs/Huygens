@@ -1,7 +1,8 @@
+import { BLOCK_ID_RE, NOTE_ID_RE, RAW_CAPTURE_ID_RE } from '../../domain'
 import { getDb, selectByIds } from '../../surreal'
 import { type GraphEdgeRecord, type GraphNodeRecord, idStr, tableOf } from '../graph-records'
 import { contextEndpointIds, contextLabel, type MaterializedGraph, mutatedNodeIds } from './context-labels'
-import type { GetProposalInput, ProposalResult } from './schemas'
+import type { GetProposalInput, ProposalPayload, ProposalResult } from './schemas'
 import { fetchProposal } from './store'
 
 export type ProposalChanges = {
@@ -76,6 +77,31 @@ export async function resolveContextLabels(m: MaterializedGraph): Promise<Record
   const endpoints = contextEndpointIds(m, mutatedNodeIds(m))
   const labels: Record<string, string> = {}
   for (const row of await selectByIds<GraphNodeRecord>(endpoints)) {
+    const label = contextLabel(row)
+    if (label) labels[idStr(row.id)] = label
+  }
+  return labels
+}
+
+const isRealRef = (ref: string): boolean => NOTE_ID_RE.test(ref) || BLOCK_ID_RE.test(ref) || RAW_CAPTURE_ID_RE.test(ref)
+
+/** Resolve human labels (id → text) for the *existing* records a draft payload
+ * references: the notes it updates, the source raws, and any pre-existing edge
+ * endpoint given by real record id. Lets the draft D2 preview show real titles
+ * instead of bare ids. Pure read; temp_ids are skipped (they have no record
+ * yet — their label comes from the payload itself). */
+export async function resolveDraftLabels(payload: ProposalPayload): Promise<Record<string, string>> {
+  const ids = new Set<string>()
+  for (const note of payload.note_updates) ids.add(note.id)
+  for (const block of payload.narrative_blocks) for (const raw of block.raw_ids) ids.add(raw)
+  for (const link of payload.about) if (isRealRef(link.note_ref)) ids.add(link.note_ref)
+  for (const affect of payload.affects) if (isRealRef(affect.note_ref)) ids.add(affect.note_ref)
+  for (const edge of payload.edges) {
+    if (isRealRef(edge.from)) ids.add(edge.from)
+    if (isRealRef(edge.to)) ids.add(edge.to)
+  }
+  const labels: Record<string, string> = {}
+  for (const row of await selectByIds<GraphNodeRecord>([...ids])) {
     const label = contextLabel(row)
     if (label) labels[idStr(row.id)] = label
   }

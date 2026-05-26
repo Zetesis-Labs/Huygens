@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import type { ProposalChanges } from '../src/tools/proposal'
-import { renderProposalD2, renderProposalSemanticD2 } from '../src/tools/proposal-d2'
+import type { ProposalChanges, ProposalPayload } from '../src/tools/proposal'
+import { renderProposalD2, renderProposalDraftD2, renderProposalSemanticD2 } from '../src/tools/proposal-d2'
 
 function changes(materialized: ProposalChanges['materialized']): ProposalChanges {
   return {
@@ -96,5 +96,50 @@ describe('renderProposalSemanticD2', () => {
 
   test('is deterministic', () => {
     expect(renderProposalSemanticD2(sample)).toBe(renderProposalSemanticD2(sample))
+  })
+})
+
+describe('renderProposalDraftD2', () => {
+  const payload: ProposalPayload = {
+    raw_ids: ['raw_capture:r1'],
+    narrative_blocks: [{ temp_id: 'estado', content: 'Estado del proyecto.', raw_ids: ['raw_capture:r1'] }],
+    note_creates: [{ temp_id: 'task1', type_slug: 'task', title: 'Call Ana', state: 'ACTIVE', descriptive_blocks: [] }],
+    note_updates: [{ id: 'note:existing', state: 'DONE', descriptive_blocks_append: [] }],
+    edges: [{ kind: 'part_of', from: 'task1', to: 'note:project' }],
+    about: [{ block_temp_id: 'estado', note_ref: 'note:existing' }],
+    affects: [{ block_temp_id: 'estado', note_ref: 'note:existing', action: 'state_changed' }]
+  }
+
+  test('draws created notes, narrative blocks, updates and edges from the payload', () => {
+    const d2 = renderProposalDraftD2('proposal:test', payload, {
+      'note:existing': 'task · Existing',
+      'note:project': 'project · Proj'
+    })
+    // a note to create, keyed by its temp_id
+    expect(d2).toContain('task1: "task · Call Ana" { class: created; shape: rectangle }')
+    // the narrative block is a created "page" node
+    expect(d2).toContain('class: created; shape: page')
+    expect(d2).toContain('Estado del proyecto.')
+    // the note to update, labelled from the resolved context
+    expect(d2).toContain('task · Existing')
+    expect(d2).toContain('class: updated')
+    // edges
+    expect(d2).toContain('derived_from')
+    expect(d2).toContain('about')
+    expect(d2).toContain('affects · state_changed')
+    expect(d2).toContain('part_of')
+    // endpoints outside the payload become context nodes
+    expect(d2).toContain('project · Proj')
+    expect(d2).toContain('raw_capture_r1')
+    expect(d2).toContain('classes:')
+  })
+
+  test('falls back to the raw id when a context label is not resolved', () => {
+    const d2 = renderProposalDraftD2('proposal:test', payload)
+    expect(d2).toContain('note_existing')
+  })
+
+  test('is deterministic', () => {
+    expect(renderProposalDraftD2('proposal:test', payload)).toBe(renderProposalDraftD2('proposal:test', payload))
   })
 })

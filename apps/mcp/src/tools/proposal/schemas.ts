@@ -112,12 +112,22 @@ export const updateProposalShape = {
   payload: proposalPayloadSchema
 }
 
-export const getProposalShape = {
+const proposalIdShape = {
   proposal_id: z.string().regex(PROPOSAL_ID_RE, 'Must be a record id like "proposal:abc123"')
 }
 
-export const discardProposalShape = getProposalShape
-export const commitProposalShape = getProposalShape
+export const getProposalShape = {
+  ...proposalIdShape,
+  format_d2: z
+    .enum(['code', 'svg', 'png', 'jpeg'])
+    .nullish()
+    .describe(
+      'Omit for the readable text diff + raw JSON. "code" returns the D2 source of the *proposed* change graph (works on drafts, derived from the payload); "svg"/"png"/"jpeg" return a rendered image of it.'
+    )
+}
+
+export const discardProposalShape = proposalIdShape
+export const commitProposalShape = proposalIdShape
 
 export const getProposalChangesShape = {
   proposal_id: z.string().regex(PROPOSAL_ID_RE, 'Must be a record id like "proposal:abc123"'),

@@ -1,5 +1,6 @@
 import { idStr, type RecordIdish, tableOf } from './graph-records'
 import type { ProposalChanges } from './proposal/changes'
+import type { ProposalPayload } from './proposal/schemas'
 
 /** A record id ("note:abc-1") → a valid D2 key ("note_abc_1"). */
 function d2key(id: string): string {
@@ -180,4 +181,33 @@ export function renderProposalSemanticD2(changes: ProposalChanges, contextLabels
   }
 
   return g.render(`# ${changes.proposal_id} — cambio semántico (${changes.committed_at ?? ''})`)
+}
+
+/**
+ * Render the *proposed* change graph of a proposal straight from its payload —
+ * works on a draft, before commit, when there is no materialized result yet.
+ * Notes to create and narrative blocks are `created` nodes keyed by their
+ * temp_id; notes to update are `updated` nodes; the edges (`derived_from`,
+ * `about`, `affects` and the note↔note `edges`) connect them. Endpoints given by
+ * a real record id (the source raw, a pre-existing parent) become dashed
+ * `context` nodes, labelled from `contextLabels` when resolved. Same input →
+ * same output.
+ */
+export function renderProposalDraftD2(
+  proposalId: string,
+  payload: ProposalPayload,
+  contextLabels: Record<string, string> = {}
+): string {
+  const g = new D2Graph(contextLabels)
+
+  for (const n of payload.note_creates) g.node(n.temp_id, `${n.type_slug} · ${n.title}`, 'created', 'rectangle')
+  for (const n of payload.note_updates) g.node(n.id, contextLabels[n.id] ?? n.title ?? n.id, 'updated', 'rectangle')
+  for (const b of payload.narrative_blocks) g.node(b.temp_id, `narrative · ${b.content}`, 'created', 'page')
+
+  for (const b of payload.narrative_blocks) for (const raw of b.raw_ids) g.edge(b.temp_id, raw, 'derived_from')
+  for (const a of payload.about) g.edge(a.block_temp_id, a.note_ref, 'about')
+  for (const a of payload.affects) g.edge(a.block_temp_id, a.note_ref, `affects · ${a.action}`)
+  for (const e of payload.edges) g.edge(e.from, e.to, e.kind)
+
+  return g.render(`# ${proposalId} — Δ proposed (draft preview)`)
 }
