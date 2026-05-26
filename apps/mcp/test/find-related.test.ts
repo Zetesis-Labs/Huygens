@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import type { NoteTypeSlug } from '../src/domain'
+import { setEmbedderOverride } from '../src/embeddings'
 import { findRelatedImpl } from '../src/tools/find-related'
 import { indexBlockImpl } from '../src/tools/index-block'
+import { fakeEmbedder } from './_embedder'
 import { insertNote, type TestDb, withFreshDb } from './_fixtures'
+
+// These tests use a deterministic bag-of-words embedder (see _embedder.ts), so
+// "related" means lexical overlap, not semantics — the seed text and queries
+// are chosen to share words on purpose. They exercise the retrieval pipeline
+// (KNN, threshold, dedup, k-cap), not BGE-M3's semantic quality.
 
 async function seed(ctx: TestDb, title: string, body: string, type_slug: NoteTypeSlug = 'idea'): Promise<string> {
   const r = await insertNote(ctx.db, { title, type_slug, blocks: [body] })
@@ -13,10 +20,12 @@ async function seed(ctx: TestDb, title: string, body: string, type_slug: NoteTyp
 describe('findRelatedImpl', () => {
   let ctx: TestDb
   beforeEach(async () => {
+    setEmbedderOverride(fakeEmbedder)
     ctx = await withFreshDb()
   })
   afterEach(async () => {
     await ctx.cleanup()
+    setEmbedderOverride(null)
   })
 
   test('empty corpus → empty list', async () => {
@@ -37,16 +46,8 @@ describe('findRelatedImpl', () => {
   })
 
   test('finds an existing note for a related query', async () => {
-    const id = await seed(
-      ctx,
-      'Applicative functors',
-      'Structure that lets you apply wrapped functions to wrapped values. Generalizes the builder pattern.'
-    )
-    await seed(
-      ctx,
-      'Recipe for paella',
-      'Saffron, bomba rice, sofrito, broth. The trick is not stirring once the rice is in.'
-    )
+    const id = await seed(ctx, 'Applicative functors', 'Applicative functor pattern wraps values.')
+    await seed(ctx, 'Recipe for paella', 'Saffron, bomba rice, sofrito, broth.')
 
     const hits = await findRelatedImpl({ query: 'applicative functor patterns', k: 5, threshold: 0.3 })
     expect(hits.length).toBeGreaterThan(0)
@@ -68,15 +69,11 @@ describe('findRelatedImpl', () => {
     const r = await insertNote(ctx.db, {
       title: 'Category theory notes',
       type_slug: 'idea',
-      blocks: [
-        'A monad is a monoid in the category of endofunctors.',
-        'Functors preserve structure. Applicative functors compose monoidal effects.',
-        'Natural transformations connect functors.'
-      ]
+      blocks: ['Functor and monad basics.', 'Functor composes with monad.', 'Natural transformation links functor.']
     })
     await indexBlockImpl({ block_ids: r.block_ids })
 
-    const hits = await findRelatedImpl({ query: 'functors and monads', k: 5, threshold: 0.3 })
+    const hits = await findRelatedImpl({ query: 'functors monads', k: 5, threshold: 0.3 })
     const noteIds = hits.map(h => h.note_id)
     expect(new Set(noteIds).size).toBe(noteIds.length)
     expect(noteIds[0]).toBe(r.note_id)
@@ -84,7 +81,7 @@ describe('findRelatedImpl', () => {
 
   test('respects the k cap', async () => {
     for (let i = 0; i < 6; i++) {
-      await seed(ctx, `Note about category theory ${i}`, `Category theory chunk number ${i} discussing functors.`)
+      await seed(ctx, `Note about category theory ${i}`, `Category theory note number ${i} discussing functor.`)
     }
     const hits = await findRelatedImpl({ query: 'category theory', k: 3, threshold: 0.3 })
     expect(hits.length).toBeLessThanOrEqual(3)

@@ -12,6 +12,8 @@ export type EmbedResult = {
   input_tokens: number
 }
 
+export type Embedder = (inputs: string[], opts?: { signal?: AbortSignal }) => Promise<EmbedResult>
+
 type DeepInfraResponse = {
   embeddings?: number[][]
   input_tokens?: number
@@ -19,7 +21,24 @@ type DeepInfraResponse = {
   detail?: { error?: string } | string
 }
 
+let embedderOverride: Embedder | null = null
+
+/**
+ * Test seam: replace the real embedder (DeepInfra) with a stand-in, mirroring
+ * `setDbOverride`. Pass `null` to restore. Lets the suite run hermetically and
+ * deterministically without the provider or an API key.
+ */
+export function setEmbedderOverride(embedder: Embedder | null): void {
+  embedderOverride = embedder
+}
+
+/** Embed texts via the configured embedder (DeepInfra by default). */
 export async function embedTexts(inputs: string[], opts: { signal?: AbortSignal } = {}): Promise<EmbedResult> {
+  if (embedderOverride) return embedderOverride(inputs, opts)
+  return embedViaDeepInfra(inputs, opts)
+}
+
+async function embedViaDeepInfra(inputs: string[], opts: { signal?: AbortSignal } = {}): Promise<EmbedResult> {
   const apiKey = process.env.DEEPINFRA_API_KEY
   if (!apiKey) throw new ConfigMissingError('DEEPINFRA_API_KEY')
   if (inputs.length === 0) {

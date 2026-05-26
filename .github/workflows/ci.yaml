@@ -28,9 +28,9 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-  # Test gate: runs the MCP test suite against a throwaway SurrealDB. The
-  # find-related/vector tests embed text via DeepInfra, so DEEPINFRA_API_KEY
-  # must be configured as a repository secret.
+  # Test gate: runs the MCP test suite against a throwaway SurrealDB. The suite
+  # is hermetic — embeddings are stubbed via setEmbedderOverride — so no external
+  # provider or API key is needed.
   test:
     runs-on: cardano-runners
     steps:
@@ -70,7 +70,6 @@ jobs:
           SURREAL_DB: main
           SURREAL_USER: root
           SURREAL_PASS: root
-          DEEPINFRA_API_KEY: ${{ secrets.DEEPINFRA_API_KEY }}
         run: bun run test
 
       - name: Stop SurrealDB
