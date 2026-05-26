@@ -12,7 +12,8 @@ import {
   RAW_CAPTURE_ID_RE
 } from '../domain'
 import { emitEvent, newSessionId } from '../events'
-import { getDb } from '../surreal'
+import { getDb, selectByIds } from '../surreal'
+import { type GraphEdgeRecord, type GraphNodeRecord, idStr, tableOf } from './graph-records'
 import { renderProposalD2, renderProposalSemanticD2 } from './proposal-d2'
 import { type D2Format, renderD2 } from './proposal-d2-render'
 import { renderProposalDiff } from './proposal-render'
@@ -749,14 +750,14 @@ export type ProposalChanges = {
   versionstamp: string | null
   committed_at: string | null
   materialized: {
-    notes_created: unknown[]
-    notes_updated: unknown[]
-    narrative_blocks_created: unknown[]
-    descriptive_blocks_created: unknown[]
-    derived_from: unknown[]
-    about: unknown[]
-    affects: unknown[]
-    semantic_edges: unknown[]
+    notes_created: GraphNodeRecord[]
+    notes_updated: GraphNodeRecord[]
+    narrative_blocks_created: GraphNodeRecord[]
+    descriptive_blocks_created: GraphNodeRecord[]
+    derived_from: GraphEdgeRecord[]
+    about: GraphEdgeRecord[]
+    affects: GraphEdgeRecord[]
+    semantic_edges: GraphEdgeRecord[]
   } | null
   changefeed: {
     available: boolean
@@ -764,16 +765,6 @@ export type ProposalChanges = {
     tables: Record<string, unknown[]>
     note?: string
   }
-}
-
-/** Vía 1: resolve a list of record ids to their current records. */
-async function resolveRecords(idsList: unknown): Promise<unknown[]> {
-  const list = Array.isArray(idsList) ? idsList : []
-  if (list.length === 0) return []
-  const db = await getDb()
-  const refs = list.map(value => new StringRecordId(String(value)))
-  const [rows] = await db.query<[unknown[]]>('SELECT * FROM $ids', { ids: refs })
-  return rows ?? []
 }
 
 /** Deep-normalize a value to JSON-safe form (changefeed versionstamps are BigInt,
@@ -806,7 +797,7 @@ function tablesFromResult(result: ProposalResult): string[] {
   ]
   const tables = new Set<string>(['raw_capture'])
   for (const id of all) {
-    const table = String(id).split(':')[0]
+    const table = tableOf(id)
     if (table) tables.add(table)
   }
   return [...tables]
@@ -814,14 +805,14 @@ function tablesFromResult(result: ProposalResult): string[] {
 
 async function materializeResult(result: ProposalResult): Promise<NonNullable<ProposalChanges['materialized']>> {
   return {
-    notes_created: await resolveRecords(result.notes_created),
-    notes_updated: await resolveRecords(result.notes_updated),
-    narrative_blocks_created: await resolveRecords(result.narrative_blocks_created),
-    descriptive_blocks_created: await resolveRecords(result.descriptive_blocks_created),
-    derived_from: await resolveRecords(result.derived_from),
-    about: await resolveRecords(result.about),
-    affects: await resolveRecords(result.affects),
-    semantic_edges: await resolveRecords(result.semantic_edges)
+    notes_created: await selectByIds<GraphNodeRecord>(result.notes_created),
+    notes_updated: await selectByIds<GraphNodeRecord>(result.notes_updated),
+    narrative_blocks_created: await selectByIds<GraphNodeRecord>(result.narrative_blocks_created),
+    descriptive_blocks_created: await selectByIds<GraphNodeRecord>(result.descriptive_blocks_created),
+    derived_from: await selectByIds<GraphEdgeRecord>(result.derived_from),
+    about: await selectByIds<GraphEdgeRecord>(result.about),
+    affects: await selectByIds<GraphEdgeRecord>(result.affects),
+    semantic_edges: await selectByIds<GraphEdgeRecord>(result.semantic_edges)
   }
 }
 
@@ -832,50 +823,27 @@ async function materializeResult(result: ProposalResult): Promise<NonNullable<Pr
 async function resolveContextLabels(
   m: NonNullable<ProposalChanges['materialized']>
 ): Promise<Record<string, string>> {
-  const recId = (r: unknown): string | null => {
-    const id = (r as { id?: unknown } | null)?.id
-    return id == null ? null : String(id)
-  }
   const created = new Set<string>()
-  for (const group of [m.notes_created, m.notes_updated, m.narrative_blocks_created, m.descriptive_blocks_created]) {
-    for (const r of Array.isArray(group) ? group : []) {
-      const id = recId(r)
-      if (id) created.add(id)
-    }
+  for (const node of [...m.notes_created, ...m.notes_updated, ...m.narrative_blocks_created, ...m.descriptive_blocks_created]) {
+    created.add(idStr(node.id))
   }
   const endpoints = new Set<string>()
-  for (const group of [m.derived_from, m.about, m.affects, m.semantic_edges]) {
-    for (const e of Array.isArray(group) ? group : []) {
-      for (const side of ['in', 'out'] as const) {
-        const v = (e as { in?: unknown; out?: unknown })?.[side]
-        if (v == null) continue
-        const id = String(v)
-        if (!created.has(id)) endpoints.add(id)
-      }
+  for (const edge of [...m.derived_from, ...m.about, ...m.affects, ...m.semantic_edges]) {
+    for (const id of [idStr(edge.in), idStr(edge.out)]) {
+      if (id && !created.has(id)) endpoints.add(id)
     }
   }
-  if (endpoints.size === 0) return {}
-  const db = await getDb()
-  const refs = [...endpoints].map(id => new StringRecordId(id))
-  // NOTE: a field projection over a bound record-id array (`SELECT a,b FROM $ids`)
-  // makes SurrealDB reject the query with "Specify a database to use". `SELECT *`
-  // works, so fetch the whole record and pick fields in JS (as resolveRecords does).
-  const [rows] = await db.query<[Array<{ id: unknown; title?: unknown; content?: unknown; type?: unknown }>]>(
-    'SELECT * FROM $ids',
-    { ids: refs }
-  )
   const labels: Record<string, string> = {}
-  for (const row of rows ?? []) {
-    const id = String(row.id)
-    const table = id.split(':')[0]
-    if (table === 'raw_capture') {
-      labels[id] = `raw · ${String(row.content ?? '')}`
-    } else if (table === 'note') {
-      const t = String(row.type ?? '').replace(/^note_type:/, '')
-      const title = String(row.title ?? '')
-      labels[id] = t ? `${t} · ${title}` : title || id
-    } else if (table === 'block') {
-      labels[id] = `block · ${String(row.content ?? '')}`
+  for (const row of await selectByIds<GraphNodeRecord>([...endpoints])) {
+    const id = idStr(row.id)
+    if (tableOf(id) === 'raw_capture') {
+      labels[id] = `raw · ${row.content ?? ''}`
+    } else if (tableOf(id) === 'note') {
+      const type = idStr(row.type).replace(/^note_type:/, '')
+      const title = row.title ?? ''
+      labels[id] = type ? `${type} · ${title}` : title || id
+    } else if (tableOf(id) === 'block') {
+      labels[id] = `block · ${row.content ?? ''}`
     }
   }
   return labels
@@ -908,7 +876,7 @@ export async function getProposalChangesImpl(input: GetProposalInput): Promise<P
   const proposal = await fetchProposal(input.proposal_id)
   if (!proposal) throw new Error(`proposal not found: ${input.proposal_id}`)
   const result = proposal.result ?? null
-  const base = { proposal_id: String(proposal.id), status: proposal.status }
+  const base = { proposal_id: idStr(proposal.id), status: proposal.status }
   if (!result) {
     return {
       ...base,

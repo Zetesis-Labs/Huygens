@@ -1,15 +1,5 @@
+import { type RecordIdish, idStr, tableOf } from './graph-records'
 import type { ProposalChanges } from './proposal'
-
-// Resolved records / edges come back from the graph as flexible objects.
-type Rec = {
-  id?: unknown
-  title?: unknown
-  type?: unknown
-  content?: unknown
-  in?: unknown
-  out?: unknown
-  action?: unknown
-}
 
 /** A record id ("note:abc-1") → a valid D2 key ("note_abc_1"). */
 function d2key(id: string): string {
@@ -17,8 +7,13 @@ function d2key(id: string): string {
 }
 
 /** Strip the table prefix from a typed ref: "note_type:task" → "task". */
-function shortType(value: unknown): string {
-  return String(value ?? '').replace(/^note_type:/, '')
+function shortType(value: RecordIdish | undefined): string {
+  return idStr(value).replace(/^note_type:/, '')
+}
+
+/** An edge's kind is its table: "part_of:abc" → "part_of". */
+function edgeKind(id: RecordIdish): string {
+  return tableOf(id) || 'edge'
 }
 
 /** Normalize text for a quoted D2 label: collapse whitespace, avoid the closing
@@ -49,10 +44,6 @@ function wrap(text: string, perLine = 40, maxLines = 16): string {
     lines[maxLines - 1] = `${lines[maxLines - 1]} …`
   }
   return lines.join('\\n')
-}
-
-function asArray(value: unknown): Rec[] {
-  return Array.isArray(value) ? (value as Rec[]) : []
 }
 
 type NodeClass = 'created' | 'updated' | 'context' | 'origin'
@@ -132,17 +123,16 @@ export function renderProposalD2(
   }
   const g = new D2Graph(contextLabels)
 
-  for (const n of asArray(m.notes_created))
-    g.node(String(n.id), `${shortType(n.type)} · ${n.title}`, 'created', 'rectangle')
-  for (const n of asArray(m.notes_updated))
-    g.node(String(n.id), `${shortType(n.type)} · ${n.title}`, 'updated', 'rectangle')
-  for (const b of asArray(m.narrative_blocks_created))
-    g.node(String(b.id), `narrative · ${b.content ?? ''}`, 'created', 'page')
+  for (const n of m.notes_created)
+    g.node(idStr(n.id), `${shortType(n.type)} · ${n.title ?? ''}`, 'created', 'rectangle')
+  for (const n of m.notes_updated)
+    g.node(idStr(n.id), `${shortType(n.type)} · ${n.title ?? ''}`, 'updated', 'rectangle')
+  for (const b of m.narrative_blocks_created) g.node(idStr(b.id), `narrative · ${b.content ?? ''}`, 'created', 'page')
 
-  for (const e of asArray(m.derived_from)) g.edge(String(e.in), String(e.out), 'derived_from')
-  for (const e of asArray(m.about)) g.edge(String(e.in), String(e.out), 'about')
-  for (const e of asArray(m.affects)) g.edge(String(e.in), String(e.out), `affects · ${String(e.action ?? '')}`)
-  for (const e of asArray(m.semantic_edges)) g.edge(String(e.in), String(e.out), String(e.id).split(':')[0] ?? 'edge')
+  for (const e of m.derived_from) g.edge(idStr(e.in), idStr(e.out), 'derived_from')
+  for (const e of m.about) g.edge(idStr(e.in), idStr(e.out), 'about')
+  for (const e of m.affects) g.edge(idStr(e.in), idStr(e.out), `affects · ${e.action ?? ''}`)
+  for (const e of m.semantic_edges) g.edge(idStr(e.in), idStr(e.out), edgeKind(e.id))
 
   return g.render(`# ${changes.proposal_id} — Δ commit · audit (${changes.committed_at ?? ''})`)
 }
@@ -166,30 +156,30 @@ export function renderProposalSemanticD2(
   }
   const g = new D2Graph(contextLabels)
 
-  const narrative = asArray(m.narrative_blocks_created)
-    .map(b => String(b.content ?? ''))
+  const narrative = m.narrative_blocks_created
+    .map(b => b.content ?? '')
     .filter(Boolean)
     .join(' / ')
   if (narrative) g.caption(narrative)
 
   const mutated: string[] = []
-  for (const n of asArray(m.notes_created)) {
-    const id = String(n.id)
-    g.node(id, `${shortType(n.type)} · ${n.title}`, 'created', 'rectangle')
+  for (const n of m.notes_created) {
+    const id = idStr(n.id)
+    g.node(id, `${shortType(n.type)} · ${n.title ?? ''}`, 'created', 'rectangle')
     mutated.push(id)
   }
-  for (const n of asArray(m.notes_updated)) {
-    const id = String(n.id)
-    g.node(id, `${shortType(n.type)} · ${n.title}`, 'updated', 'rectangle')
+  for (const n of m.notes_updated) {
+    const id = idStr(n.id)
+    g.node(id, `${shortType(n.type)} · ${n.title ?? ''}`, 'updated', 'rectangle')
     mutated.push(id)
   }
 
   // Note↔note topology — the part the user reasons about.
-  for (const e of asArray(m.semantic_edges)) g.edge(String(e.in), String(e.out), String(e.id).split(':')[0] ?? 'edge')
+  for (const e of m.semantic_edges) g.edge(idStr(e.in), idStr(e.out), edgeKind(e.id))
 
   // Provenance kept lightweight: the originating raw(s) → the notes they mutated.
   const raws = new Set<string>()
-  for (const e of asArray(m.derived_from)) raws.add(String(e.out))
+  for (const e of m.derived_from) raws.add(idStr(e.out))
   for (const raw of raws) {
     g.node(raw, contextLabels[raw] ?? raw, 'origin', 'document')
     for (const noteId of mutated) g.edge(raw, noteId, 'captura', { dashed: true })

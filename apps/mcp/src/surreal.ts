@@ -1,4 +1,4 @@
-import { Surreal } from 'surrealdb'
+import { StringRecordId, Surreal } from 'surrealdb'
 import { ConfigMissingError } from './errors'
 
 type SurrealConfig = {
@@ -137,6 +137,23 @@ export async function getReadOnlyDb(): Promise<Surreal> {
   const db = await connectClient(cfg)
   readerCached = makeResilient(db, readerConfig, 'reader')
   return readerCached
+}
+
+/**
+ * Fetch full records by id as a typed array. This is the single trust boundary
+ * between SurrealDB's untyped rows and the rest of the code: the `<T>` cast lives
+ * here and nowhere else.
+ *
+ * Uses `SELECT *` deliberately — a field projection over a bound record-id array
+ * (`SELECT a,b FROM $ids`) makes SurrealDB reject the query with "Specify a
+ * database to use". Callers pick the fields they need from the typed result.
+ */
+export async function selectByIds<T>(ids: string[]): Promise<T[]> {
+  if (ids.length === 0) return []
+  const db = await getDb()
+  const refs = ids.map(id => new StringRecordId(id))
+  const [rows] = await db.query<[T[]]>('SELECT * FROM $ids', { ids: refs })
+  return rows ?? []
 }
 
 export async function closeDb(): Promise<void> {
