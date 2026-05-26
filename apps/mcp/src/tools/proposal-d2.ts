@@ -1,5 +1,5 @@
 import { type RecordIdish, idStr, tableOf } from './graph-records'
-import type { ProposalChanges } from './proposal'
+import type { ProposalChanges } from './proposal/changes'
 
 /** A record id ("note:abc-1") → a valid D2 key ("note_abc_1"). */
 function d2key(id: string): string {

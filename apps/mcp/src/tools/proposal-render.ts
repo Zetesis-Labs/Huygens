@@ -1,4 +1,4 @@
-import type { ProposalDetail, ProposalPayload } from './proposal'
+import type { ProposalDetail, ProposalPayload } from './proposal/schemas'
 
 const PREVIEW_MAX = 60
 
