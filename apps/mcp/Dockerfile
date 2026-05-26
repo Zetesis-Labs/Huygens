@@ -11,8 +11,12 @@ WORKDIR /app
 
 COPY package.json bun.lock ./
 COPY apps/mcp/package.json ./apps/mcp/package.json
+# Other workspace manifests are needed so `--frozen-lockfile` can resolve the
+# whole workspace; `--filter` keeps the install scoped to the MCP, so the image
+# does not pull the dashboard's deps.
+COPY apps/dashboard/package.json ./apps/dashboard/package.json
 
-RUN bun install --frozen-lockfile
+RUN bun install --filter '@huygens/mcp' --frozen-lockfile
 
 COPY apps/mcp ./apps/mcp
 

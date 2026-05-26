@@ -25,30 +25,31 @@ function buildNoteCreateData(note: NoteCreate): Record<string, unknown> {
   return data
 }
 
-/** Highest versionstamp currently in a table's changefeed (0n if none). */
-async function maxVersionstamp(table: string): Promise<bigint> {
-  const db = await getDb()
-  const [rows] = await db.query<[Array<{ versionstamp: bigint }>]>(`SHOW CHANGES FOR TABLE ${table} SINCE 0`)
-  let max = 0n
-  for (const r of rows ?? []) if (typeof r.versionstamp === 'bigint' && r.versionstamp > max) max = r.versionstamp
-  return max
-}
-
 /**
- * The versionstamp of the changeset that landed after `since`. Best-effort:
- * the changefeed needs a moment to flush, so retry a few times. Returns the
- * versionstamp as a string (it is a u64 bigint, beyond Number precision), or
- * null if nothing surfaced.
+ * The versionstamp of the commit transaction, recovered from the proposal's own
+ * changefeed entry. The proposal record is upserted inside the commit tx, so its
+ * changefeed entry carries the transaction's (single, table-global) versionstamp.
+ *
+ * We query `SHOW CHANGES FOR TABLE proposal SINCE d"<before>"` with a DB-clock
+ * datetime captured before the commit. Datetime `SINCE` works; `SINCE 0` /
+ * `SINCE <low versionstamp>` are broken in SurrealDB 3.0.5 and silently return
+ * empty — which is why this used to come back null on nearly every commit. The
+ * entry is durable, so we only retry to absorb the changefeed flush lag. Returns
+ * the u64 as a string (beyond Number precision), or null if nothing surfaced.
  */
-async function versionstampSince(table: string, since: bigint): Promise<string | null> {
+async function versionstampForProposal(proposalId: RecordId, since: string): Promise<string | null> {
   const db = await getDb()
+  const id = String(proposalId)
   for (let attempt = 0; attempt < 5; attempt++) {
-    const [rows] = await db.query<[Array<{ versionstamp: bigint }>]>(
-      `SHOW CHANGES FOR TABLE ${table} SINCE ${since + 1n}`
+    const [rows] = await db.query<[Array<{ versionstamp: bigint; changes: Array<{ update?: { id?: unknown } }> }>]>(
+      `SHOW CHANGES FOR TABLE proposal SINCE d"${since}"`
     )
-    let max = 0n
-    for (const r of rows ?? []) if (typeof r.versionstamp === 'bigint' && r.versionstamp > max) max = r.versionstamp
-    if (max > 0n) return String(max)
+    for (const row of rows ?? []) {
+      if (typeof row.versionstamp !== 'bigint') continue
+      for (const change of row.changes ?? []) {
+        if (change.update && String(change.update.id) === id) return String(row.versionstamp)
+      }
+    }
     await new Promise(resolve => setTimeout(resolve, 150))
   }
   return null
@@ -263,15 +264,16 @@ export async function commitProposalImpl(input: CommitProposalInput): Promise<Co
   await assertRawCapturesCommittable(payload.raw_ids)
   await assertProposalRefs(payload)
 
-  // Narrative blocks (>= 1 always) guarantee the `block` table is written, so it
-  // is a reliable witness for locating the commit's versionstamp.
-  const vsBefore = await maxVersionstamp('block')
+  // DB-clock timestamp captured before the commit, used afterwards to locate the
+  // commit's versionstamp via the proposal's own changefeed entry.
+  const [before] = await db.query<[string]>('RETURN <string> time::now();')
 
   const { query, params } = buildCommitTx(payload, proposal.id)
   await db.query(query, params) // atomic: any failure rolls the whole commit back
 
-  // Best-effort: stamp the proposal with the transaction's versionstamp.
-  const versionstamp = await versionstampSince('block', vsBefore)
+  // Stamp the proposal with the transaction's versionstamp (anchor for replaying
+  // the exact changeset / reconstructing the graph at commit time).
+  const versionstamp = await versionstampForProposal(proposal.id, before)
   if (versionstamp != null) {
     await db.query('UPDATE $proposal SET result.versionstamp = $vs', { proposal: proposal.id, vs: versionstamp })
   }
