@@ -88,16 +88,21 @@ export type Proposal = {
     }[]
     edges: { kind: string; from: string; to: string; reason?: string }[]
   }
+  /** Materialized commit result (committed proposals only). `versionstamp` +
+   * `committed_at` are the anchor for reconstructing the graph at commit time. */
+  result?: {
+    versionstamp?: string | null
+    committed_at?: unknown
+  } | null
 }
 
 export async function getProposal(id: string): Promise<Proposal | null> {
   const db = await getDb()
-  const [rows] = await db.query<[Array<{ id: unknown; status: string; payload: Proposal['payload'] }>]>(
-    `SELECT meta::id(id) AS id, status, payload FROM proposal WHERE meta::id(id) = $id`,
-    { id }
-  )
+  const [rows] = await db.query<
+    [Array<{ id: unknown; status: string; payload: Proposal['payload']; result?: Proposal['result'] }>]
+  >(`SELECT meta::id(id) AS id, status, payload, result FROM proposal WHERE meta::id(id) = $id`, { id })
   const row = rows?.[0]
-  return row ? { id: String(row.id), status: row.status, payload: row.payload } : null
+  return row ? { id: String(row.id), status: row.status, payload: row.payload, result: row.result ?? null } : null
 }
 
 const REAL_ID = /^(note|block|raw_capture):/
@@ -166,6 +171,99 @@ export async function existingEdgesAmong(ids: string[]): Promise<ExistingEdge[]>
     `SELECT in, out, meta::tb(id) AS kind
      FROM part_of, blocked_by, mentions
      WHERE in IN $ids AND out IN $ids`,
+    params
+  )
+  return (rows ?? []).map(r => ({ source: String(r.in), target: String(r.out), kind: r.kind }))
+}
+
+// ── Time-travel reads (historical context for committed proposals) ───────────
+// Reliable only two ways in SurrealDB 3.0.5 (see ADR-0025): VERSION *by record
+// id*, and changefeed *replay*. Table scans with VERSION wrongly return deleted
+// records, so topology must be replayed, never VERSION-scanned (until the engine
+// fixes it — then `scanEdgesAmongAt` is the drop-in replacement).
+
+const SAFE_RECORD_ID = /^(note|block|raw_capture):[A-Za-z0-9]+$/
+
+/**
+ * Labels (type + title) of a proposal's referenced records **as of** `committedAt`,
+ * read with VERSION *by record id* (the only reliable time-travel read). One
+ * statement per id; deleted-since records simply yield no row (fall back to id).
+ */
+export async function labelsAtVersion(
+  p: Proposal,
+  committedAt: string
+): Promise<Record<string, { type: string; title: string }>> {
+  const ids = referencedRealIds(p).filter(id => SAFE_RECORD_ID.test(id))
+  if (ids.length === 0) return {}
+  const db = await getDb()
+  const stmts = ids.map(id =>
+    id.startsWith('note:')
+      ? `SELECT type, title FROM ${id} VERSION d"${committedAt}";`
+      : `SELECT content FROM ${id} VERSION d"${committedAt}";`
+  )
+  const results = await db.query<Array<Array<{ type?: unknown; title?: string; content?: string }>>>(stmts.join('\n'))
+  const labels: Record<string, { type: string; title: string }> = {}
+  ids.forEach((id, i) => {
+    const row = results[i]?.[0]
+    if (!row) return
+    if (id.startsWith('note:'))
+      labels[id] = { type: String(row.type ?? '').replace(/^note_type:/, '') || '?', title: row.title ?? id }
+    else if (id.startsWith('raw_capture:')) labels[id] = { type: 'raw', title: (row.content ?? '').slice(0, 60) }
+    else labels[id] = { type: 'block', title: (row.content ?? '').slice(0, 60) }
+  })
+  return labels
+}
+
+type EdgeChange = { update?: { id?: unknown; in?: unknown; out?: unknown }; delete?: { id?: unknown } }
+type EdgeRow = { versionstamp: bigint; changes: EdgeChange[] }
+
+/** Replay an edge table's changefeed rows (versionstamp-ordered) up to and
+ * including `target`, returning the live edge set at that point. */
+function replayLiveEdges(rows: EdgeRow[], target: bigint): Map<string, { source: string; target: string }> {
+  const live = new Map<string, { source: string; target: string }>()
+  for (const row of rows) {
+    if (typeof row.versionstamp === 'bigint' && row.versionstamp > target) break
+    for (const c of row.changes ?? []) {
+      if (c.update?.in != null && c.update.out != null)
+        live.set(String(c.update.id), { source: String(c.update.in), target: String(c.update.out) })
+      else if (c.delete) live.delete(String(c.delete.id))
+    }
+  }
+  return live
+}
+
+/**
+ * Pre-existing edges among `ids` **as of** the commit `versionstamp`, reconstructed
+ * by replaying each edge table's changefeed from genesis up to that versionstamp.
+ * This is the workaround for the VERSION-scan bug (deletes ignored); replay honours
+ * them. `SINCE` a far-past datetime (no LIMIT — LIMIT is broken).
+ */
+export async function replayEdgesAmong(ids: string[], versionstamp: string): Promise<ExistingEdge[]> {
+  if (ids.length < 2) return []
+  const db = await getDb()
+  const target = BigInt(versionstamp)
+  const idset = new Set(ids)
+  const out: ExistingEdge[] = []
+  for (const kind of ['part_of', 'blocked_by', 'mentions'] as const) {
+    const [rows] = await db.query<[EdgeRow[]]>(`SHOW CHANGES FOR TABLE ${kind} SINCE d"1970-01-01T00:00:00Z"`)
+    for (const e of replayLiveEdges(rows ?? [], target).values())
+      if (idset.has(e.source) && idset.has(e.target)) out.push({ ...e, kind })
+  }
+  return out
+}
+
+/**
+ * Native time-travel topology via `VERSION`-scan. Currently WRONG in 3.0.5 (returns
+ * deleted edges) — kept as the drop-in for `replayEdgesAmong` for when the engine
+ * fix lands (the regression tripwire test signals when). See ADR-0025.
+ */
+export async function scanEdgesAmongAt(ids: string[], committedAt: string): Promise<ExistingEdge[]> {
+  if (ids.length < 2) return []
+  const db = await getDb()
+  const params = { ids: ids.map(s => new StringRecordId(s)) }
+  const [rows] = await db.query<[Array<{ in: unknown; out: unknown; kind: string }>]>(
+    `SELECT in, out, meta::tb(id) AS kind FROM part_of, blocked_by, mentions
+     WHERE in IN $ids AND out IN $ids VERSION d"${committedAt}"`,
     params
   )
   return (rows ?? []).map(r => ({ source: String(r.in), target: String(r.out), kind: r.kind }))

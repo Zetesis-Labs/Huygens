@@ -2,21 +2,29 @@
 import ChangeGraph from '../../components/ChangeGraph.tsx'
 import { mergeExistingEdges, proposalToFlow } from '../../lib/graph'
 import { type LaidOutGraph, layoutGraph } from '../../lib/layout'
-import { existingEdgesAmong, getProposal, resolveLabels } from '../../lib/surreal'
+import { existingEdgesAmong, getProposal, labelsAtVersion, resolveLabels } from '../../lib/surreal'
+import { commitAnchor, edgeReader } from '../../lib/temporal'
 
 const { id } = Astro.params
 let proposal = null as Awaited<ReturnType<typeof getProposal>>
 let laidOut: LaidOutGraph = { nodes: [], edges: [] }
+let historical = false
 let error: string | null = null
 try {
   proposal = id ? await getProposal(id) : null
   if (proposal) {
-    const labels = await resolveLabels(proposal)
+    // A committed proposal with a commit anchor is rendered in its *exact
+    // historical context*: labels via VERSION-by-id and pre-existing topology
+    // via changefeed replay, both as of the commit. Drafts (and pre-migration
+    // commits without a versionstamp) fall back to the live graph.
+    const anchor = commitAnchor(proposal)
+    historical = anchor != null
+    const labels = anchor ? await labelsAtVersion(proposal, anchor.committedAt) : await resolveLabels(proposal)
     const flow = proposalToFlow(proposal, labels)
-    // Hydrate with relations that already exist in the KG between these nodes
-    // (real record ids only; created notes don't exist yet) → dashed edges.
     const realIds = flow.nodes.map(n => n.id).filter(nid => nid.includes(':'))
-    const existing = await existingEdgesAmong(realIds)
+    const existing = anchor
+      ? await edgeReader().edgesAmongAt(realIds, anchor)
+      : await existingEdgesAmong(realIds)
     laidOut = await layoutGraph(mergeExistingEdges(flow, existing))
   }
 } catch (e) {
@@ -76,6 +84,9 @@ const counts = proposal
           {narratives.map(n => <p class="narrative">{n}</p>)}
           {counts && (
             <div class="counts">
+              <span class="chip" title={historical ? 'contexto reconstruido al instante del commit' : 'contexto en vivo (estado actual del grafo)'}>
+                {historical ? '🕓 contexto del commit' : '⟳ contexto actual'}
+              </span>
               <span class="chip">{counts.raws} raw</span>
               <span class="chip">+{counts.creates} notas</span>
               <span class="chip">{counts.updates} updates</span>
