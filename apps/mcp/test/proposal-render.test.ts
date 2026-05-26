@@ -29,6 +29,7 @@ function fullPayload(): ProposalPayload {
         type_slug: 'task',
         title: 'Call Ana',
         state: 'ACTIVE',
+        mit_for: '2026-05-26',
         metadata: { priority: 'high' },
         descriptive_blocks: [{ content: 'Next action: call Ana.' }]
       },
@@ -38,6 +39,7 @@ function fullPayload(): ProposalPayload {
       {
         id: 'note:existing',
         state: 'DONE',
+        mit_for: '2026-05-27',
         metadata_merge: { closed: true },
         descriptive_blocks_append: [{ content: 'Done.' }]
       }
@@ -79,6 +81,7 @@ describe('renderProposalDiff', () => {
     expect(out).toContain('CREATE 2 notes:')
     expect(out).toContain('"Call Ana"  task · ACTIVE')
     expect(out).toContain('+1 descriptive block')
+    expect(out).toContain('MIT 2026-05-26')
     expect(out).toContain('metadata: priority')
     expect(out).toContain('"Huygens migration"  project · ACTIVE')
   })
@@ -88,6 +91,7 @@ describe('renderProposalDiff', () => {
     expect(out).toContain('UPDATE 1 note:')
     expect(out).toContain('note:existing')
     expect(out).toContain('state → DONE')
+    expect(out).toContain('MIT → 2026-05-27')
     expect(out).toContain('metadata: closed')
   })
 
@@ -146,6 +150,7 @@ describe('renderProposalDiff', () => {
       about: ['about:1'],
       affects: ['affects:1'],
       semantic_edges: ['part_of:1', 'mentions:1'],
+      temp_ids: { notes: { task1: 'note:abc' }, blocks: { narrative1: 'block:n1' } },
       versionstamp: '116638335457689600',
       committed_at: '2026-05-24T12:00:00Z'
     }
@@ -153,6 +158,7 @@ describe('renderProposalDiff', () => {
     expect(out).toContain('Committed result:')
     expect(out).toContain('notes created:      note:abc')
     expect(out).toContain('edges: 5 (derived_from 1, about 1, affects 1, semantic 2)')
+    expect(out).toContain('temp_ids: task1 → note:abc, narrative1 → block:n1')
     expect(out).toContain('versionstamp: 116638335457689600')
   })
 

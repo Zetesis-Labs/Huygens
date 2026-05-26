@@ -48,6 +48,7 @@ function createSection(payload: ProposalPayload): string[] {
     if (note.descriptive_blocks.length > 0) {
       extras.push(`+${note.descriptive_blocks.length} ${plural(note.descriptive_blocks.length, 'descriptive block')}`)
     }
+    if (note.mit_for) extras.push(`MIT ${note.mit_for}`)
     const metaKeys = note.metadata ? Object.keys(note.metadata) : []
     if (metaKeys.length > 0) extras.push(`metadata: ${metaKeys.join(', ')}`)
     const suffix = extras.length > 0 ? ` · ${extras.join(' · ')}` : ''
@@ -60,6 +61,8 @@ function updateChanges(note: ProposalPayload['note_updates'][number]): string {
   const changes: string[] = []
   if (note.title != null) changes.push(`title → "${note.title}"`)
   if (note.state != null) changes.push(`state → ${note.state}`)
+  if (note.mit_for === null) changes.push('MIT → cleared')
+  else if (note.mit_for != null) changes.push(`MIT → ${note.mit_for}`)
   const mergeKeys = note.metadata_merge ? Object.keys(note.metadata_merge) : []
   if (mergeKeys.length > 0) changes.push(`metadata: ${mergeKeys.join(', ')}`)
   if (note.descriptive_blocks_append.length > 0) {
@@ -144,6 +147,10 @@ function resultSection(detail: ProposalDetail): string[] {
       `  • edges: ${edges} (derived_from ${r.derived_from.length}, about ${r.about.length}, ` +
         `affects ${r.affects.length}, semantic ${r.semantic_edges.length})`
     )
+  }
+  const temps = [...Object.entries(r.temp_ids.notes), ...Object.entries(r.temp_ids.blocks)]
+  if (temps.length > 0) {
+    lines.push(`  • temp_ids: ${temps.map(([temp, id]) => `${temp} → ${id}`).join(', ')}`)
   }
   lines.push(`  • versionstamp: ${r.versionstamp ?? '—'} · committed ${r.committed_at}`)
   return lines

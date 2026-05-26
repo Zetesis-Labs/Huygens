@@ -1,6 +1,6 @@
 import { getDb, selectByIds } from '../../surreal'
 import { type GraphEdgeRecord, type GraphNodeRecord, idStr, tableOf } from '../graph-records'
-import { type MaterializedGraph, contextEndpointIds, contextLabel, mutatedNodeIds } from './context-labels'
+import { contextEndpointIds, contextLabel, type MaterializedGraph, mutatedNodeIds } from './context-labels'
 import type { GetProposalInput, ProposalResult } from './schemas'
 import { fetchProposal } from './store'
 

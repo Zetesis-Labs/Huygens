@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { captureImpl } from '../src/tools/capture'
+import { listMitsImpl } from '../src/tools/list-mits'
 import {
   commitProposalImpl,
   createProposalImpl,
@@ -209,6 +210,54 @@ describe('proposal v2.1-lite flow', () => {
         expect(typeof changeset.versionstamp).not.toBe('bigint')
       }
     }
+  })
+
+  test('commit_proposal writes mit_for top-level so list_mits_for_date finds it', async () => {
+    const rawIds = await captureMany(['mit raw'])
+    const created = await createProposalImpl({
+      raw_ids: rawIds,
+      payload: payload(rawIds, {
+        note_creates: [
+          {
+            temp_id: 'task1',
+            type_slug: 'task',
+            title: 'Call Ana',
+            state: 'ACTIVE',
+            mit_for: '2026-05-26',
+            descriptive_blocks: []
+          },
+          {
+            temp_id: 'project1',
+            type_slug: 'project',
+            title: 'Huygens migration',
+            state: 'ACTIVE',
+            descriptive_blocks: []
+          }
+        ]
+      })
+    })
+    await commitProposalImpl({ proposal_id: created.id })
+
+    expect((await listMitsImpl({ date: '2026-05-26' })).map(m => m.title)).toContain('Call Ana')
+    expect(await listMitsImpl({ date: '2026-05-27' })).toEqual([])
+  })
+
+  test('commit_proposal returns a temp_id → real_id map for created notes and narrative blocks', async () => {
+    const rawIds = await captureMany(['a'])
+    const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
+    const result = await commitProposalImpl({ proposal_id: created.id })
+
+    expect(Object.keys(result.temp_ids.notes).sort()).toEqual(['project1', 'task1'])
+    expect(result.temp_ids.notes.task1).toMatch(/^note:/)
+    expect(result.temp_ids.blocks.narrative1).toMatch(/^block:/)
+    // the mapped ids are exactly the ones reported as created
+    expect(result.notes_created).toContain(result.temp_ids.notes.task1)
+    expect(result.notes_created).toContain(result.temp_ids.notes.project1)
+    expect(result.narrative_blocks_created).toContain(result.temp_ids.blocks.narrative1)
+
+    // the persisted proposal carries the same map
+    const committed = await getProposalImpl({ proposal_id: created.id })
+    expect(committed?.result?.temp_ids.notes.task1).toBe(result.temp_ids.notes.task1)
   })
 
   test('commit_proposal rejects non-draft proposals', async () => {

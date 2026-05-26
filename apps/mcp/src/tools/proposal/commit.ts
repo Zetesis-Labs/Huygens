@@ -2,7 +2,6 @@ import { type RecordId, StringRecordId } from 'surrealdb'
 import { BLOCK_ID_RE, NOTE_ID_RE } from '../../domain'
 import { emitEvent, newSessionId } from '../../events'
 import { getDb } from '../../surreal'
-import { idStr, type RecordIdish } from '../graph-records'
 import {
   type CommitProposalInput,
   type CommitProposalResult,
@@ -10,7 +9,7 @@ import {
   type ProposalPayload,
   proposalPayloadSchema
 } from './schemas'
-import { fetchProposal, requireDraftProposal } from './store'
+import { fetchProposal, normalizeResult, requireDraftProposal } from './store'
 import { assertProposalRefs, assertRawCapturesCommittable, validatePayload } from './validation'
 
 function buildNoteCreateData(note: NoteCreate): Record<string, unknown> {
@@ -19,6 +18,9 @@ function buildNoteCreateData(note: NoteCreate): Record<string, unknown> {
     type: new StringRecordId(`note_type:${note.type_slug}`),
     state: note.state
   }
+  // mit_for is a top-level datetime field on note (indexed, queried by
+  // list_mits_for_date); a date-only "YYYY-MM-DD" becomes that day's UTC midnight.
+  if (note.mit_for) data.mit_for = new Date(note.mit_for)
   if (note.metadata) data.metadata = note.metadata
   return data
 }
@@ -66,6 +68,9 @@ class CommitTx {
   private lc = 0
   private readonly noteTok = new Map<string, string>()
   private readonly blockTok = new Map<string, string>()
+  // temp_id -> LET var holding the real id, for created notes and narrative blocks.
+  private readonly tempNotes: [string, string][] = []
+  private readonly tempBlocks: [string, string][] = []
   readonly out = {
     notes_created: [] as string[],
     notes_updated: [] as string[],
@@ -88,6 +93,10 @@ class CommitTx {
   private static arr(xs: string[]): string {
     return `[${xs.join(', ')}]`
   }
+  private static obj(entries: [string, string][]): string {
+    if (entries.length === 0) return '{}'
+    return `{ ${entries.map(([k, v]) => `${JSON.stringify(k)}: ${v}`).join(', ')} }`
+  }
 
   private appendBlocks(target: string, blocks: { content: string }[]): void {
     const bvars: string[] = []
@@ -107,6 +116,7 @@ class CommitTx {
       const v = this.letVar()
       this.lines.push(`LET ${v} = (CREATE note CONTENT ${this.p(buildNoteCreateData(note))} RETURN AFTER)[0].id;`)
       this.noteTok.set(note.temp_id, v)
+      this.tempNotes.push([note.temp_id, v])
       this.out.notes_created.push(v)
       this.appendBlocks(v, note.descriptive_blocks)
     }
@@ -120,6 +130,8 @@ class CommitTx {
       const sets: string[] = []
       if (note.title != null) sets.push(`title = ${this.p(note.title)}`)
       if (note.state != null) sets.push(`state = ${this.p(note.state)}`)
+      if (note.mit_for === null) sets.push('mit_for = NONE')
+      else if (note.mit_for != null) sets.push(`mit_for = ${this.p(new Date(note.mit_for))}`)
       if (note.metadata_merge != null)
         sets.push(`metadata = object::extend(metadata ?? {}, ${this.p(note.metadata_merge)})`)
       if (sets.length > 0) this.lines.push(`UPDATE ${target} SET ${sets.join(', ')};`)
@@ -134,6 +146,7 @@ class CommitTx {
         `LET ${v} = (CREATE block SET block_kind = 'narrative', content = ${this.p(block.content)}, topologized_at = time::now() RETURN AFTER)[0].id;`
       )
       this.blockTok.set(block.temp_id, v)
+      this.tempBlocks.push([block.temp_id, v])
       this.out.narrative_blocks_created.push(v)
       for (const rawId of block.raw_ids) {
         const ev = this.letVar()
@@ -218,6 +231,7 @@ class CommitTx {
         `notes_created: ${CommitTx.arr(o.notes_created)}, notes_updated: ${CommitTx.arr(o.notes_updated)}, ` +
         `narrative_blocks_created: ${CommitTx.arr(o.narrative_blocks_created)}, descriptive_blocks_created: ${CommitTx.arr(o.descriptive_blocks_created)}, ` +
         `derived_from: ${CommitTx.arr(o.derived_from)}, about: ${CommitTx.arr(o.about)}, affects: ${CommitTx.arr(o.affects)}, semantic_edges: ${CommitTx.arr(o.semantic_edges)}, ` +
+        `temp_ids: { notes: ${CommitTx.obj(this.tempNotes)}, blocks: ${CommitTx.obj(this.tempBlocks)} }, ` +
         'versionstamp: NONE, committed_at: time::now() };'
     )
     this.lines.push('COMMIT;')
@@ -241,9 +255,6 @@ function buildCommitTx(
   return new CommitTx().build(payload, proposalId)
 }
 
-/** Normalize a result field (RecordId[] at runtime) to plain id strings. */
-const toIdStrings = (xs?: RecordIdish[]): string[] => (xs ?? []).map(idStr)
-
 export async function commitProposalImpl(input: CommitProposalInput): Promise<CommitProposalResult> {
   const db = await getDb()
   const proposal = await requireDraftProposal(input.proposal_id)
@@ -266,7 +277,7 @@ export async function commitProposalImpl(input: CommitProposalInput): Promise<Co
   }
 
   const committed = await fetchProposal(input.proposal_id)
-  const result = committed?.result ?? null
+  const result = normalizeResult(committed?.result)
 
   await emitEvent({
     kind: 'proposal_committed',
@@ -279,13 +290,14 @@ export async function commitProposalImpl(input: CommitProposalInput): Promise<Co
   return {
     proposal_id: input.proposal_id,
     raw_ids_processed: payload.raw_ids,
-    narrative_blocks_created: toIdStrings(result?.narrative_blocks_created),
-    notes_created: toIdStrings(result?.notes_created),
-    notes_updated: toIdStrings(result?.notes_updated),
-    descriptive_blocks_created: toIdStrings(result?.descriptive_blocks_created),
-    derived_from_created: toIdStrings(result?.derived_from).length,
-    about_created: toIdStrings(result?.about).length,
-    affects_created: toIdStrings(result?.affects).length,
-    semantic_edges_created: toIdStrings(result?.semantic_edges).length
+    narrative_blocks_created: result?.narrative_blocks_created ?? [],
+    notes_created: result?.notes_created ?? [],
+    notes_updated: result?.notes_updated ?? [],
+    descriptive_blocks_created: result?.descriptive_blocks_created ?? [],
+    derived_from_created: result?.derived_from.length ?? 0,
+    about_created: result?.about.length ?? 0,
+    affects_created: result?.affects.length ?? 0,
+    semantic_edges_created: result?.semantic_edges.length ?? 0,
+    temp_ids: result?.temp_ids ?? { notes: {}, blocks: {} }
   }
 }

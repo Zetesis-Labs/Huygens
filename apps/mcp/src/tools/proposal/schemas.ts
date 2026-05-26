@@ -27,6 +27,17 @@ const BlockRefSchema = z.string().refine(value => TEMP_ID_RE.test(value) || BLOC
   message: 'Must be a block temp_id or a block record id'
 })
 
+/**
+ * A MIT date: a calendar day (YYYY-MM-DD) or a full ISO datetime. Stored in the
+ * note's top-level `mit_for` datetime field (a date-only value lands at that
+ * day's UTC midnight), so `list_mits_for_date` can find it.
+ */
+const MitForSchema = z
+  .string()
+  .refine(value => /^\d{4}-\d{2}-\d{2}/.test(value) && !Number.isNaN(new Date(value).getTime()), {
+    message: 'mit_for must be a date (YYYY-MM-DD) or ISO datetime'
+  })
+
 const DescriptiveBlockSchema = z.object({
   content: z.string().min(1)
 })
@@ -42,6 +53,7 @@ export const NoteCreateSchema = z.object({
   type_slug: NoteTypeSlugSchema,
   title: z.string().min(1),
   state: NoteStateSchema.default('CLARIFIED'),
+  mit_for: MitForSchema.optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   descriptive_blocks: z.array(DescriptiveBlockSchema).default([])
 })
@@ -50,6 +62,7 @@ const NoteUpdateSchema = z.object({
   id: z.string().regex(NOTE_ID_RE),
   title: z.string().min(1).optional(),
   state: NoteStateSchema.optional(),
+  mit_for: MitForSchema.nullable().optional(),
   metadata_merge: z.record(z.string(), z.unknown()).optional(),
   descriptive_blocks_append: z.array(DescriptiveBlockSchema).default([])
 })
@@ -134,6 +147,12 @@ export type GetProposalInput = z.infer<typeof getProposalSchema>
 export type DiscardProposalInput = z.infer<typeof discardProposalSchema>
 export type CommitProposalInput = z.infer<typeof commitProposalSchema>
 
+/** Maps each payload temp_id to the real record id the commit created. */
+export type TempIdMap = {
+  notes: Record<string, string>
+  blocks: Record<string, string>
+}
+
 export type ProposalResult = {
   notes_created: string[]
   notes_updated: string[]
@@ -143,6 +162,7 @@ export type ProposalResult = {
   about: string[]
   affects: string[]
   semantic_edges: string[]
+  temp_ids: TempIdMap
   versionstamp: string | null
   committed_at: string
 }
@@ -178,4 +198,5 @@ export type CommitProposalResult = {
   about_created: number
   affects_created: number
   semantic_edges_created: number
+  temp_ids: TempIdMap
 }
