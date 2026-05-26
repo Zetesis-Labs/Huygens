@@ -48,7 +48,7 @@ jobs:
       - name: Start SurrealDB
         run: |
           docker run -d --name surrealdb -p 8000:8000 \
-            surrealdb/surrealdb:latest \
+            surrealdb/surrealdb:v3.0.5 \
             start --user root --pass root --bind 0.0.0.0:8000 memory
 
       - name: Wait for SurrealDB to be ready
