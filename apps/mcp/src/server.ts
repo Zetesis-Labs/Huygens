@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { registerLoreAndPrompts } from './lore-and-prompts'
 import { registerCapture } from './tools/capture'
+import { registerCheckClaim } from './tools/check-claim'
 import { registerChunkMarkdown } from './tools/chunk-markdown'
 import { registerEmbedText } from './tools/embed-text'
 import { registerExpandContext } from './tools/expand-context'
@@ -31,6 +32,7 @@ export function createServer(): McpServer {
   registerTraceProvenance(server)
   registerNeighborhood(server)
   registerExpandContext(server)
+  registerCheckClaim(server)
   registerProposalTools(server)
   registerChunkMarkdown(server)
   registerEmbedText(server)
