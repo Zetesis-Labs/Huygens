@@ -72,3 +72,30 @@ export function blockEmbeddingContext(subjects: GraphNodeRecord[], parents: Grap
   if (parents.length > 0) lines.push(`parte de: ${parents.map(nodeLabel).join(' ▸ ')}`)
   return lines.join('\n')
 }
+
+/** A graph edge as a subject–predicate–object triple. `qualifier` carries edge
+ * metadata that refines the predicate (affects.action, derived_from.transformation). */
+export type EdgeTriple = { source: string; target: string; kind: string; qualifier?: string }
+
+function predicate(t: EdgeTriple): string {
+  return t.qualifier ? `${t.kind}(${t.qualifier})` : t.kind
+}
+
+/** Render edges as `subject —predicate→ object` triples (the canonical KG-RAG
+ * form). `label` resolves a record id to its human label (nodeLabel). */
+export function serializeTriples(edges: EdgeTriple[], label: (id: string) => string): string {
+  return edges.map(t => `${label(t.source)} —${predicate(t)}→ ${label(t.target)}`).join('\n')
+}
+
+/** The same triples grouped by subject (entity-centric), for reasoning about a
+ * single node and its relations. */
+export function serializeTriplesGrouped(edges: EdgeTriple[], label: (id: string) => string): string {
+  const bySubject = new Map<string, EdgeTriple[]>()
+  for (const t of edges) bySubject.set(t.source, [...(bySubject.get(t.source) ?? []), t])
+  const lines: string[] = []
+  for (const [subject, group] of bySubject) {
+    lines.push(label(subject))
+    for (const t of group) lines.push(`  —${predicate(t)}→ ${label(t.target)}`)
+  }
+  return lines.join('\n')
+}

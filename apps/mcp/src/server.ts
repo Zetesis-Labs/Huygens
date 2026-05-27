@@ -9,6 +9,7 @@ import { registerIndexBlock } from './tools/index-block'
 import { registerListByType } from './tools/list-by-type'
 import { registerListInbox } from './tools/list-inbox'
 import { registerListMits } from './tools/list-mits'
+import { registerNeighborhood } from './tools/neighborhood'
 import { registerProposalTools } from './tools/proposal'
 import { registerQueryQuery } from './tools/query/query'
 import { registerSetRawStatus } from './tools/set-raw-status'
@@ -27,6 +28,7 @@ export function createServer(): McpServer {
   registerSetRawStatus(server)
   registerGetRaw(server)
   registerTraceProvenance(server)
+  registerNeighborhood(server)
   registerProposalTools(server)
   registerChunkMarkdown(server)
   registerEmbedText(server)
