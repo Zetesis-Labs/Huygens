@@ -28,12 +28,8 @@ type EdgeRow = {
   transformation?: string
 }
 
-export type NeighborhoodResult = {
-  seed: string
-  node_count: number
-  nodes: { id: string; label: string }[]
-  triples: string
-}
+export type SubgraphText = { node_count: number; nodes: { id: string; label: string }[]; triples: string }
+export type NeighborhoodResult = SubgraphText & { seed: string }
 
 /** Edges (any kind) with at least one endpoint in `frontier`, in one query. */
 async function edgesTouching(db: Surreal, frontier: string[]): Promise<EdgeRow[]> {
@@ -47,17 +43,18 @@ async function edgesTouching(db: Surreal, frontier: string[]): Promise<EdgeRow[]
   return rows ?? []
 }
 
-/** BFS out from the seed up to `hops`/`max_nodes`, collecting visited nodes and
- * the edges seen (deduped by edge id). */
-async function expand(
+/** BFS out from the seed(s) up to `hops`/`max_nodes`, collecting visited nodes
+ * and the edges seen (deduped by edge id). Exported so the hybrid retriever
+ * (expand_context) can expand several vector seeds into one connected subgraph. */
+export async function expand(
   db: Surreal,
-  seed: string,
+  seeds: string[],
   hops: number,
   maxNodes: number
 ): Promise<{ visited: Set<string>; edges: Map<string, EdgeRow> }> {
-  const visited = new Set<string>([seed])
+  const visited = new Set<string>(seeds)
   const edges = new Map<string, EdgeRow>()
-  let frontier = [seed]
+  let frontier = [...seeds]
   for (let hop = 0; hop < hops && frontier.length > 0 && visited.size < maxNodes; hop++) {
     const next: string[] = []
     for (const e of await edgesTouching(db, frontier)) {
@@ -75,19 +72,11 @@ async function expand(
 }
 
 /**
- * Verbalize the subgraph around a node as `subject —predicate→ object` triples.
- * Hybrid-friendly building block: pass any seed (e.g. a vector_search hit) and
- * get its connected context as text the agent can read — instead of bare,
- * disconnected hits. Read-only.
+ * Resolve labels for the visited nodes and render the induced subgraph (edges
+ * with both endpoints visited) as `subject —predicate→ object` triples. Shared
+ * by neighborhood and expand_context. Read-only.
  */
-export async function neighborhoodImpl(input: NeighborhoodInput): Promise<NeighborhoodResult | null> {
-  const [seedRec] = await selectByIds<GraphNodeRecord>([input.seed_id])
-  if (!seedRec) return null
-
-  const db = await getDb()
-  const { visited, edges } = await expand(db, input.seed_id, input.hops, input.max_nodes)
-
-  // Induced subgraph: only edges whose both endpoints made it into the node set.
+export async function verbalizeSubgraph(visited: Set<string>, edges: Map<string, EdgeRow>): Promise<SubgraphText> {
   const triples: EdgeTriple[] = []
   for (const e of edges.values()) {
     const source = idStr(e.in)
@@ -96,17 +85,27 @@ export async function neighborhoodImpl(input: NeighborhoodInput): Promise<Neighb
       triples.push({ source, target, kind: e.kind, qualifier: e.action ?? e.transformation ?? undefined })
     }
   }
-
   const records = await selectByIds<GraphNodeRecord>([...visited])
   const labels = new Map(records.map(r => [idStr(r.id), nodeLabel(r)]))
   const label = (id: string): string => labels.get(id) ?? id
-
   return {
-    seed: input.seed_id,
     node_count: visited.size,
     nodes: [...visited].map(id => ({ id, label: label(id) })),
     triples: serializeTriples(triples, label)
   }
+}
+
+/**
+ * Verbalize the subgraph around a node as triples. Pass any seed (e.g. a
+ * vector_search hit) and get its connected context as text the agent can read —
+ * instead of bare, disconnected hits. Read-only.
+ */
+export async function neighborhoodImpl(input: NeighborhoodInput): Promise<NeighborhoodResult | null> {
+  const [seedRec] = await selectByIds<GraphNodeRecord>([input.seed_id])
+  if (!seedRec) return null
+  const db = await getDb()
+  const { visited, edges } = await expand(db, [input.seed_id], input.hops, input.max_nodes)
+  return { seed: input.seed_id, ...(await verbalizeSubgraph(visited, edges)) }
 }
 
 export function registerNeighborhood(server: McpServer): void {

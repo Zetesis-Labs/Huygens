@@ -3,6 +3,7 @@ import { registerLoreAndPrompts } from './lore-and-prompts'
 import { registerCapture } from './tools/capture'
 import { registerChunkMarkdown } from './tools/chunk-markdown'
 import { registerEmbedText } from './tools/embed-text'
+import { registerExpandContext } from './tools/expand-context'
 import { registerFindRelated } from './tools/find-related'
 import { registerGetRaw } from './tools/get-raw'
 import { registerIndexBlock } from './tools/index-block'
@@ -29,6 +30,7 @@ export function createServer(): McpServer {
   registerGetRaw(server)
   registerTraceProvenance(server)
   registerNeighborhood(server)
+  registerExpandContext(server)
   registerProposalTools(server)
   registerChunkMarkdown(server)
   registerEmbedText(server)
