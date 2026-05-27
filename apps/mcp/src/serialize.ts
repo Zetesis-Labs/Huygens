@@ -45,6 +45,12 @@ export function nodeLabel(node: GraphNodeRecord): string {
   }
 }
 
+/** A node's label plus its id, the consistent one-line entry the read tools
+ * (list_*, find_related, vector_search) emit so the agent sees one format. */
+export function nodeLine(node: GraphNodeRecord): string {
+  return `${nodeLabel(node)} — ${idStr(node.id)}`
+}
+
 const EDGE_LABELS: Record<string, string> = {
   part_of: 'parte de',
   blocked_by: 'bloqueada por',

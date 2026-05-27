@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { RecordId } from 'surrealdb'
 import { z } from 'zod'
 import { embedTexts } from '../embeddings'
+import { nodeLine } from '../serialize'
 import { getDb } from '../surreal'
 import { defineTool } from './define-tool'
 import { idStr } from './graph-records'
@@ -111,7 +112,7 @@ function summarize(hits: FindRelatedHit[]): string {
   return hits
     .map(
       (h, i) =>
-        `${i + 1}. [${h.score.toFixed(3)}] ${h.note_id} — ${h.title} (${h.type_slug ?? 'untyped'}, ${h.state})\n   ${h.snippet}`
+        `${i + 1}. [${h.score.toFixed(3)}] ${nodeLine({ id: h.note_id, title: h.title, type: h.type_slug ?? undefined, state: h.state })}\n   ${h.snippet}`
     )
     .join('\n')
 }

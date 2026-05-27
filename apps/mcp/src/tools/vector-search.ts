@@ -3,6 +3,7 @@ import type { RecordId } from 'surrealdb'
 import { z } from 'zod'
 import { NoteStateSchema } from '../domain'
 import { embedTexts } from '../embeddings'
+import { nodeLine } from '../serialize'
 import { getDb } from '../surreal'
 import { defineTool } from './define-tool'
 import { idStr } from './graph-records'
@@ -115,10 +116,13 @@ export async function vectorSearchImpl(input: VectorSearchInput): Promise<Search
 function summarize(hits: SearchHit[]): string {
   if (hits.length === 0) return 'No matches.'
   return hits
-    .map(
-      h =>
-        `- [${h.score.toFixed(3)}] ${h.note_title ?? h.block_id} (${h.note_state ?? h.block_kind}) :: ${h.content.slice(0, 100).replace(/\n/g, ' ')}${h.content.length > 100 ? '…' : ''}`
-    )
+    .map(h => {
+      const head = h.note_id
+        ? nodeLine({ id: h.note_id, title: h.note_title ?? h.note_id, state: h.note_state ?? undefined })
+        : `${h.block_kind} — ${h.block_id}`
+      const snippet = `${h.content.slice(0, 100).replace(/\n/g, ' ')}${h.content.length > 100 ? '…' : ''}`
+      return `- [${h.score.toFixed(3)}] ${head} :: ${snippet}`
+    })
     .join('\n')
 }
 

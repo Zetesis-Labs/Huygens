@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { RecordId } from 'surrealdb'
 import { z } from 'zod'
 import { NoteStateSchema } from '../domain'
+import { nodeLine } from '../serialize'
 import { getDb } from '../surreal'
 import { defineTool } from './define-tool'
 import { idStr, isoString } from './graph-records'
@@ -69,7 +70,9 @@ export async function listMitsImpl(input: ListMitsInput): Promise<MitRow[]> {
 
 function summarize(mits: MitRow[], date: string): string {
   if (mits.length === 0) return `No MITs for ${date}.`
-  return mits.map(m => `- [${m.state}] ${m.id} — ${m.title} (${m.type_slug ?? 'untyped'})`).join('\n')
+  return mits
+    .map(m => `- ${nodeLine({ id: m.id, title: m.title, type: m.type_slug ?? undefined, state: m.state })}`)
+    .join('\n')
 }
 
 export function registerListMits(server: McpServer): void {

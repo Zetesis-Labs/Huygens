@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { RecordId } from 'surrealdb'
 import { z } from 'zod'
 import { NoteStateSchema, NoteTypeSlugSchema } from '../domain'
+import { nodeLine } from '../serialize'
 import { getDb } from '../surreal'
 import { defineTool } from './define-tool'
 import { idStr, isoString, isoStringOrNull } from './graph-records'
@@ -59,7 +60,10 @@ export async function listByTypeImpl(input: ListByTypeInput): Promise<NoteRow[]>
 function summarize(notes: NoteRow[], typeSlug: string): string {
   if (notes.length === 0) return `No ${typeSlug} notes match.`
   return notes
-    .map(n => `- [${n.state}] ${n.id} — ${n.title}${n.mit_for ? ` (MIT ${n.mit_for.slice(0, 10)})` : ''}`)
+    .map(
+      n =>
+        `- ${nodeLine({ id: n.id, title: n.title, type: typeSlug, state: n.state })}${n.mit_for ? ` (MIT ${n.mit_for.slice(0, 10)})` : ''}`
+    )
     .join('\n')
 }
 
