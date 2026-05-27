@@ -57,9 +57,10 @@ function signinAuth(cfg: SurrealConfig): Parameters<Surreal['signin']>[0] {
   return { username: cfg.username, password: cfg.password }
 }
 
-function isAuthError(err: unknown): boolean {
+function isRecoverableError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err)
-  return msg.includes('Anonymous access') || msg.includes('Not enough permissions')
+  // Auth lost after a silent reconnect, or the WS connection itself dropped.
+  return /Anonymous access|Not enough permissions|connection|socket|closed|reset|websocket/i.test(msg)
 }
 
 async function reauthWith(db: Surreal, cfg: SurrealConfig): Promise<void> {
@@ -92,8 +93,8 @@ function makeResilient(db: Surreal, getConfig: () => SurrealConfig, label: strin
         try {
           return await original(...args)
         } catch (err) {
-          if (!isAuthError(err)) throw err
-          console.error(`[huygens-mcp] surreal RPC lost auth (${label}), reauthenticating`)
+          if (!isRecoverableError(err)) throw err
+          console.error(`[huygens-mcp] surreal RPC error (${label}), reconnecting`)
           await reauthWith(target, getConfig())
           return await original(...args)
         }

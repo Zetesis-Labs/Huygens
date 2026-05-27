@@ -11,8 +11,7 @@ const READER_PASS = process.env.SURREAL_READER_PASS
 
 let singleton: Surreal | null = null
 
-async function getDb(): Promise<Surreal> {
-  if (singleton) return singleton
+async function connect(): Promise<Surreal> {
   const db = new Surreal()
   await db.connect(URL)
   if (READER_PASS) {
@@ -21,8 +20,44 @@ async function getDb(): Promise<Surreal> {
     await db.signin({ username: process.env.SURREAL_USER ?? 'root', password: process.env.SURREAL_PASS ?? 'root' })
   }
   await db.use({ namespace: NS, database: DB })
-  singleton = db
   return db
+}
+
+/** The SDK's WS session can silently lose auth or drop after an internal
+ * reconnect (this dashboard runs for days as an SSR server, so it happens). */
+function isRecoverable(err: unknown): boolean {
+  const m = err instanceof Error ? err.message : String(err)
+  return /Anonymous access|Not enough permissions|connection|socket|closed|reset|websocket/i.test(m)
+}
+
+/** Wrap `query` so the first recoverable failure reconnects a fresh client and
+ * retries once, then becomes the new singleton. Other members pass through. */
+function resilient(db: Surreal): Surreal {
+  return new Proxy(db, {
+    get(target, prop, receiver) {
+      if (prop !== 'query') {
+        const value = Reflect.get(target, prop, receiver)
+        return typeof value === 'function' ? value.bind(target) : value
+      }
+      const original = target.query.bind(target)
+      return async (...args: Parameters<Surreal['query']>) => {
+        try {
+          return await original(...args)
+        } catch (err) {
+          if (!isRecoverable(err)) throw err
+          const fresh = await connect()
+          singleton = resilient(fresh)
+          return await fresh.query(...args)
+        }
+      }
+    }
+  }) as Surreal
+}
+
+async function getDb(): Promise<Surreal> {
+  if (singleton) return singleton
+  singleton = resilient(await connect())
+  return singleton
 }
 
 export type ProposalSummary = {
