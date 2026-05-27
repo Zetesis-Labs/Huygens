@@ -21,7 +21,14 @@ const QUERY_ID = z.string().regex(/^saved_query:[A-Za-z0-9_-]+$/, 'must be a sav
 
 const saveQueryShape = {
   name: z.string().min(1).describe('Human-friendly name'),
-  query: z.string().min(1).describe('SurrealQL (read-only; runs as huygens_reader)'),
+  query: z.string().min(1).optional().describe('SurrealQL (read-only; runs as huygens_reader)'),
+  script: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      'TS composer source: exports `inputs` (Zod) + `build(params): string`. Stored as-is; built/run client-side.'
+    ),
   pinned: z.boolean().default(false).describe('Pin as a favorite'),
   id: QUERY_ID.optional().describe('Pass an existing id to update instead of creating')
 }
@@ -29,8 +36,11 @@ const saveQuerySchema = z.object(saveQueryShape)
 export type SaveQueryInput = z.infer<typeof saveQuerySchema>
 
 export async function saveQueryImpl(input: SaveQueryInput): Promise<{ id: string; updated: boolean }> {
+  if (!input.query && !input.script) throw new QueryError('save_query requires `query` or `script`')
   const db = await getDb()
-  const doc = { name: input.name, query: input.query, pinned: input.pinned }
+  const doc: Record<string, unknown> = { name: input.name, pinned: input.pinned }
+  if (input.query !== undefined) doc.query = input.query
+  if (input.script !== undefined) doc.script = input.script
   if (input.id) {
     const [rows] = await db.query<[{ id: RecordIdish }[]]>('UPDATE $id MERGE $doc RETURN id', {
       id: new StringRecordId(input.id),
@@ -56,7 +66,8 @@ export type ListQueriesInput = z.infer<typeof listQueriesSchema>
 export interface SavedQuerySummary {
   id: string
   name: string
-  query: string
+  query: string | null
+  script: string | null
   pinned: boolean
   updated_at: string | null
 }
@@ -64,7 +75,14 @@ export interface SavedQuerySummary {
 export async function listQueriesImpl(input: ListQueriesInput): Promise<SavedQuerySummary[]> {
   const db = await getReadOnlyDb()
   const where = input.pinned !== undefined ? ' WHERE pinned = $pinned' : ''
-  type Row = { id: RecordIdish; name: string; query: string; pinned?: boolean; updated_at?: Date | string }
+  type Row = {
+    id: RecordIdish
+    name: string
+    query?: string
+    script?: string
+    pinned?: boolean
+    updated_at?: Date | string
+  }
   const [rows] = await db.query<[Row[]]>(`SELECT * FROM saved_query${where} ORDER BY updated_at DESC LIMIT $limit`, {
     pinned: input.pinned,
     limit: input.limit
@@ -72,7 +90,8 @@ export async function listQueriesImpl(input: ListQueriesInput): Promise<SavedQue
   return (rows ?? []).map(r => ({
     id: idStr(r.id),
     name: r.name,
-    query: r.query,
+    query: r.query ?? null,
+    script: r.script ?? null,
     pinned: Boolean(r.pinned),
     updated_at: r.updated_at ? isoString(r.updated_at) : null
   }))

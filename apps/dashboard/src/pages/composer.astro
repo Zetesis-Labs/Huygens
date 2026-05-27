@@ -1,0 +1,58 @@
+---
+import Composer from '../components/Composer.tsx'
+import { listQueries, type SavedQuery } from '../lib/queries'
+
+// Composers = saved items that carry a `script` (vs plain SurrealQL queries).
+let saved: SavedQuery[] = []
+try {
+  saved = (await listQueries()).filter(q => q.script)
+} catch {
+  /* best-effort */
+}
+---
+
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Huygens · composer</title>
+    <style>
+      :root { color-scheme: light; }
+      body { font-family: system-ui, sans-serif; margin: 0; background: #fafbfc; color: #1f2530; display: flex; flex-direction: column; height: 100vh; }
+      header { padding: 10px 20px; border-bottom: 1px solid #e6e8eb; display: flex; gap: 14px; align-items: baseline; flex: 0 0 auto; }
+      header a { color: #2f54eb; text-decoration: none; font-size: 14px; }
+      header h1 { margin: 0; font-size: 15px; font-family: ui-monospace, monospace; }
+      .composer { flex: 1; display: flex; min-height: 0; }
+      .cside { width: 230px; flex: 0 0 230px; border-right: 1px solid #e6e8eb; background: #fff; overflow: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+      .cside h2 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; }
+      .cside ul { list-style: none; margin: 0; padding: 0; }
+      .cside li { margin: 2px 0; }
+      .linkish { border: none; background: none; color: #2f54eb; cursor: pointer; font-size: 13px; padding: 0; text-align: left; }
+      .savebox { margin-top: auto; display: flex; flex-direction: column; gap: 6px; border-top: 1px solid #eef0f2; padding-top: 10px; }
+      .cmain { flex: 1; display: flex; min-width: 0; }
+      .editor { flex: 1; min-width: 0; }
+      .cpanel { width: 380px; flex: 0 0 380px; border-left: 1px solid #e6e8eb; background: #fff; overflow: auto; padding: 16px 18px; }
+      .cpanel h3 { margin: 0 0 10px; font-size: 13px; color: #374151; }
+      .form { display: flex; flex-direction: column; gap: 10px; }
+      .form label { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+      .form label span { color: #6b7280; font-family: ui-monospace, monospace; font-size: 12px; }
+      .form input[type=text], .form input[type=number], .form select { font-size: 13px; padding: 4px 6px; }
+      .actions { display: flex; gap: 8px; margin: 16px 0 10px; }
+      button { font-size: 13px; padding: 5px 12px; border: 1px solid #2f54eb; background: #2f54eb; color: #fff; border-radius: 6px; cursor: pointer; }
+      button.ghost { background: #fff; color: #2f54eb; }
+      button:disabled { opacity: .45; cursor: not-allowed; }
+      input[type=text] { font-size: 13px; padding: 5px 7px; }
+      .muted { color: #6b7280; font-size: 12px; }
+      .err { color: #b91c1c; font-size: 12px; white-space: pre-wrap; font-family: ui-monospace, monospace; }
+      .sql { background: #0d1117; color: #c9d1d9; font-size: 12px; padding: 10px; border-radius: 6px; white-space: pre-wrap; overflow: auto; font-family: ui-monospace, monospace; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="/">← proposals</a>
+      <a href="/explorer">explorer</a>
+      <h1>composer</h1>
+    </header>
+    <Composer client:only="react" saved={saved} />
+  </body>
+</html>

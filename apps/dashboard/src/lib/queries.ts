@@ -7,7 +7,14 @@ import type { FlowGraph } from './graph'
 
 const MCP_URL = import.meta.env.HUYGENS_MCP_URL ?? 'http://huygens-mcp:3030/mcp'
 
-export type SavedQuery = { id: string; name: string; query: string; pinned: boolean; updated_at: string | null }
+export type SavedQuery = {
+  id: string
+  name: string
+  query: string | null
+  script: string | null
+  pinned: boolean
+  updated_at: string | null
+}
 
 /** Call an MCP tool and return its last JSON content block. */
 async function callTool<T>(name: string, args: Record<string, unknown>): Promise<T> {
@@ -39,6 +46,8 @@ export const runAdhoc = (query: string): Promise<unknown[]> => callTool('query_q
 export const runSaved = (id: string): Promise<unknown[]> => callTool('run_query', { id })
 export const saveQuery = (name: string, query: string, pinned: boolean): Promise<{ id: string }> =>
   callTool('save_query', { name, query, pinned })
+export const saveScript = (name: string, script: string, pinned: boolean): Promise<{ id: string }> =>
+  callTool('save_query', { name, script, pinned })
 export const deleteQuery = (id: string): Promise<{ deleted: string }> => callTool('delete_query', { id })
 
 /** SurrealDB returns one result per statement. Take the last statement's rows. */
