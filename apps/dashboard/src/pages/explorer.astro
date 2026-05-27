@@ -1,0 +1,133 @@
+---
+import ChangeGraph from '../components/ChangeGraph.tsx'
+import { type LaidOutGraph, layoutGraph } from '../lib/layout'
+import { extractRows, listQueries, runAdhoc, runSaved, rowsToFlow, rowsToTable, type SavedQuery } from '../lib/queries'
+
+// SurrealQL explorer: type a read-only query (or load a saved one), see results
+// as a table (always) or as a graph (when rows look like nodes). Save named
+// queries via the MCP. No declarative filter layer — the query is the unit.
+const DEFAULT_QUERY = "SELECT id, title, type.slug AS type, state FROM note WHERE type.slug = 'project' AND state = 'ACTIVE' LIMIT 20"
+
+const params = Astro.url.searchParams
+const savedId = params.get('saved')
+const tab = params.get('tab')
+
+let favorites: SavedQuery[] = []
+try {
+  favorites = await listQueries()
+} catch {
+  /* best-effort sidebar */
+}
+
+const found = savedId ? favorites.find(f => f.id === savedId) : undefined
+const queryText = savedId ? (found?.query ?? '') : (params.get('q') ?? DEFAULT_QUERY)
+
+let rows: Record<string, unknown>[] = []
+let error: string | null = null
+try {
+  if (queryText.trim()) {
+    const results = savedId ? await runSaved(savedId) : await runAdhoc(queryText)
+    rows = extractRows(results)
+  }
+} catch (e) {
+  error = e instanceof Error ? e.message : String(e)
+}
+
+const table = rowsToTable(rows)
+const flow = rowsToFlow(rows)
+const activeTab = tab === 'graph' && flow ? 'graph' : 'table'
+let laidOut: LaidOutGraph = { nodes: [], edges: [] }
+if (activeTab === 'graph' && flow) laidOut = await layoutGraph(flow)
+
+const base = savedId ? `saved=${encodeURIComponent(savedId)}` : `q=${encodeURIComponent(queryText)}`
+---
+
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Huygens · explorer</title>
+    <style>
+      :root { color-scheme: light; }
+      body { font-family: system-ui, sans-serif; margin: 0; background: #fafbfc; color: #1f2530; display: flex; flex-direction: column; height: 100vh; }
+      header { padding: 10px 20px; border-bottom: 1px solid #e6e8eb; display: flex; align-items: baseline; gap: 14px; flex: 0 0 auto; }
+      header a { color: #2f54eb; text-decoration: none; font-size: 14px; }
+      h1 { margin: 0; font-size: 15px; font-family: ui-monospace, monospace; }
+      .body { flex: 1; display: flex; min-height: 0; }
+      .side { width: 250px; flex: 0 0 250px; border-right: 1px solid #e6e8eb; background: #fff; overflow: auto; padding: 14px 16px; }
+      .side h2 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; }
+      .side ul { list-style: none; margin: 0 0 16px; padding: 0; }
+      .side li { display: flex; justify-content: space-between; gap: 6px; margin: 3px 0; }
+      .side li a { color: #2f54eb; text-decoration: none; font-size: 13px; }
+      .side .save { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid #eef0f2; padding-top: 12px; }
+      .side input[type=text] { font-size: 13px; padding: 4px 6px; }
+      .del { border: none; background: none; color: #b91c1c; cursor: pointer; font-size: 12px; padding: 0; }
+      .main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+      .qbar { padding: 10px 16px; border-bottom: 1px solid #eef0f2; display: flex; gap: 8px; align-items: flex-start; }
+      textarea { flex: 1; font-family: ui-monospace, monospace; font-size: 13px; padding: 6px 8px; min-height: 48px; resize: vertical; }
+      button { font-size: 13px; padding: 6px 14px; border: 1px solid #2f54eb; background: #2f54eb; color: #fff; border-radius: 6px; cursor: pointer; }
+      button.ghost { background: #fff; color: #2f54eb; }
+      .tabs { padding: 6px 16px; display: flex; gap: 12px; align-items: center; border-bottom: 1px solid #eef0f2; font-size: 13px; }
+      .tabs a { text-decoration: none; color: #6b7280; padding: 2px 8px; border-radius: 6px; }
+      .tabs a.on { background: #eef1ff; color: #2f54eb; }
+      .count { margin-left: auto; color: #6b7280; font-size: 12px; }
+      .results { flex: 1; min-height: 0; overflow: auto; position: relative; }
+      table { border-collapse: collapse; font-size: 12px; width: 100%; }
+      th, td { border: 1px solid #eef0f2; padding: 4px 8px; text-align: left; vertical-align: top; max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      th { background: #f7f8fa; position: sticky; top: 0; font-family: ui-monospace, monospace; }
+      .canvas { position: absolute; inset: 0; }
+      .canvas > astro-island { position: absolute; inset: 0; }
+      .err { padding: 16px; color: #b91c1c; font-family: ui-monospace, monospace; font-size: 13px; white-space: pre-wrap; }
+      .empty { padding: 24px; color: #6b7280; }
+    </style>
+  </head>
+  <body>
+    <header><a href="/">← proposals</a><h1>explorer · SurrealQL</h1></header>
+    <div class="body">
+      <aside class="side">
+        <h2>Guardadas</h2>
+        {favorites.length === 0 ? <p class="empty" style="padding:0">Ninguna.</p> : (
+          <ul>{favorites.map(q => (
+            <li>
+              <a href={`/explorer?saved=${q.id}`} title={q.query}>{q.pinned ? '★ ' : ''}{q.name}</a>
+              <form method="post" action="/api/delete-query" style="margin:0"><input type="hidden" name="id" value={q.id} /><button class="del" type="submit" title="borrar">✕</button></form>
+            </li>
+          ))}</ul>
+        )}
+        {queryText.trim() && (
+          <form class="save" method="post" action="/api/save-query">
+            <h2>Guardar query</h2>
+            <input type="text" name="name" placeholder="Nombre…" required />
+            <input type="hidden" name="query" value={queryText} />
+            <label style="font-size:12px"><input type="checkbox" name="pinned" /> fijar</label>
+            <button class="ghost" type="submit">Guardar</button>
+          </form>
+        )}
+      </aside>
+      <div class="main">
+        <form class="qbar" method="get" action="/explorer">
+          <textarea name="q" spellcheck="false" placeholder="SELECT * FROM note WHERE …">{queryText}</textarea>
+          <button type="submit">Run</button>
+        </form>
+        <div class="tabs">
+          <a href={`/explorer?${base}`} class={activeTab === 'table' ? 'on' : ''}>Tabla</a>
+          {flow && <a href={`/explorer?${base}&tab=graph`} class={activeTab === 'graph' ? 'on' : ''}>Grafo</a>}
+          <span class="count">{error ? '⚠ error' : `${rows.length} fila(s)${flow ? ` · ${flow.nodes.length} nodos` : ''}`}</span>
+        </div>
+        <div class="results">
+          {error && <pre class="err">{error}</pre>}
+          {!error && rows.length === 0 && <p class="empty">Sin resultados.</p>}
+          {!error && rows.length > 0 && activeTab === 'table' && (
+            <table>
+              <thead><tr>{table.columns.map(c => <th>{c}</th>)}</tr></thead>
+              <tbody>{table.rows.slice(0, 200).map(r => <tr>{table.columns.map(c => <td title={r[c]}>{r[c]}</td>)}</tr>)}</tbody>
+            </table>
+          )}
+          {!error && activeTab === 'graph' && flow && (
+            <div class="canvas"><ChangeGraph client:only="react" nodes={laidOut.nodes} edges={laidOut.edges} /></div>
+          )}
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

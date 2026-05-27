@@ -14,6 +14,7 @@ import { registerListMits } from './tools/list-mits'
 import { registerNeighborhood } from './tools/neighborhood'
 import { registerProposalTools } from './tools/proposal'
 import { registerQueryQuery } from './tools/query/query'
+import { registerSavedQuery } from './tools/saved-query'
 import { registerSetRawStatus } from './tools/set-raw-status'
 import { registerTraceProvenance } from './tools/trace-provenance'
 import { registerUpdateNoteState } from './tools/update-note-state'
@@ -43,6 +44,7 @@ export function createServer(): McpServer {
   registerListMits(server)
   registerListByType(server)
   registerQueryQuery(server)
+  registerSavedQuery(server)
 
   registerLoreAndPrompts(server)
 

@@ -269,6 +269,16 @@ DEFINE INDEX OVERWRITE agent_event_actor     ON agent_event FIELDS actor;
 --   - proposal
 --
 -- Tablas SIN CHANGEFEED (deliberado):
---   - note_type   (taxonomía editable, baja cardinalidad, sin valor histórico)
---   - agent_event (ya es el audit log — append-only por construcción)
+--   - note_type     (taxonomía editable, baja cardinalidad, sin valor histórico)
+--   - agent_event   (ya es el audit log — append-only por construcción)
+--   - saved_query   (queries SurrealQL guardadas; config editable, sin histórico)
 -- ─────────────────────────────────────────────────────────────────────────
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- SAVED QUERIES: SurrealQL guardadas con nombre. NO es topología de dominio.
+-- SCHEMALESS a propósito: guarda { name, query, pinned, … } libremente; el
+-- shape lo valida la tool en TS, no la BD, para que evolucione sin migraciones.
+-- Se ejecutan read-only (huygens_reader) — SurrealDB rechaza cualquier escritura.
+-- ─────────────────────────────────────────────────────────────────────────
+DEFINE TABLE OVERWRITE saved_query SCHEMALESS;
+DEFINE FIELD OVERWRITE updated_at ON saved_query VALUE time::now();
