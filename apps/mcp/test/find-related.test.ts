@@ -86,4 +86,23 @@ describe('findRelatedImpl', () => {
     const hits = await findRelatedImpl({ query: 'category theory', k: 3, threshold: 0.3 })
     expect(hits.length).toBeLessThanOrEqual(3)
   })
+
+  test('surfaces the matched block provenance (C2)', async () => {
+    const r = await insertNote(ctx.db, {
+      title: 'Backed idea',
+      type_slug: 'idea',
+      blocks: ['A well-sourced idea about monads.']
+    })
+    await ctx.db.query("CREATE raw_capture:fr_raw SET content = 'source', source_kind = 'chat', status = 'processed'")
+    await ctx.db.query(
+      `RELATE ${r.block_ids[0]}->derived_from->raw_capture:fr_raw CONTENT { transformation: 'verbatim' }`
+    )
+    await indexBlockImpl({ block_ids: r.block_ids })
+
+    const hit = (await findRelatedImpl({ query: 'monads idea', k: 5, threshold: 0.3 })).find(
+      h => h.note_id === r.note_id
+    )
+    expect(hit?.derived_from).toBe(1)
+    expect(hit?.transformation).toBe('verbatim')
+  })
 })

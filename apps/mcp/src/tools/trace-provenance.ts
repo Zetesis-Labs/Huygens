@@ -37,6 +37,32 @@ export type ProvenanceTrace = {
 type DerivedRow = { in: RecordId; out: RecordId; transformation?: string }
 type EdgeRow = { in: RecordId; out: RecordId; action?: string; summary?: string }
 
+export type BlockProvenance = { derived_from: number; transformation: string | null }
+
+/**
+ * Per-block provenance signal: how many raw_captures each block derives from and
+ * a representative `transformation` (verbatim/extracted/summarized/inferred). Lets
+ * search hits flag what's backed by evidence vs inferred, without a full trace.
+ */
+export async function provenanceByBlock(blockIds: string[]): Promise<Map<string, BlockProvenance>> {
+  const map = new Map<string, BlockProvenance>()
+  if (blockIds.length === 0) return map
+  const db = await getDb()
+  const refs = blockIds.map(id => new StringRecordId(id))
+  const [rows] = await db.query<[{ in: RecordId; transformation?: string }[]]>(
+    'SELECT in, transformation FROM derived_from WHERE in IN $ids',
+    { ids: refs }
+  )
+  for (const r of rows ?? []) {
+    const block = idStr(r.in)
+    const cur = map.get(block) ?? { derived_from: 0, transformation: null }
+    cur.derived_from += 1
+    if (!cur.transformation) cur.transformation = r.transformation ?? null
+    map.set(block, cur)
+  }
+  return map
+}
+
 type Gathered = { sources: ProvenanceSource[]; links: ProvenanceLink[]; needLabels: Set<string> }
 
 /** Outgoing trace from a block: what it derives from + what it is about/affects. */

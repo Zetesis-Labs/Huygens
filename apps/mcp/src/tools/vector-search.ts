@@ -7,6 +7,7 @@ import { nodeLine } from '../serialize'
 import { getDb } from '../surreal'
 import { defineTool } from './define-tool'
 import { idStr } from './graph-records'
+import { provenanceByBlock } from './trace-provenance'
 
 export const vectorSearchShape = {
   query: z.string().min(1).describe('Natural-language query to embed and search'),
@@ -47,6 +48,10 @@ export type SearchHit = {
   note_state: string | null
   content: string
   score: number
+  /** Provenance signal: how many raw_captures this block derives from, and a
+   * representative transformation — so the agent can prefer backed over inferred. */
+  derived_from: number
+  transformation: string | null
 }
 
 type Row = {
@@ -107,10 +112,19 @@ export async function vectorSearchImpl(input: VectorSearchInput): Promise<Search
     note_title: r.note_title ?? null,
     note_state: r.note_state ?? null,
     content: r.content,
-    score: 1 - r.distance
+    score: 1 - r.distance,
+    derived_from: 0,
+    transformation: null
   }))
 
-  return input.threshold != null ? hits.filter(h => h.score >= (input.threshold ?? 0)) : hits
+  const filtered = input.threshold != null ? hits.filter(h => h.score >= (input.threshold ?? 0)) : hits
+  const prov = await provenanceByBlock(filtered.map(h => h.block_id))
+  for (const h of filtered) {
+    const p = prov.get(h.block_id)
+    h.derived_from = p?.derived_from ?? 0
+    h.transformation = p?.transformation ?? null
+  }
+  return filtered
 }
 
 function summarize(hits: SearchHit[]): string {
@@ -121,7 +135,9 @@ function summarize(hits: SearchHit[]): string {
         ? nodeLine({ id: h.note_id, title: h.note_title ?? h.note_id, state: h.note_state ?? undefined })
         : `${h.block_kind} — ${h.block_id}`
       const snippet = `${h.content.slice(0, 100).replace(/\n/g, ' ')}${h.content.length > 100 ? '…' : ''}`
-      return `- [${h.score.toFixed(3)}] ${head} :: ${snippet}`
+      const prov =
+        h.derived_from > 0 ? `  ⟵ ${h.derived_from} raw${h.transformation ? ` (${h.transformation})` : ''}` : ''
+      return `- [${h.score.toFixed(3)}] ${head} :: ${snippet}${prov}`
     })
     .join('\n')
 }

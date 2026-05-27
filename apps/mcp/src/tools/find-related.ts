@@ -6,6 +6,7 @@ import { nodeLine } from '../serialize'
 import { getDb } from '../surreal'
 import { defineTool } from './define-tool'
 import { idStr } from './graph-records'
+import { provenanceByBlock } from './trace-provenance'
 
 /**
  * LLM-friendly wrapper over vector_search. Returns a compact, deduped list
@@ -32,11 +33,16 @@ export type FindRelatedInput = z.infer<typeof findRelatedSchema>
 
 export type FindRelatedHit = {
   note_id: string
+  block_id: string
   title: string
   type_slug: string | null
   state: string
   snippet: string
   score: number
+  /** Provenance of the matched block: raw_capture count + a representative
+   * transformation, so the agent can prefer backed hits over inferred ones. */
+  derived_from: number
+  transformation: string | null
 }
 
 type Row = {
@@ -90,9 +96,10 @@ export async function findRelatedImpl(input: FindRelatedInput): Promise<FindRela
     if (!bestByNote.has(noteId)) bestByNote.set(noteId, r)
   }
 
-  return Array.from(bestByNote.values())
+  const hits: FindRelatedHit[] = Array.from(bestByNote.values())
     .map(r => ({
       note_id: idStr(r.note_id),
+      block_id: idStr(r.id),
       title: r.note_title,
       type_slug: r.note_type_slug,
       state: r.note_state,
@@ -100,11 +107,21 @@ export async function findRelatedImpl(input: FindRelatedInput): Promise<FindRela
         r.content.length > SNIPPET_LEN
           ? `${r.content.slice(0, SNIPPET_LEN).replace(/\n/g, ' ')}…`
           : r.content.replace(/\n/g, ' '),
-      score: 1 - r.distance
+      score: 1 - r.distance,
+      derived_from: 0,
+      transformation: null
     }))
     .filter(h => h.score >= threshold)
     .sort((a, b) => b.score - a.score)
     .slice(0, k)
+
+  const prov = await provenanceByBlock(hits.map(h => h.block_id))
+  for (const h of hits) {
+    const p = prov.get(h.block_id)
+    h.derived_from = p?.derived_from ?? 0
+    h.transformation = p?.transformation ?? null
+  }
+  return hits
 }
 
 function summarize(hits: FindRelatedHit[]): string {
@@ -112,7 +129,7 @@ function summarize(hits: FindRelatedHit[]): string {
   return hits
     .map(
       (h, i) =>
-        `${i + 1}. [${h.score.toFixed(3)}] ${nodeLine({ id: h.note_id, title: h.title, type: h.type_slug ?? undefined, state: h.state })}\n   ${h.snippet}`
+        `${i + 1}. [${h.score.toFixed(3)}] ${nodeLine({ id: h.note_id, title: h.title, type: h.type_slug ?? undefined, state: h.state })}${h.derived_from > 0 ? `  ⟵ ${h.derived_from} raw${h.transformation ? ` (${h.transformation})` : ''}` : ''}\n   ${h.snippet}`
     )
     .join('\n')
 }
