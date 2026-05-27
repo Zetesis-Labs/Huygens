@@ -1,0 +1,77 @@
+{{- if .Values.dashboard.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "huygens.dashboard.fullname" . }}
+  labels:
+    {{- include "huygens.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.dashboard.replicas }}
+  selector:
+    matchLabels:
+      {{- include "huygens.selectorLabels" (dict "ctx" . "component" "dashboard") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "huygens.labels" . | nindent 8 }}
+        {{- include "huygens.selectorLabels" (dict "ctx" . "component" "dashboard") | nindent 8 }}
+    spec:
+      {{- include "huygens.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "huygens.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: dashboard
+          image: {{ include "huygens.dashboard.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          # Astro node SSR adapter binds to HOST:PORT. SSR reads SurrealDB only
+          # as the read-only reader user.
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: {{ .Values.dashboard.port | quote }}
+            - name: SURREAL_READER_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "huygens.secretName" . }}
+                  key: SURREAL_READER_PASS
+          envFrom:
+            - configMapRef:
+                name: {{ include "huygens.fullname" . }}-config
+          ports:
+            - name: http
+              containerPort: {{ .Values.dashboard.port }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.dashboard.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

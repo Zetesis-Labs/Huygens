@@ -1,5 +1,5 @@
 # Default values for huygens.
-# Override per environment (staging, prod) at deploy time.
+# Override per environment (staging, prod) at deploy time with -f values-<env>.yaml.
 
 nameOverride: ""
 fullnameOverride: ""
@@ -8,16 +8,22 @@ image:
   registry: gauss.nexolabs.dev
   repository: huygens
   pullPolicy: IfNotPresent
+  # List of imagePullSecret names (the Harbor pull secret must exist in the ns).
   pullSecrets: []
 
+# ── MCP server (Streamable HTTP, the persistence boundary) ───────────────────
 mcp:
   enabled: true
   image:
     name: mcp
-    # Defaults to .Chart.AppVersion. Override per-deploy via env.json.
+    # Defaults to .Chart.AppVersion (0.6.0). Override per-deploy.
     tag: ""
   replicas: 1
   port: 3030
+  # initContainer applies the SurrealDB schema (db:apply) and creates the
+  # read-only `huygens_reader` user (db:define-reader) before the MCP starts.
+  # assertSchemaReady() fails fast otherwise.
+  applySchema: true
   resources:
     requests:
       cpu: 100m
@@ -32,34 +38,74 @@ mcp:
     className: ""
     annotations: {}
     hosts: []
+    #  - host: huygens-mcp.example.com
+    #    paths: [{ path: /, pathType: Prefix }]
     tls: []
 
+# ── Autonomous worker (currently an MCP shell; opt-in) ───────────────────────
+# The worker is excluded by default (matches the compose `worker` profile and
+# WORKER_ENABLED=false). Enable when there is a real worker loop to run.
 worker:
-  enabled: true
+  enabled: false
   image:
     name: worker
-    tag: ""
+    # Worker releases independently of the MCP — pin its own tag.
+    tag: "0.3.0"
   replicas: 1
+  actor: worker
   resources:
     requests:
       cpu: 100m
       memory: 256Mi
     limits:
       memory: 512Mi
+  # Forward-looking knobs (not wired until the worker loop exists).
   pollIntervalSeconds: 2
   clarifyModel: gpt-4o-mini
 
+# ── Dashboard (Astro SSR) ────────────────────────────────────────────────────
+# Disabled by default: there is no published dashboard image yet (apps/dashboard
+# has no Dockerfile / docker-publish workflow). Enable once that image exists.
+dashboard:
+  enabled: false
+  image:
+    name: dashboard
+    tag: ""
+  replicas: 1
+  port: 4321
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 4321
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts: []
+    tls: []
+
+# ── SurrealDB ────────────────────────────────────────────────────────────────
 surrealdb:
   # When enabled the chart deploys SurrealDB as a StatefulSet. Set to false to
   # point at an external SurrealDB via `env.surrealUrl`.
   enabled: true
   image:
     repository: surrealdb/surrealdb
-    tag: latest
+    # Pinned to the validated version (ADR-0024/0025). `latest` may break VERSION.
+    tag: v3.0.5
+  # SurrealKV with versioning enables time-travel (VERSION) + real changefeed
+  # (RocksDB does not). Do not change without an ADR.
+  storage: "surrealkv:/data/db?versioned=true"
   persistence:
     enabled: true
     size: 5Gi
     storageClass: ""
+    accessModes: [ReadWriteOnce]
   resources:
     requests:
       cpu: 100m
@@ -67,26 +113,43 @@ surrealdb:
     limits:
       memory: 1Gi
 
+# ── Shared non-secret env ────────────────────────────────────────────────────
 env:
-  # SurrealDB connection (overridden by the chart if surrealdb.enabled=true)
+  # SurrealDB connection. surrealUrl is auto-derived when surrealdb.enabled=true;
+  # set it explicitly only when pointing at an external SurrealDB.
   surrealUrl: ""
   surrealNs: huygens
   surrealDb: main
   surrealUser: root
-  # Plaintext password fallback for dev only. Production uses `existingSecret`.
-  surrealPass: ""
+  # read-only user the MCP query_* tools and the dashboard sign in as.
+  surrealReaderUser: huygens_reader
 
-# Reference an existing Kubernetes Secret holding sensitive env vars
-# (OPENAI_API_KEY, DEEPINFRA_API_KEY, SURREAL_PASS). The Secret is expected
-# to be provisioned externally — e.g. via ExternalSecretsOperator from Infisical.
+# Extra plain (non-secret) env injected into mcp + worker.
+extraEnv: {}
+
+# ── Secrets ──────────────────────────────────────────────────────────────────
+# Production: provision a Secret externally (e.g. ExternalSecretsOperator from
+# Infisical) and set `existingSecret` to its name. It must carry the keys:
+#   SURREAL_PASS, SURREAL_READER_PASS, and any API keys (DEEPINFRA_API_KEY, ...).
+# Dev/standalone: leave existingSecret empty and set the values below; the chart
+# creates the Secret for you. NEVER commit real values here.
 existingSecret: ""
+secret:
+  surrealPass: ""
+  surrealReaderPass: ""
+  # Arbitrary extra secret env (e.g. DEEPINFRA_API_KEY for embeddings).
+  extra: {}
 
 serviceAccount:
   create: true
   annotations: {}
   name: ""
 
-podSecurityContext: {}
+# fsGroup 65532 lets the SurrealDB pod (runs as uid 65532) write the PVC,
+# replacing the chown init container used in the devcontainer compose.
+podSecurityContext:
+  fsGroup: 65532
+  fsGroupChangePolicy: OnRootMismatch
 securityContext: {}
 
 nodeSelector: {}

@@ -1,0 +1,55 @@
+{{- if .Values.worker.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "huygens.worker.fullname" . }}
+  labels:
+    {{- include "huygens.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "huygens.selectorLabels" (dict "ctx" . "component" "worker") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "huygens.labels" . | nindent 8 }}
+        {{- include "huygens.selectorLabels" (dict "ctx" . "component" "worker") | nindent 8 }}
+    spec:
+      {{- include "huygens.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "huygens.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: worker
+          image: {{ include "huygens.worker.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            - name: WORKER_ENABLED
+              value: "true"
+            - name: ACTOR
+              value: {{ .Values.worker.actor | quote }}
+            - name: MCP_URL
+              value: "http://{{ include "huygens.mcp.fullname" . }}:{{ .Values.mcp.service.port }}/mcp"
+          envFrom:
+            - configMapRef:
+                name: {{ include "huygens.fullname" . }}-config
+            - secretRef:
+                name: {{ include "huygens.secretName" . }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

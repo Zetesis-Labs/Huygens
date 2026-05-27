@@ -1,0 +1,96 @@
+{{- if .Values.surrealdb.enabled -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "huygens.surrealdb.fullname" . }}
+  labels:
+    {{- include "huygens.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "huygens.surrealdb.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "huygens.selectorLabels" (dict "ctx" . "component" "surrealdb") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "huygens.labels" . | nindent 8 }}
+        {{- include "huygens.selectorLabels" (dict "ctx" . "component" "surrealdb") | nindent 8 }}
+    spec:
+      {{- include "huygens.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "huygens.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: surrealdb
+          image: "{{ .Values.surrealdb.image.repository }}:{{ .Values.surrealdb.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - start
+            - --user
+            - {{ .Values.env.surrealUser | quote }}
+            - --pass
+            - $(SURREAL_ROOT_PASS)
+            - --bind
+            - 0.0.0.0:8000
+            - {{ .Values.surrealdb.storage | quote }}
+          env:
+            - name: SURREAL_ROOT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "huygens.secretName" . }}
+                  key: SURREAL_PASS
+          ports:
+            - name: rpc
+              containerPort: 8000
+          readinessProbe:
+            exec:
+              command: ["/surreal", "isready", "--endpoint", "http://localhost:8000"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            exec:
+              command: ["/surreal", "isready", "--endpoint", "http://localhost:8000"]
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.surrealdb.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if not .Values.surrealdb.persistence.enabled }}
+      volumes:
+        - name: data
+          emptyDir: {}
+      {{- end }}
+  {{- if .Values.surrealdb.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          {{- toYaml .Values.surrealdb.persistence.accessModes | nindent 10 }}
+        {{- with .Values.surrealdb.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.surrealdb.persistence.size | quote }}
+  {{- end }}
+{{- end }}

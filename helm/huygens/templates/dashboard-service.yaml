@@ -1,0 +1,16 @@
+{{- if .Values.dashboard.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "huygens.dashboard.fullname" . }}
+  labels:
+    {{- include "huygens.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.dashboard.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.dashboard.service.port }}
+      targetPort: http
+  selector:
+    {{- include "huygens.selectorLabels" (dict "ctx" . "component" "dashboard") | nindent 4 }}
+{{- end }}

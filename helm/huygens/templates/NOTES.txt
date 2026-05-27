@@ -1,22 +1,42 @@
-Huygens chart {{ .Chart.Version }} deployed with appVersion {{ .Chart.AppVersion }}.
+Huygens chart {{ .Chart.Version }} deployed (appVersion {{ .Chart.AppVersion }}) as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
 
 Components:
+{{- if .Values.surrealdb.enabled }}
+  - SurrealDB  {{ .Values.surrealdb.image.repository }}:{{ .Values.surrealdb.image.tag }}  (StatefulSet, {{ .Values.surrealdb.storage }})
+{{- else }}
+  - SurrealDB  external → {{ .Values.env.surrealUrl }}
+{{- end }}
 {{- if .Values.mcp.enabled }}
-  - MCP server ({{ include "huygens.mcp.image" . }})
+  - MCP        {{ include "huygens.mcp.image" . }}  (:{{ .Values.mcp.service.port }}/mcp)
 {{- end }}
 {{- if .Values.worker.enabled }}
-  - Worker ({{ include "huygens.worker.image" . }})
+  - Worker     {{ include "huygens.worker.image" . }}
+{{- else }}
+  - Worker     disabled (set worker.enabled=true to deploy)
 {{- end }}
-{{- if .Values.surrealdb.enabled }}
-  - SurrealDB ({{ .Values.surrealdb.image.repository }}:{{ .Values.surrealdb.image.tag }})
+{{- if .Values.dashboard.enabled }}
+  - Dashboard  {{ include "huygens.dashboard.image" . }}  (:{{ .Values.dashboard.service.port }})
+{{- else }}
+  - Dashboard  disabled (needs a published image; set dashboard.enabled=true + dashboard.image)
 {{- end }}
 
-This chart is a scaffold. Templates for Deployments / Services / StatefulSets
-are intentionally minimal in v0.1.0 — added incrementally as the deploy
-target is defined (currently devcontainer-only).
+{{- if not .Values.existingSecret }}
 
-To check the rendered manifest before applying:
-  helm template {{ .Release.Name }} {{ .Chart.Name }} --values your-values.yaml
+⚠  Using a chart-managed Secret with the values under `secret.*`. For production
+   set `existingSecret` to an externally-provisioned Secret carrying SURREAL_PASS,
+   SURREAL_READER_PASS and any API keys (e.g. DEEPINFRA_API_KEY).
+{{- end }}
 
-To upgrade:
-  helm upgrade {{ .Release.Name }} {{ .Chart.Name }} --values your-values.yaml
+Reach the MCP locally:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "huygens.mcp.fullname" . }} {{ .Values.mcp.service.port }}:{{ .Values.mcp.service.port }}
+  curl localhost:{{ .Values.mcp.service.port }}/healthz
+
+{{- if .Values.mcp.ingress.enabled }}
+{{- range .Values.mcp.ingress.hosts }}
+  MCP ingress: http://{{ .host }}/mcp
+{{- end }}
+{{- end }}
+
+Inspect / upgrade:
+  helm get manifest {{ .Release.Name }} -n {{ .Release.Namespace }}
+  helm upgrade {{ .Release.Name }} . -n {{ .Release.Namespace }} -f your-values.yaml

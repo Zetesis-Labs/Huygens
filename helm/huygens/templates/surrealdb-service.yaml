@@ -1,0 +1,17 @@
+{{- if .Values.surrealdb.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "huygens.surrealdb.fullname" . }}
+  labels:
+    {{- include "huygens.labels" . | nindent 4 }}
+spec:
+  # Headless: stable DNS for the StatefulSet pod; single replica resolves direct.
+  clusterIP: None
+  ports:
+    - name: rpc
+      port: 8000
+      targetPort: rpc
+  selector:
+    {{- include "huygens.selectorLabels" (dict "ctx" . "component" "surrealdb") | nindent 4 }}
+{{- end }}

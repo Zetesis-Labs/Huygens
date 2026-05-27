@@ -1,0 +1,16 @@
+{{- if .Values.mcp.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "huygens.mcp.fullname" . }}
+  labels:
+    {{- include "huygens.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.mcp.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.mcp.service.port }}
+      targetPort: http
+  selector:
+    {{- include "huygens.selectorLabels" (dict "ctx" . "component" "mcp") | nindent 4 }}
+{{- end }}

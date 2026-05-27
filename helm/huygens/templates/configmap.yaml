@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "huygens.fullname" . }}-config
+  labels:
+    {{- include "huygens.labels" . | nindent 4 }}
+data:
+  SURREAL_URL: {{ include "huygens.surrealUrl" . | quote }}
+  SURREAL_NS: {{ .Values.env.surrealNs | quote }}
+  SURREAL_DB: {{ .Values.env.surrealDb | quote }}
+  SURREAL_USER: {{ .Values.env.surrealUser | quote }}
+  SURREAL_READER_USER: {{ .Values.env.surrealReaderUser | quote }}
+  {{- range $k, $v := .Values.extraEnv }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

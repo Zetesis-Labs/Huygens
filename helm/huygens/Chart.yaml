@@ -3,8 +3,8 @@ name: huygens
 description: Personal memory MCP — SurrealDB + autonomous Agno worker +
   Streamable HTTP MCP server with typed tools + canonical prompts
 type: application
-version: 0.1.1
-appVersion: "0.4.0"
+version: 0.2.0
+appVersion: "0.6.0"
 home: https://github.com/Zetesis-Labs/Huygens
 sources:
   - https://github.com/Zetesis-Labs/Huygens
