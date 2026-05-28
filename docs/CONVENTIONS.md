@@ -64,18 +64,15 @@ queda en `proposal.result` con los record ids reales, el mapa `temp_ids`
 (temp_id → record id real) y el `versionstamp` de la transaccion. Para
 inspeccionar qué cambió exactamente usa `get_proposal_changes`.
 
-### Mutaciones triviales
+### Cambios de estado y metadata
 
-Cambios simples y directos pueden aplicarse con menos ceremonia:
-
-```text
-marcar task como DONE      → update_note_state
-cambiar state de una note  → update_note_state
-añadir un dato metadata claro pedido por el usuario
-```
+Cambiar el estado ZTD o el `mit_for` de una note existente, o ajustar su
+`metadata`, se hace dentro de una proposal (`commit_proposal` con
+`note_updates`), igual que cualquier otra mutacion del grafo: el usuario ve el
+preview antes de que se aplique. No hay atajo de mutacion directa.
 
 Si la operacion implica interpretar una conversacion, crear varias notes o
-decidir relaciones, no es trivial.
+decidir relaciones, vale el mismo flujo deliberado.
 
 ## Ontologia minima
 
@@ -201,7 +198,6 @@ discard_proposal       descarta drafts
 commit_proposal        aprobacion del usuario: transaccion atomica, materializa result
 get_proposal_changes   cambios exactos de una proposal commiteada (materialized + changefeed + D2 opcional)
 
-update_note_state      mueve una note por los estados ZTD; registra agent_event
 list_mits_for_date     notas MIT del dia dado, filtradas por estado
 list_notes_by_type     notas por type slug y estado, ordenadas por updated_at
 

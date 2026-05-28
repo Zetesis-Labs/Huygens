@@ -201,7 +201,6 @@ get_proposal         human-readable preview of the commit + raw JSON; for commit
 get_proposal_changes exact changes a committed proposal produced: JSON (materialized + changefeed views); graphical view lives in the dashboard
 discard_proposal     discard a draft proposal
 commit_proposal      atomic approved graph commit (BEGIN…COMMIT, all-or-nothing); returns real record ids + temp_ids map
-update_note_state    move a note through ZTD states (CLARIFIED→ACTIVE→WAITING→SOMEDAY→DONE→ARCHIVED)
 list_mits_for_date   notes with mit_for on a given day (MITs)
 list_notes_by_type   inspect notes by type (task/project/objetivo/idea/…) and state
 find_related         find existing notes related to a concept (vector, deduped by note)

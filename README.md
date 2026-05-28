@@ -63,7 +63,6 @@ get_proposal        human-readable preview + raw JSON; result if committed
 get_proposal_changes changes produced by a committed proposal (JSON: materialized + changefeed)
 discard_proposal    discard a draft
 commit_proposal     atomic graph commit (BEGIN…COMMIT)
-update_note_state   move a note through ZTD states; records agent_event
 list_mits_for_date  MITs (Most Important Tasks) for a given day
 list_notes_by_type  notes filtered by type and state
 find_related        existing notes related to a concept (vector, deduped)

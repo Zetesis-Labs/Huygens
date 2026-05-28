@@ -17,7 +17,6 @@ import { registerQueryQuery } from './tools/query/query'
 import { registerSavedQuery } from './tools/saved-query'
 import { registerSetRawStatus } from './tools/set-raw-status'
 import { registerTraceProvenance } from './tools/trace-provenance'
-import { registerUpdateNoteState } from './tools/update-note-state'
 import { registerVectorSearch } from './tools/vector-search'
 
 export function createServer(): McpServer {
@@ -40,7 +39,6 @@ export function createServer(): McpServer {
   registerIndexBlock(server)
   registerVectorSearch(server)
   registerFindRelated(server)
-  registerUpdateNoteState(server)
   registerListMits(server)
   registerListByType(server)
   registerQueryQuery(server)

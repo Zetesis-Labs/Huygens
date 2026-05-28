@@ -78,7 +78,6 @@ get_proposal_changes cambios exactos de una proposal commiteada:
 
 list_mits_for_date   tasks MIT del día (campo top-level mit_for, YYYY-MM-DD o ISO)
 list_notes_by_type   notas filtradas por type slug + state
-update_note_state    transición ZTD de una note; registra agent_event
 
 find_related         búsqueda semántica de notes similares (antes de crear duplicados)
 vector_search        K vecinos más cercanos en blocks vía HNSW cosine (BGE-M3)

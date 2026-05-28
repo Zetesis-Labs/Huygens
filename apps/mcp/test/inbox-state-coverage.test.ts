@@ -1,14 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { StringRecordId } from 'surrealdb'
 import { z } from 'zod'
-import { NoteNotFoundError } from '../src/errors'
 import { captureImpl } from '../src/tools/capture'
 import { getRawImpl, getRawShape } from '../src/tools/get-raw'
 import { listByTypeImpl } from '../src/tools/list-by-type'
 import { listInboxImpl } from '../src/tools/list-inbox'
 import { listMitsImpl } from '../src/tools/list-mits'
 import { setRawStatusImpl, setRawStatusShape } from '../src/tools/set-raw-status'
-import { updateNoteStateImpl, updateNoteStateShape } from '../src/tools/update-note-state'
 import { insertNote, type TestDb, withFreshDb } from './_fixtures'
 
 // Coverage-gap suite. Only behaviours NOT already exercised by the
@@ -99,59 +97,6 @@ describe('list_inbox — coverage gaps', () => {
 
     expect(pendingRows.map(r => r.id)).toEqual([pending.raw_id])
     expect(processedRows.map(r => r.id)).toEqual([processed.raw_id])
-  })
-})
-
-describe('update_note_state — coverage gaps', () => {
-  let ctx: TestDb
-  beforeEach(async () => {
-    ctx = await withFreshDb()
-  })
-  afterEach(async () => {
-    await ctx.cleanup()
-  })
-
-  test('applies any valid ZTD target state (e.g. ARCHIVED)', async () => {
-    const { note_id } = await insertNote(ctx.db, { title: 'old', type_slug: 'task' })
-    const result = await updateNoteStateImpl({ note_id, state: 'ARCHIVED' })
-    expect(result.new_state).toBe('ARCHIVED')
-
-    const [rows] = await ctx.db.query<[{ state: string }[]]>('SELECT state FROM note WHERE id = $id', {
-      id: new StringRecordId(note_id)
-    })
-    expect(rows[0]?.state).toBe('ARCHIVED')
-  })
-
-  test('leaves mit_for untouched — state changes do not clear the MIT mark', async () => {
-    const { note_id } = await insertNote(ctx.db, {
-      title: 'mit task',
-      type_slug: 'task',
-      mit_for: '2026-05-27T08:00:00Z'
-    })
-    await updateNoteStateImpl({ note_id, state: 'DONE' })
-
-    const mits = await listMitsImpl({ date: '2026-05-27', state_in: ['DONE'] })
-    expect(mits.map(m => m.id)).toEqual([note_id])
-  })
-
-  test('NoteNotFoundError leaves no event behind', async () => {
-    await expect(updateNoteStateImpl({ note_id: 'note:ghost', state: 'ACTIVE' })).rejects.toBeInstanceOf(
-      NoteNotFoundError
-    )
-    const [events] = await ctx.db.query<[{ count: number }[]]>(
-      'SELECT count() AS count FROM agent_event WHERE kind = "note_state_changed" GROUP ALL'
-    )
-    expect(events[0]?.count ?? 0).toBe(0)
-  })
-
-  test('schema rejects a state outside the enum', () => {
-    const schema = z.object(updateNoteStateShape)
-    expect(() => schema.parse({ note_id: 'note:abc', state: 'PAUSED' })).toThrow()
-  })
-
-  test('schema rejects a malformed note id', () => {
-    const schema = z.object(updateNoteStateShape)
-    expect(() => schema.parse({ note_id: 'raw_capture:abc', state: 'ACTIVE' })).toThrow()
   })
 })
 

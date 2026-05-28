@@ -156,7 +156,6 @@ change graph lives in the dashboard (React Flow), not in the MCP.
 | `get_proposal_changes` | Read exact changes of a committed proposal (materialized + changefeed, optional D2 diagram). |
 | `list_mits_for_date` | Notes with `mit_for` on a given day, in active-ish states. |
 | `list_notes_by_type` | Notes filtered by type slug and state, ordered by updated_at desc. |
-| `update_note_state` | Move a note through the ZTD state machine; emits agent_event. |
 | `find_related` | Semantic search returning up to K distinct notes (deduped). Use before creating a new note to avoid duplicates. |
 | `vector_search` | K-nearest blocks via HNSW (cosine, BGE-M3). Optional filters by note state, type slug, updated-since. |
 | `index_block` | Embed 1..64 blocks with BGE-M3 and persist embedding on each block. |

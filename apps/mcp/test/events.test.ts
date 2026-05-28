@@ -3,8 +3,7 @@ import type { RecordId } from 'surrealdb'
 import { captureImpl } from '../src/tools/capture'
 import { commitProposalImpl, createProposalImpl, type ProposalPayload } from '../src/tools/proposal'
 import { setRawStatusImpl } from '../src/tools/set-raw-status'
-import { updateNoteStateImpl } from '../src/tools/update-note-state'
-import { insertNote, type TestDb, withFreshDb } from './_fixtures'
+import { type TestDb, withFreshDb } from './_fixtures'
 
 type EventRow = {
   kind: string
@@ -63,23 +62,6 @@ describe('agent_event — emission and persistence', () => {
     const [ev] = evs
     expect(ev?.actor).toBe('conversational')
     expect(ev?.payload).toMatchObject({ raw_ids: [raw_id], status: 'ignored' })
-  })
-
-  test("update_note_state emits 'note_state_changed' with the note as subject and the transition", async () => {
-    const { note_id } = await insertNote(ctx.db, { title: 'Tarea', type_slug: 'task', state: 'ACTIVE' })
-    await updateNoteStateImpl({ note_id, state: 'DONE', reason: 'terminada' })
-
-    const evs = await events(ctx, 'note_state_changed')
-    expect(evs).toHaveLength(1)
-    const [ev] = evs
-    expect(ev?.actor).toBe('conversational')
-    expect(String(ev?.subject)).toBe(note_id)
-    expect(ev?.payload).toMatchObject({
-      action: 'state_transition',
-      previous_state: 'ACTIVE',
-      new_state: 'DONE',
-      reason: 'terminada'
-    })
   })
 
   test("commit_proposal emits 'proposal_committed' with actor user and the proposal as subject", async () => {
