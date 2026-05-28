@@ -1,9 +1,9 @@
 # Huygens — SurrealQL cookbook (explorar la topología)
 
 Piezas y recetas READ-ONLY para `query_query` / `run_query`, **verificadas contra el
-grafo**. El schema físico real va justo después de este cookbook. Toda query es la misma
-plantilla; se compone enchufando ladrillos, filtrando en cada salto y **anidando
-subqueries**.
+grafo**. El schema físico real (tablas, campos, enums, edges) está en el recurso
+`huygens://lore/schema`. Toda query es la misma plantilla; se compone enchufando ladrillos,
+filtrando en cada salto y **anidando subqueries**.
 
 > **`query_query` en su sitio.** Es el *escape hatch* para exploración libre (agregaciones,
 > tiempo, grafo a medida). Si hay una tool dedicada, úsala — da formato canónico y validación:
@@ -242,6 +242,10 @@ SELECT id, content, source_kind, created_at FROM raw_capture WHERE status='pendi
 Salud del inbox (recuento por estado):
 ```surql
 SELECT status, count() AS n FROM raw_capture GROUP BY status;
+```
+Un raw y lo que generó (su detalle + blocks derivados):
+```surql
+SELECT *, <-derived_from<-block.id AS derived FROM raw_capture:abc;
 ```
 Buscar texto (varios términos, case-insensitive):
 ```surql

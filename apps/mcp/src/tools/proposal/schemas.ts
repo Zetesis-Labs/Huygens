@@ -30,7 +30,7 @@ const BlockRefSchema = z.string().refine(value => TEMP_ID_RE.test(value) || BLOC
 /**
  * A MIT date: a calendar day (YYYY-MM-DD) or a full ISO datetime. Stored in the
  * note's top-level `mit_for` datetime field (a date-only value lands at that
- * day's UTC midnight), so `list_mits_for_date` can find it.
+ * day's UTC midnight), so a mit_for date-range query can find it.
  */
 const MitForSchema = z
   .string()

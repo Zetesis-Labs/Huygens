@@ -58,7 +58,7 @@ Each block is the vectorizable unit. `index_block` writes `embedding`/`embedding
 
 ### mit_for
 
-`mit_for` is a **top-level datetime field on `note`** (indexed as `note_mit_for`). Set it as `YYYY-MM-DD` (interpreted as UTC midnight) or full ISO datetime. **Never put it inside `metadata`.** `list_mits_for_date` queries `mit_for >= start AND mit_for < end`.
+`mit_for` is a **top-level datetime field on `note`** (indexed as `note_mit_for`). Set it as `YYYY-MM-DD` (interpreted as UTC midnight) or full ISO datetime. **Never put it inside `metadata`.** Query it with `mit_for >= start AND mit_for < end`.
 
 ## Cross-plane and graph edges
 
@@ -147,15 +147,12 @@ change graph lives in the dashboard (React Flow), not in the MCP.
 | `capture` | Persist raw user input as pending raw_capture (Plane 1). No interpretation. |
 | `list_inbox` | List raw_captures by status (default: pending). |
 | `set_raw_status` | Change status for 1..100 raws without creating topology. |
-| `get_raw` | Full detail of one raw_capture + derived records (blocks). |
 | `create_proposal` | Persist a visible draft proposal. Does not mutate graph. |
 | `update_proposal` | Replace payload of a draft proposal. |
 | `get_proposal` | Human-readable diff preview + raw JSON. |
 | `discard_proposal` | Mark draft as discarded. No graph mutation. |
 | `commit_proposal` | Atomic: create blocks/notes/edges, mark raws processed, store result. |
 | `get_proposal_changes` | Read exact changes of a committed proposal (materialized + changefeed, optional D2 diagram). |
-| `list_mits_for_date` | Notes with `mit_for` on a given day, in active-ish states. |
-| `list_notes_by_type` | Notes filtered by type slug and state, ordered by updated_at desc. |
 | `find_related` | Semantic search returning up to K distinct notes (deduped). Use before creating a new note to avoid duplicates. |
 | `vector_search` | K-nearest blocks via HNSW (cosine, BGE-M3). Optional filters by note state, type slug, updated-since. |
 | `index_block` | Embed 1..64 blocks with BGE-M3 and persist embedding on each block. |

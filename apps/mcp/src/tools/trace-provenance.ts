@@ -134,7 +134,7 @@ async function traceFromNote(db: Surreal, ref: StringRecordId): Promise<Gathered
  * Trace where a note or block comes from: the raw_captures it derives from (with
  * their `transformation` — verbatim vs inferred) and the about/affects links.
  * Lets the agent CITE provenance and tell "you said this" from "I inferred this".
- * Read-only; the mirror of `get_raw` (which traces the other direction).
+ * Read-only.
  */
 export async function traceProvenanceImpl(input: TraceProvenanceInput): Promise<ProvenanceTrace | null> {
   const db = await getDb()

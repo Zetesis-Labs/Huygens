@@ -32,7 +32,7 @@ El flujo v2.1-lite ya existe en schema/tools:
 - `raw_capture.status`: `pending | processed | ignored | deferred`.
 - `block.block_kind`: `descriptive | narrative`.
 - `note.mit_for`: campo de primera clase (datetime indexado); una fecha
-  `YYYY-MM-DD` cae a medianoche UTC. Lo consulta `list_mits_for_date`.
+  `YYYY-MM-DD` cae a medianoche UTC.
 - `proposal`: drafts visibles antes del commit. Tras el commit almacena el
   `result` materializado: record ids reales creados, `temp_ids` map, `versionstamp` y `committed_at`.
 - `commit_proposal`: operación atómica (`BEGIN…COMMIT`); cualquier fallo
@@ -56,15 +56,12 @@ El flujo legacy `raw -> clarify -> notes` fue retirado. No hay
 capture             persist a raw_capture
 list_inbox          list raws by status (default: pending)
 set_raw_status      mark raws ignored/deferred/processed
-get_raw             inspect a raw and derived records
 create_proposal     persist a visible draft (no graph mutation)
 update_proposal     update a draft proposal
 get_proposal        human-readable preview + raw JSON; result if committed
 get_proposal_changes changes produced by a committed proposal (JSON: materialized + changefeed)
 discard_proposal    discard a draft
 commit_proposal     atomic graph commit (BEGIN…COMMIT)
-list_mits_for_date  MITs (Most Important Tasks) for a given day
-list_notes_by_type  notes filtered by type and state
 find_related        existing notes related to a concept (vector, deduped)
 vector_search       KNN block search via HNSW (BGE-M3, cosine)
 index_block         embed 1..64 blocks and persist in HNSW index

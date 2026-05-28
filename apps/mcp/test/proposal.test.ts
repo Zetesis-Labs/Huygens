@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { captureImpl } from '../src/tools/capture'
-import { listMitsImpl } from '../src/tools/list-mits'
 import {
   commitProposalImpl,
   createProposalImpl,
@@ -238,8 +237,14 @@ describe('proposal v2.1-lite flow', () => {
     })
     await commitProposalImpl({ proposal_id: created.id })
 
-    expect((await listMitsImpl({ date: '2026-05-26' })).map(m => m.title)).toContain('Call Ana')
-    expect(await listMitsImpl({ date: '2026-05-27' })).toEqual([])
+    const [mits26] = await ctx.db.query<[{ title: string }[]]>(
+      "SELECT title FROM note WHERE mit_for >= d'2026-05-26' AND mit_for < d'2026-05-27'"
+    )
+    expect(mits26.map(m => m.title)).toContain('Call Ana')
+    const [mits27] = await ctx.db.query<[{ title: string }[]]>(
+      "SELECT title FROM note WHERE mit_for >= d'2026-05-27' AND mit_for < d'2026-05-28'"
+    )
+    expect(mits27).toEqual([])
   })
 
   test('commit_proposal returns a temp_id → real_id map for created notes and narrative blocks', async () => {

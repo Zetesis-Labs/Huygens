@@ -18,8 +18,8 @@ function buildNoteCreateData(note: NoteCreate): Record<string, unknown> {
     type: new StringRecordId(`note_type:${note.type_slug}`),
     state: note.state
   }
-  // mit_for is a top-level datetime field on note (indexed, queried by
-  // list_mits_for_date); a date-only "YYYY-MM-DD" becomes that day's UTC midnight.
+  // mit_for is a top-level datetime field on note (indexed); a date-only
+  // "YYYY-MM-DD" becomes that day's UTC midnight.
   if (note.mit_for) data.mit_for = new Date(note.mit_for)
   if (note.metadata) data.metadata = note.metadata
   return data

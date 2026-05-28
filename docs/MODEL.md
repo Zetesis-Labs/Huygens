@@ -407,13 +407,10 @@ Reference "Paper sobre graph databases" mentions Project "Huygens"
 | `capture` | Crea `raw_capture` con `status='pending'`. |
 | `list_inbox` | Lista raws por `status`; default `pending`. |
 | `set_raw_status` | Permite `ignored`, `deferred`, `processed` sin crear topologia. |
-| `get_raw` | Detalle de un `raw_capture` por id + records derivados via `derived_from`. |
 | `create_proposal` / `update_proposal` | Persiste drafts visibles sin mutar el grafo. |
 | `get_proposal` / `discard_proposal` | Inspecciona o descarta drafts. |
 | `commit_proposal` | Aprobacion del usuario: transaccion atomica (BEGIN…COMMIT) que crea blocks narrativos, notes/edges minimos, marca raws `processed` y materializa `proposal.result` con los record ids reales + `temp_ids` {notes, blocks} + `versionstamp` + `committed_at`. |
 | `get_proposal_changes` | Recupera cambios exactos de una proposal commiteada: vista materializada (record ids resueltos a registros) + vista changefeed (delta de la transaccion). La visualizacion grafica del cambio vive en el dashboard (React Flow), no en el MCP. |
-| `list_mits_for_date` | Lista las notes con `mit_for` en el dia dado (filtrable por estado). |
-| `list_notes_by_type` | Lista notes por type slug y estado; ordena por `updated_at` desc. |
 | `vector_search` | Busqueda semantica sobre blocks via embedding HNSW. |
 | `embed_text` / `index_block` | Genera embedding y lo persiste en un block. |
 | `find_related` | Bloques semanticamente proximos a un block dado. |

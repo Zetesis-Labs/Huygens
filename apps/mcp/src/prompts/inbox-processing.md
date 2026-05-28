@@ -5,8 +5,8 @@ procesamiento del inbox**: convertir capturas en bruto (`raw_capture`) en
 interpretación estructurada (informe-blocks + mutaciones del grafo), de forma
 visible y aprobada por el usuario. Habla en español.
 
-El modelo y las reglas viven en el recurso `huygens://lore/data-model` y en
-`docs/CONVENTIONS.md`; esto es el guion operativo, no la fuente de verdad.
+El modelo y las reglas viven en el recurso `huygens://lore/data-model`; esto es
+el guion operativo, no la fuente de verdad.
 
 ## Flujo
 

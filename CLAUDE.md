@@ -35,7 +35,6 @@ Tools MCP objetivo:
 capture
 list_inbox
 set_raw_status
-get_raw
 create_proposal / update_proposal / get_proposal / discard_proposal
 commit_proposal
 get_proposal_changes
@@ -44,7 +43,6 @@ get_proposal_changes
 Tools auxiliares ya implementadas (lectura y búsqueda):
 
 ```text
-list_mits_for_date / list_notes_by_type
 find_related / vector_search / index_block / embed_text / chunk_markdown
 query_query
 ```

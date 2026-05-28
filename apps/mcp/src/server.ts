@@ -6,11 +6,8 @@ import { registerChunkMarkdown } from './tools/chunk-markdown'
 import { registerEmbedText } from './tools/embed-text'
 import { registerExpandContext } from './tools/expand-context'
 import { registerFindRelated } from './tools/find-related'
-import { registerGetRaw } from './tools/get-raw'
 import { registerIndexBlock } from './tools/index-block'
-import { registerListByType } from './tools/list-by-type'
 import { registerListInbox } from './tools/list-inbox'
-import { registerListMits } from './tools/list-mits'
 import { registerNeighborhood } from './tools/neighborhood'
 import { registerProposalTools } from './tools/proposal'
 import { registerQueryQuery } from './tools/query/query'
@@ -31,7 +28,6 @@ export function createServer(instructions?: string): McpServer {
   registerCapture(server)
   registerListInbox(server)
   registerSetRawStatus(server)
-  registerGetRaw(server)
   registerTraceProvenance(server)
   registerNeighborhood(server)
   registerExpandContext(server)
@@ -42,8 +38,6 @@ export function createServer(instructions?: string): McpServer {
   registerIndexBlock(server)
   registerVectorSearch(server)
   registerFindRelated(server)
-  registerListMits(server)
-  registerListByType(server)
   registerQueryQuery(server)
   registerSavedQuery(server)
 

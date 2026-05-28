@@ -158,7 +158,7 @@ Para marcar un MIT en una propuesta, usa `mit_for` en `note_creates` o
 `mit_for: null` en `note_updates`.
 
 ```text
-list_mits_for_date    → MITs activos/pendientes de un dia concreto
+query_query → SELECT id,title,state FROM note WHERE mit_for >= $dia AND mit_for < $dia + 1d
 ```
 
 ## Como decidir field vs edge
@@ -189,7 +189,6 @@ inbox/proposal/commit:
 capture                raw ligero al inbox, status=pending
 list_inbox             lee raws por status, default pending
 set_raw_status         ignored/deferred/processed sin topologia
-get_raw                detalle de un raw_capture + records derivados via derived_from
 
 create_proposal        draft visible, no muta el grafo
 update_proposal        edita drafts
@@ -197,9 +196,6 @@ get_proposal           inspecciona drafts o estado final (preview legible + JSON
 discard_proposal       descarta drafts
 commit_proposal        aprobacion del usuario: transaccion atomica, materializa result
 get_proposal_changes   cambios exactos de una proposal commiteada (materialized + changefeed + D2 opcional)
-
-list_mits_for_date     notas MIT del dia dado, filtradas por estado
-list_notes_by_type     notas por type slug y estado, ordenadas por updated_at
 
 embed_text             genera embedding para texto libre
 index_block            persiste embedding en un block

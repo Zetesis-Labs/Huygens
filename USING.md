@@ -148,8 +148,8 @@ The agent persists the visible draft with `create_proposal` or updates it with
 `mit_for` is a first-class field in `note_creates` and `note_updates` inside
 the proposal payload. It accepts a calendar date (`YYYY-MM-DD`) or a full ISO
 datetime; a date-only value lands at that day's UTC midnight. On commit the
-value is written to the top-level indexed `note.mit_for` field, so
-`list_mits_for_date` can find it.
+value is written to the top-level indexed `note.mit_for` field, queryable with
+`mit_for >= start AND mit_for < end`.
 
 ### Commit
 
@@ -194,15 +194,12 @@ docker compose -f .devcontainer/docker-compose.yml --profile worker logs -f huyg
 capture              persist a raw_capture
 list_inbox           list raws by status, default pending
 set_raw_status       mark raws ignored/deferred/processed without topology
-get_raw              inspect a raw and derived records
 create_proposal      persist a visible draft without graph mutation
 update_proposal      update a draft proposal
 get_proposal         human-readable preview of the commit + raw JSON; for committed proposals also shows the materialized result (real ids)
 get_proposal_changes exact changes a committed proposal produced: JSON (materialized + changefeed views); graphical view lives in the dashboard
 discard_proposal     discard a draft proposal
 commit_proposal      atomic approved graph commit (BEGIN…COMMIT, all-or-nothing); returns real record ids + temp_ids map
-list_mits_for_date   notes with mit_for on a given day (MITs)
-list_notes_by_type   inspect notes by type (task/project/objetivo/idea/…) and state
 find_related         find existing notes related to a concept (vector, deduped by note)
 vector_search        search indexed blocks via HNSW (BGE-M3, cosine)
 index_block          embed 1..64 blocks and persist embeddings for vector search

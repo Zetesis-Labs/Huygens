@@ -64,7 +64,6 @@ Tools MCP disponibles:
 capture              raw ligero al inbox (status=pending)
 list_inbox           lista raws por status, default pending
 set_raw_status       ignored/deferred/processed sin topología
-get_raw              detalle completo de un raw + records derivados
 
 create_proposal      draft visible, no muta el grafo
 update_proposal      reemplaza payload de un draft
@@ -75,9 +74,6 @@ commit_proposal      tx atómica: crea blocks/notes/edges, marca raws processed;
 get_proposal_changes cambios exactos de una proposal commiteada:
                        materialized (ids reales resueltos) + changefeed (delta);
                        la visualización gráfica vive en el dashboard (React Flow)
-
-list_mits_for_date   tasks MIT del día (campo top-level mit_for, YYYY-MM-DD o ISO)
-list_notes_by_type   notas filtradas por type slug + state
 
 find_related         búsqueda semántica de notes similares (antes de crear duplicados)
 vector_search        K vecinos más cercanos en blocks vía HNSW cosine (BGE-M3)
@@ -95,7 +91,7 @@ el worker no usa Agno/OpenAI ni procesa el inbox por polling.
 
 El campo `mit_for` es un campo **top-level** de `note` (datetime, indexado).
 No va en `metadata`. `commit_proposal` lo escribe directamente sobre el nodo;
-`list_mits_for_date` lo encuentra con `WHERE mit_for >= start AND mit_for < end`.
+se consulta con `WHERE mit_for >= start AND mit_for < end`.
 
 ## Comandos clave (dentro del devcontainer)
 
