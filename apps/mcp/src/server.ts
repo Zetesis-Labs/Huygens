@@ -19,11 +19,14 @@ import { registerSetRawStatus } from './tools/set-raw-status'
 import { registerTraceProvenance } from './tools/trace-provenance'
 import { registerVectorSearch } from './tools/vector-search'
 
-export function createServer(): McpServer {
-  const server = new McpServer({
-    name: 'huygens-mcp',
-    version: '0.4.0'
-  })
+export function createServer(instructions?: string): McpServer {
+  const server = new McpServer(
+    {
+      name: 'huygens-mcp',
+      version: '0.4.0'
+    },
+    instructions ? { instructions } : undefined
+  )
 
   registerCapture(server)
   registerListInbox(server)

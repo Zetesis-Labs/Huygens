@@ -1,9 +1,14 @@
 import { createServer as createHttpServer, type IncomingMessage } from 'node:http'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import { loadSchemaSnapshot } from './schema-snapshot'
 import { createServer } from './server'
 import { assertSchemaReady } from './surreal'
 
 const PORT = Number(process.env.MCP_PORT ?? 3030)
+
+// Computed once at startup (see main) and injected as the MCP server's
+// `instructions`, so every connecting agent sees the live DB schema.
+let schemaInstructions: string | undefined
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = []
@@ -29,7 +34,7 @@ const httpServer = createHttpServer(async (req, res) => {
 
   try {
     const body = req.method === 'POST' ? await readJsonBody(req) : undefined
-    const mcp = createServer()
+    const mcp = createServer(schemaInstructions)
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
 
     res.on('close', () => {
@@ -53,6 +58,13 @@ async function main(): Promise<void> {
   // Fail fast and legibly if the schema isn't applied, instead of opaque errors
   // surfacing later inside a tool.
   await assertSchemaReady()
+  try {
+    schemaInstructions = await loadSchemaSnapshot()
+  } catch (err) {
+    // The schema snapshot is best-effort context for agents; never let it block
+    // startup. Tools still work without it.
+    console.error('[huygens-mcp] could not load schema snapshot:', err instanceof Error ? err.message : err)
+  }
   httpServer.listen(PORT, () => {
     console.error(`[huygens-mcp] listening on http://0.0.0.0:${PORT}/mcp`)
   })
