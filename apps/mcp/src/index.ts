@@ -1,14 +1,15 @@
 import { createServer as createHttpServer, type IncomingMessage } from 'node:http'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import { loadSchemaSnapshot } from './schema-snapshot'
+import { buildInstructions } from './instructions'
 import { createServer } from './server'
 import { assertSchemaReady } from './surreal'
 
 const PORT = Number(process.env.MCP_PORT ?? 3030)
 
 // Computed once at startup (see main) and injected as the MCP server's
-// `instructions`, so every connecting agent sees the live DB schema.
-let schemaInstructions: string | undefined
+// `instructions`, so every connecting agent sees the SurrealQL cookbook + the
+// live DB schema.
+let serverInstructions: string | undefined
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = []
@@ -34,7 +35,7 @@ const httpServer = createHttpServer(async (req, res) => {
 
   try {
     const body = req.method === 'POST' ? await readJsonBody(req) : undefined
-    const mcp = createServer(schemaInstructions)
+    const mcp = createServer(serverInstructions)
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
 
     res.on('close', () => {
@@ -59,11 +60,11 @@ async function main(): Promise<void> {
   // surfacing later inside a tool.
   await assertSchemaReady()
   try {
-    schemaInstructions = await loadSchemaSnapshot()
+    serverInstructions = await buildInstructions()
   } catch (err) {
-    // The schema snapshot is best-effort context for agents; never let it block
-    // startup. Tools still work without it.
-    console.error('[huygens-mcp] could not load schema snapshot:', err instanceof Error ? err.message : err)
+    // Instructions (cookbook + schema) are best-effort context for agents;
+    // never let them block startup. Tools still work without them.
+    console.error('[huygens-mcp] could not build server instructions:', err instanceof Error ? err.message : err)
   }
   httpServer.listen(PORT, () => {
     console.error(`[huygens-mcp] listening on http://0.0.0.0:${PORT}/mcp`)
