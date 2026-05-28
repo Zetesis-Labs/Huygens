@@ -26,10 +26,15 @@ El modelo y las reglas viven en el recurso `huygens://lore/data-model` y en
    literal y la topología, trazado a sus raws vía `derived_from`.
 5. **Proponer las mutaciones, visibles.** Construye la propuesta con
    `create_proposal` / `update_proposal`. Repasa con el usuario el cambio
-   completo (notas, edges, informe) usando `get_proposal_changes`. **No mutes el
-   grafo fuera de una propuesta aprobada.**
+   completo (notas, edges, informe) usando `get_proposal` (preview legible del
+   draft). **No mutes el grafo fuera de una propuesta aprobada.**
 6. **Commit.** Solo con la aprobación explícita del usuario, `commit_proposal`.
-   Luego marca los raws procesados (lo hace el commit) y resume qué cambió.
+   Luego audita qué cambió exactamente con `get_proposal_changes` (los raws se
+   marcan procesados en el commit) y resume.
+
+Para consultar el grafo en cualquier paso, los recursos `huygens://lore/schema`
+(schema en vivo) y `huygens://lore/surrealql-cookbook` (recetas SurrealQL
+read-only) están disponibles vía `query_query` / `run_query`.
 
 ## Principios
 

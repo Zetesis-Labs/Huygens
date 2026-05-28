@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { loadSchemaSnapshot } from './schema-snapshot'
 
 /**
  * Self-describing layer: the MCP serves both the LORE (how Huygens
@@ -19,6 +20,13 @@ const LORE_ENTRIES: LoreEntry[] = [
     description:
       'The two-plane data model (raw_capture as evidence vs note+block+edges as interpretation) and the audit layer.',
     path: 'lore/data-model.md'
+  },
+  {
+    uri: 'huygens://lore/surrealql-cookbook',
+    name: 'surrealql-cookbook',
+    description:
+      'Verified, composable read-only SurrealQL recipes for exploring the graph (query_query/run_query): rules, brick vocabulary, subqueries, graph recursion, vector/hybrid, audit.',
+    path: 'lore/surrealql-cookbook.md'
   }
 ]
 
@@ -46,6 +54,21 @@ export function registerLoreAndPrompts(server: McpServer): void {
       })
     )
   }
+
+  // Live schema, introspected on each read (INFO FOR DB + INFO FOR TABLE). Exposed
+  // as a resource — not only in the server `instructions` — so clients that consume
+  // resources but ignore `instructions` (e.g. hermes) still get the real schema.
+  server.resource(
+    'schema',
+    'huygens://lore/schema',
+    {
+      description: 'Live physical schema (tables, fields, enums, edges, indexes) introspected from SurrealDB.',
+      mimeType: 'text/markdown'
+    },
+    async uri => ({
+      contents: [{ uri: uri.href, mimeType: 'text/markdown', text: await loadSchemaSnapshot() }]
+    })
+  )
 
   for (const entry of PROMPT_ENTRIES) {
     server.prompt(entry.name, entry.description, async () => ({
