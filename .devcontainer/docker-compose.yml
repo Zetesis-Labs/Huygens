@@ -30,7 +30,7 @@ services:
     user: "0:0"
     command: ["sh", "-c", "chown -R 65532:65532 /data/db && chmod 700 /data/db"]
     volumes:
-      - surrealkv_data:/data/db
+      - surrealkv_data_v2:/data/db
     restart: "no"
 
   surrealdb:
@@ -56,7 +56,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - surrealkv_data:/data/db
+      - surrealkv_data_v2:/data/db
     depends_on:
       surrealdb-init:
         condition: service_completed_successfully
@@ -149,8 +149,9 @@ services:
 volumes:
   node_modules:
   claude_memory:
-  surrealdb_data:   # RocksDB legacy: conservado intacto para rollback
-  surrealkv_data:   # SurrealKV (versionado), motor activo
+  surrealdb_data:    # RocksDB legacy: conservado intacto para rollback
+  surrealkv_data:    # SurrealKV CORRUPTO (compactación, 2026-05-28): conservado como respaldo
+  surrealkv_data_v2: # SurrealKV (versionado), motor activo tras recuperación desde backup
 
 networks:
   default_network:
