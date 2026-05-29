@@ -6,7 +6,9 @@ import { registerChunkMarkdown } from './tools/chunk-markdown'
 import { registerEmbedText } from './tools/embed-text'
 import { registerExpandContext } from './tools/expand-context'
 import { registerFindRelated } from './tools/find-related'
+import { registerHybridSearch } from './tools/hybrid-search'
 import { registerIndexBlock } from './tools/index-block'
+import { registerLexicalSearch } from './tools/lexical-search'
 import { registerListInbox } from './tools/list-inbox'
 import { registerNeighborhood } from './tools/neighborhood'
 import { registerProposalTools } from './tools/proposal'
@@ -37,6 +39,8 @@ export function createServer(instructions?: string): McpServer {
   registerEmbedText(server)
   registerIndexBlock(server)
   registerVectorSearch(server)
+  registerLexicalSearch(server)
+  registerHybridSearch(server)
   registerFindRelated(server)
   registerQueryQuery(server)
   registerSavedQuery(server)

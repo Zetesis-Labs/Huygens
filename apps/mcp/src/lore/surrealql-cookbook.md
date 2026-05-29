@@ -35,7 +35,10 @@ filtrando en cada salto y **anidando subqueries**.
   `.{..+shortest=…}` (ver Composición). La profundidad exacta `.{N}` sí es correcta.
 - **Texto**: `CONTAINS` es case-SENSITIVE y por substring; `~`/`!~`/`?~`/`*~` NO existen →
   `string::contains(string::lowercase(campo),'minúsculas')` o `string::matches(campo,'(?i)…')`.
-  `@@` (full-text) sin analyzer devuelve `[]` mudo (no hay analyzer): no lo uses.
+  `@@`/`@1@` (full-text) YA tiene analyzer (`huygens_text` sobre `block.content`,
+  índice `block_content_fts`): filtra con `content @1@ 'términos'` y ordena por
+  `search::score(1)`. Para esto prefiere las tools `lexical_search` (BM25) o
+  `hybrid_search` (BM25 + denso fusionados con RRF), que ya lo encapsulan.
 - **Datetimes**: máx/mín con `time::max`/`time::min`. `math::*` es solo para **números**
   (counts, `duration::days(...)`); sobre datetimes da `null` o ERROR.
 - **`time::group(x,'week')` está ROTO** (devuelve null) → usa `time::floor(x,1w)`.

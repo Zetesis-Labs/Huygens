@@ -64,6 +64,8 @@ discard_proposal    discard a draft
 commit_proposal     atomic graph commit (BEGIN…COMMIT)
 find_related        existing notes related to a concept (vector, deduped)
 vector_search       KNN block search via HNSW (BGE-M3, cosine)
+lexical_search      BM25 full-text over block content (exact terms/names/IDs)
+hybrid_search       fuse vector_search + lexical_search via Reciprocal Rank Fusion
 index_block         embed 1..64 blocks and persist in HNSW index
 query_query         read-only SurrealQL (huygens_reader / VIEWER role)
 chunk_markdown      split markdown into heading-aware chunks (pure)

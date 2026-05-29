@@ -136,6 +136,19 @@ DEFINE INDEX OVERWRITE block_embedding ON block
   TYPE F32
   EFC 150 M 12 M0 24;
 
+-- Búsqueda léxica (BM25) sobre el contenido del block, complementaria al HNSW.
+-- El vector denso (BGE-M3) generaliza por significado pero pierde el término
+-- literal: nombres propios, identificadores, acrónimos, citas exactas. El
+-- índice full-text recupera justamente eso. Las tools `lexical_search` y
+-- `hybrid_search` lo explotan; `hybrid_search` fusiona ambas señales con RRF.
+-- Analyzer language-agnostic a propósito (memoria mezcla ES/EN): `class`
+-- tokeniza por categoría Unicode, `lowercase`+`ascii` hacen el match
+-- insensible a mayúsculas y acentos sin stemming de un idioma equivocado.
+DEFINE ANALYZER OVERWRITE huygens_text TOKENIZERS class FILTERS lowercase, ascii;
+DEFINE INDEX OVERWRITE block_content_fts ON block
+  FIELDS content
+  SEARCH ANALYZER huygens_text BM25;
+
 -- ─────────────────────────────────────────────────────────────────────────
 -- Edges schemafull: relaciones autorizadas.
 -- V2.1-lite mantiene solo el vocabulario mínimo.
