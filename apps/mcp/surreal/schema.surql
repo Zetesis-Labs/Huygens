@@ -147,7 +147,7 @@ DEFINE INDEX OVERWRITE block_embedding ON block
 DEFINE ANALYZER OVERWRITE huygens_text TOKENIZERS class FILTERS lowercase, ascii;
 DEFINE INDEX OVERWRITE block_content_fts ON block
   FIELDS content
-  SEARCH ANALYZER huygens_text BM25;
+  FULLTEXT ANALYZER huygens_text BM25;
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- Edges schemafull: relaciones autorizadas.
