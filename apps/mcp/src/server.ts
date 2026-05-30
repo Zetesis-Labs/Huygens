@@ -3,6 +3,7 @@ import { registerLoreAndPrompts } from './lore-and-prompts'
 import { registerCapture } from './tools/capture'
 import { registerCheckClaim } from './tools/check-claim'
 import { registerChunkMarkdown } from './tools/chunk-markdown'
+import { registerCollectionStats } from './tools/collection-stats'
 import { registerEmbedText } from './tools/embed-text'
 import { registerExpandContext } from './tools/expand-context'
 import { registerFindRelated } from './tools/find-related'
@@ -13,6 +14,7 @@ import { registerListInbox } from './tools/list-inbox'
 import { registerNeighborhood } from './tools/neighborhood'
 import { registerProposalTools } from './tools/proposal'
 import { registerQueryQuery } from './tools/query/query'
+import { registerRetract } from './tools/retract'
 import { registerSavedQuery } from './tools/saved-query'
 import { registerSetRawStatus } from './tools/set-raw-status'
 import { registerTraceProvenance } from './tools/trace-provenance'
@@ -44,6 +46,8 @@ export function createServer(instructions?: string): McpServer {
   registerFindRelated(server)
   registerQueryQuery(server)
   registerSavedQuery(server)
+  registerRetract(server)
+  registerCollectionStats(server)
 
   registerLoreAndPrompts(server)
 

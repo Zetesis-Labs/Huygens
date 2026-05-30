@@ -161,6 +161,8 @@ change graph lives in the dashboard (React Flow), not in the MCP.
 | `chunk_markdown` | Split markdown into heading-aware chunks. Pure function, no DB. |
 | `embed_text` | Embed 1..64 strings with BGE-M3 (1024 dims, normalized). No DB. |
 | `query_query` | Read-only SurrealQL. Executes as `huygens_reader` (VIEWER); writes rejected. |
+| `retract` | Auditable delete of records + incident edges (atomic, `dry_run` default). The only delete path: mistaken ingest, correction, "forget this". Note→owned blocks cascade; emits a `retracted` agent_event. |
+| `collection_stats` | Graph health: counts of raw_captures/notes/blocks/edges/proposals, and embedded vs unembedded blocks (the index-coverage signal). Read-only. |
 
 ## Audit
 

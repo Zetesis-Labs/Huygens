@@ -236,7 +236,8 @@ DEFINE FIELD OVERWRITE kind ON agent_event TYPE string
     'raw_received',
     'raw_status_changed',
     'proposal_created', 'proposal_updated', 'proposal_discarded', 'proposal_committed',
-    'note_state_changed'
+    'note_state_changed',
+    'retracted'
   ];
 DEFINE FIELD OVERWRITE actor ON agent_event TYPE string
   ASSERT $value INSIDE ['worker', 'conversational', 'user', 'system'];
