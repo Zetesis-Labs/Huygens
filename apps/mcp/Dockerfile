@@ -13,12 +13,15 @@ COPY package.json bun.lock ./
 COPY apps/mcp/package.json ./apps/mcp/package.json
 # Other workspace manifests are needed so `--frozen-lockfile` can resolve the
 # whole workspace; `--filter` keeps the install scoped to the MCP, so the image
-# does not pull the dashboard's deps.
+# does not pull the dashboard's deps. `@huygens/graph` is a real dependency of
+# the MCP, so both its manifest (for install) and its source (for runtime) ship.
 COPY apps/dashboard/package.json ./apps/dashboard/package.json
+COPY packages/graph/package.json ./packages/graph/package.json
 
 RUN bun install --filter '@huygens/mcp' --frozen-lockfile
 
 COPY apps/mcp ./apps/mcp
+COPY packages/graph ./packages/graph
 
 # ── Runtime ───────────────────────────────────────────────────────────────
 FROM oven/bun:1-debian AS runtime

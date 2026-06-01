@@ -42,12 +42,15 @@ export async function saveQueryImpl(input: SaveQueryInput): Promise<{ id: string
   if (input.query !== undefined) doc.query = input.query
   if (input.script !== undefined) doc.script = input.script
   if (input.id) {
-    const [rows] = await db.query<[{ id: RecordIdish }[]]>('UPDATE $id MERGE $doc RETURN id', {
-      id: new StringRecordId(input.id),
-      doc
-    })
-    if (!rows?.[0]) throw new QueryError(`saved query not found: ${input.id}`)
-    return { id: idStr(rows[0].id), updated: true }
+    // Upsert: a caller-chosen id creates the query if it doesn't exist yet, and
+    // updates it if it does — so agents can use a stable, memorable id without a
+    // separate "does it exist?" dance.
+    const id = new StringRecordId(input.id)
+    const [existing] = await db.query<[{ id: RecordIdish }[]]>('SELECT id FROM $id', { id })
+    const updated = (existing?.length ?? 0) > 0
+    const [rows] = await db.query<[{ id: RecordIdish }[]]>('UPSERT $id MERGE $doc RETURN id', { id, doc })
+    if (!rows?.[0]) throw new QueryError(`failed to save query: ${input.id}`)
+    return { id: idStr(rows[0].id), updated }
   }
   const [rows] = await db.query<[{ id: RecordIdish }[]]>('CREATE saved_query CONTENT $doc RETURN id', { doc })
   if (!rows?.[0]) throw new QueryError('failed to create saved query')

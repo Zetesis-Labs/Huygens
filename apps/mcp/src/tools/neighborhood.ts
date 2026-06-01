@@ -28,7 +28,14 @@ type EdgeRow = {
   transformation?: string
 }
 
-export type SubgraphText = { node_count: number; nodes: { id: string; label: string }[]; triples: string }
+export type SubgraphText = {
+  node_count: number
+  nodes: { id: string; label: string }[]
+  /** Structured edges of the induced subgraph (both endpoints visited), so
+   * callers can render a graph instead of re-parsing the `triples` string. */
+  edges: EdgeTriple[]
+  triples: string
+}
 export type NeighborhoodResult = SubgraphText & { seed: string }
 
 /** Edges (any kind) with at least one endpoint in `frontier`, in one query. */
@@ -91,6 +98,7 @@ export async function verbalizeSubgraph(visited: Set<string>, edges: Map<string,
   return {
     node_count: visited.size,
     nodes: [...visited].map(id => ({ id, label: label(id) })),
+    edges: triples,
     triples: serializeTriples(triples, label)
   }
 }

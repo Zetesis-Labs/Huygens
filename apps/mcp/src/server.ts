@@ -1,8 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { registerLoreAndPrompts } from './lore-and-prompts'
 import { registerCapture } from './tools/capture'
+import { registerChangesBetween } from './tools/changes-between'
 import { registerCheckClaim } from './tools/check-claim'
 import { registerChunkMarkdown } from './tools/chunk-markdown'
+import { registerConversation } from './tools/conversation'
 import { registerEmbedText } from './tools/embed-text'
 import { registerExpandContext } from './tools/expand-context'
 import { registerFindRelated } from './tools/find-related'
@@ -32,6 +34,7 @@ export function createServer(instructions?: string): McpServer {
   registerNeighborhood(server)
   registerExpandContext(server)
   registerCheckClaim(server)
+  registerChangesBetween(server)
   registerProposalTools(server)
   registerChunkMarkdown(server)
   registerEmbedText(server)
@@ -40,6 +43,7 @@ export function createServer(instructions?: string): McpServer {
   registerFindRelated(server)
   registerQueryQuery(server)
   registerSavedQuery(server)
+  registerConversation(server)
 
   registerLoreAndPrompts(server)
 

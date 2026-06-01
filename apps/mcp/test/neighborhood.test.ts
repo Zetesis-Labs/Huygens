@@ -20,6 +20,13 @@ describe('neighborhood', () => {
       expect(r?.triples).toContain('—blocked_by→')
       expect(r?.triples).toContain('task · A (ACTIVE)')
       expect(r?.triples).toContain('project · B (ACTIVE)')
+      // Structured edges mirror the triples (record ids, not labels).
+      expect(r?.edges).toEqual(
+        expect.arrayContaining([
+          { source: 'note:nb_a', target: 'note:nb_b', kind: 'part_of', qualifier: undefined },
+          { source: 'note:nb_a', target: 'note:nb_c', kind: 'blocked_by', qualifier: undefined }
+        ])
+      )
     } finally {
       await ctx.cleanup()
     }
@@ -36,6 +43,9 @@ describe('neighborhood', () => {
       const r = await neighborhoodImpl({ seed_id: 'note:nb_n', hops: 1, max_nodes: 30 })
       expect(r?.node_count).toBe(2)
       expect(r?.triples).toContain('—affects(state_changed)→')
+      expect(r?.edges).toEqual([
+        { source: 'block:nb_blk', target: 'note:nb_n', kind: 'affects', qualifier: 'state_changed' }
+      ])
     } finally {
       await ctx.cleanup()
     }

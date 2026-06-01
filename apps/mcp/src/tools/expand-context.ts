@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
+import type { EdgeTriple } from '../serialize'
 import { getDb } from '../surreal'
 import { defineTool, jsonBlock } from './define-tool'
 import { findRelatedImpl } from './find-related'
@@ -21,6 +22,7 @@ export type ExpandContextResult = {
   seeds: { id: string; score: number }[]
   node_count: number
   nodes: { id: string; label: string }[]
+  edges: EdgeTriple[]
   triples: string
 }
 
@@ -33,7 +35,7 @@ export type ExpandContextResult = {
 export async function expandContextImpl(input: ExpandContextInput): Promise<ExpandContextResult> {
   const hits = await findRelatedImpl({ query: input.query, k: input.seeds, threshold: input.threshold })
   const seeds = hits.map(h => ({ id: h.note_id, score: h.score }))
-  if (seeds.length === 0) return { query: input.query, seeds: [], node_count: 0, nodes: [], triples: '' }
+  if (seeds.length === 0) return { query: input.query, seeds: [], node_count: 0, nodes: [], edges: [], triples: '' }
 
   const db = await getDb()
   const { visited, edges } = await expand(

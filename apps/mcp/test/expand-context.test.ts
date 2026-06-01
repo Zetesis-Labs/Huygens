@@ -45,6 +45,9 @@ describe('expandContextImpl', () => {
     expect(r.triples).toContain('—part_of→')
     expect(r.triples).toContain('Applicative functors')
     expect(r.triples).toContain('Category theory')
+    expect(r.edges).toEqual(
+      expect.arrayContaining([{ source: child.note_id, target: parent.note_id, kind: 'part_of', qualifier: undefined }])
+    )
   })
 
   test('no vector match → empty result', async () => {

@@ -272,6 +272,7 @@ DEFINE INDEX OVERWRITE agent_event_actor     ON agent_event FIELDS actor;
 --   - note_type     (taxonomía editable, baja cardinalidad, sin valor histórico)
 --   - agent_event   (ya es el audit log — append-only por construcción)
 --   - saved_query   (queries SurrealQL guardadas; config editable, sin histórico)
+--   - conversation  (hilos de chat del dashboard; estado de app, no dominio)
 -- ─────────────────────────────────────────────────────────────────────────
 
 -- ─────────────────────────────────────────────────────────────────────────
@@ -282,3 +283,14 @@ DEFINE INDEX OVERWRITE agent_event_actor     ON agent_event FIELDS actor;
 -- ─────────────────────────────────────────────────────────────────────────
 DEFINE TABLE OVERWRITE saved_query SCHEMALESS;
 DEFINE FIELD OVERWRITE updated_at ON saved_query VALUE time::now();
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- CONVERSATIONS: hilos de chat del agente del dashboard (mensajes + vistas
+-- generadas). NO es topología de dominio. SCHEMALESS como saved_query: el
+-- shape del thread/vistas (formato assistant-ui) lo valida la tool en TS y
+-- evoluciona sin migraciones. Escrito vía MCP (root); el dashboard lo lee
+-- como huygens_reader. `messages` y `state` se guardan como blobs opacos.
+-- ─────────────────────────────────────────────────────────────────────────
+DEFINE TABLE OVERWRITE conversation SCHEMALESS;
+DEFINE FIELD OVERWRITE created_at ON conversation TYPE datetime DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE updated_at ON conversation VALUE time::now();
