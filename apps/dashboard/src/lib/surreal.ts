@@ -1,3 +1,4 @@
+import type { ExistingEdge } from '@huygens/graph'
 import { StringRecordId, Surreal } from 'surrealdb'
 
 // Server-side only. Reads SurrealDB as the read-only `huygens_reader` (VIEWER)
@@ -122,9 +123,11 @@ export type Proposal = {
       descriptive_blocks_append: { content: string }[]
     }[]
     edges: { kind: string; from: string; to: string; reason?: string }[]
+    edges_remove?: { kind: string; from: string; to: string }[]
   }
-  /** Materialized commit result (committed proposals only). `versionstamp` +
-   * `committed_at` are the anchor for reconstructing the graph at commit time. */
+  /** Materialized commit result (committed proposals only). `committed_at` is the
+   * time anchor for historical reconstruction (the SSOT fold); `versionstamp` is
+   * legacy — no longer written or read, kept only for old results. */
   result?: {
     versionstamp?: string | null
     committed_at?: unknown
@@ -138,6 +141,97 @@ export async function getProposal(id: string): Promise<Proposal | null> {
   >(`SELECT meta::id(id) AS id, status, payload, result FROM proposal WHERE meta::id(id) = $id`, { id })
   const row = rows?.[0]
   return row ? { id: String(row.id), status: row.status, payload: row.payload, result: row.result ?? null } : null
+}
+
+/** A committed proposal as the diary needs it: its payload, the instant it
+ * landed (`committed_at`, or `updated_at` for pre-result commits that lack a
+ * materialized result), and the temp_id → real note-id map from the commit — so
+ * several proposals committed the same day fuse into one graph without
+ * duplicating the notes they share. */
+export type CommittedProposal = {
+  id: string
+  committedAt: string
+  payload: Proposal['payload']
+  tempMap: Record<string, string>
+}
+
+function toIso(v: unknown): string {
+  return v instanceof Date ? v.toISOString() : String(v)
+}
+
+// Commits are bucketed by the *local* Madrid day they landed. SurrealDB 3.0.5
+// has no IANA timezones, only fixed offsets, so we shift the instant by +2h
+// (CEST) before taking the date. Correct for the summer half-year; a winter
+// 00:00–01:00 UTC commit would bucket one day early. `committed_at` is absent on
+// pre-result commits, so we coalesce to `updated_at` (≈ the same instant).
+const MADRID_DAY = "time::format((result.committed_at ?? updated_at) + 2h, '%Y-%m-%d')"
+
+export type DiaryDayCount = { day: string; count: number }
+
+/** Per-day commit counts for the diary list — aggregated in SurrealDB, so no
+ * payloads cross the wire just to be counted. Newest day first. Read-only. */
+export async function diaryDayCounts(): Promise<DiaryDayCount[]> {
+  const db = await getDb()
+  const [rows] = await db.query<[DiaryDayCount[]]>(
+    `SELECT ${MADRID_DAY} AS day, count() AS count
+     FROM proposal WHERE status = 'committed'
+     GROUP BY day ORDER BY day DESC`
+  )
+  return rows ?? []
+}
+
+/** The committed proposals that landed on a given Madrid day (`YYYY-MM-DD`),
+ * with the bits the diary fuses over. Filtered in SurrealDB. Read-only. */
+export async function listCommittedProposalsForDay(day: string): Promise<CommittedProposal[]> {
+  const db = await getDb()
+  const [rows] = await db.query<
+    [Array<{ id: unknown; payload: Proposal['payload']; landed: unknown; temp?: Record<string, string> | null }>]
+  >(
+    `SELECT meta::id(id) AS id, payload,
+            (result.committed_at ?? updated_at) AS landed,
+            result.temp_ids.notes AS temp
+     FROM proposal
+     WHERE status = 'committed' AND ${MADRID_DAY} = $day`,
+    { day }
+  )
+  return (rows ?? []).map(r => ({
+    id: String(r.id),
+    committedAt: toIso(r.landed),
+    payload: r.payload,
+    // The driver hands back `temp_ids.notes` values as RecordId objects; the
+    // graph keys everything by string id, so flatten them here.
+    tempMap: r.temp ? Object.fromEntries(Object.entries(r.temp).map(([k, v]) => [k, String(v)])) : {}
+  }))
+}
+
+/** The committed proposals that landed strictly *before* `committedAt`, oldest
+ * first — the input to foldTopology for reconstructing a proposal's historical
+ * context from the SSOT (proposal.result), no changefeed. Excludes `excludeId`
+ * (the proposal being viewed). Read-only. */
+export async function listCommittedProposalsBefore(
+  committedAt: string,
+  excludeId: string
+): Promise<CommittedProposal[]> {
+  const db = await getDb()
+  const [rows] = await db.query<
+    [Array<{ id: unknown; payload: Proposal['payload']; landed: unknown; temp?: Record<string, string> | null }>]
+  >(
+    `SELECT meta::id(id) AS id, payload,
+            (result.committed_at ?? updated_at) AS landed,
+            result.temp_ids.notes AS temp
+     FROM proposal
+     WHERE status = 'committed'
+       AND meta::id(id) != $exclude
+       AND (result.committed_at ?? updated_at) < type::datetime($before)
+     ORDER BY landed ASC`,
+    { before: committedAt, exclude: excludeId }
+  )
+  return (rows ?? []).map(r => ({
+    id: String(r.id),
+    committedAt: toIso(r.landed),
+    payload: r.payload,
+    tempMap: r.temp ? Object.fromEntries(Object.entries(r.temp).map(([k, v]) => [k, String(v)])) : {}
+  }))
 }
 
 const REAL_ID = /^(note|block|raw_capture):/
@@ -189,7 +283,7 @@ export async function resolveLabels(p: Proposal): Promise<Record<string, { type:
   return labels
 }
 
-export type ExistingEdge = { source: string; target: string; kind: string }
+export type { ExistingEdge } from '@huygens/graph'
 
 /**
  * Relations that already exist in the KG between the given records — used to

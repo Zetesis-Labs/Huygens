@@ -1,7 +1,7 @@
 ---
 import ChangeGraph from '../components/ChangeGraph.tsx'
 import { type LaidOutGraph, layoutGraph } from '../lib/layout'
-import { extractRows, listQueries, runAdhoc, runSaved, rowsToFlow, rowsToTable, type SavedQuery } from '../lib/queries'
+import { extractRows, listQueries, resultsToFlow, runAdhoc, runSaved, rowsToTable, type SavedQuery } from '../lib/queries'
 
 // SurrealQL explorer: type a read-only query (or load a saved one), see results
 // as a table (always) or as a graph (when rows look like nodes). Save named
@@ -23,10 +23,11 @@ const found = savedId ? favorites.find(f => f.id === savedId) : undefined
 const queryText = savedId ? (found?.query ?? '') : (params.get('q') ?? DEFAULT_QUERY)
 
 let rows: Record<string, unknown>[] = []
+let results: unknown[] = []
 let error: string | null = null
 try {
   if (queryText.trim()) {
-    const results = savedId ? await runSaved(savedId) : await runAdhoc(queryText)
+    results = savedId ? await runSaved(savedId) : await runAdhoc(queryText)
     rows = extractRows(results)
   }
 } catch (e) {
@@ -34,7 +35,7 @@ try {
 }
 
 const table = rowsToTable(rows)
-const flow = rowsToFlow(rows)
+const flow = resultsToFlow(results)
 const activeTab = tab === 'graph' && flow ? 'graph' : 'table'
 let laidOut: LaidOutGraph = { nodes: [], edges: [] }
 if (activeTab === 'graph' && flow) laidOut = await layoutGraph(flow)

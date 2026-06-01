@@ -9,5 +9,7 @@ export default defineConfig({
   output: 'server',
   adapter: node({ mode: 'standalone' }),
   integrations: [react()],
-  server: { host: '0.0.0.0', port: 4321 }
+  server: { host: '0.0.0.0', port: 4321 },
+  // Reachable behind the reverse-proxied domain (Vite dev host-check).
+  vite: { server: { allowedHosts: ['huygens.nexolabs.dev'] } }
 })
