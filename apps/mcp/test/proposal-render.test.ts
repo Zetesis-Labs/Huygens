@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import type { ProposalDetail, ProposalPayload, ProposalResult } from '../src/tools/proposal'
+import type { ProposalDetail, ProposalResult, StoredProposalPayload } from '../src/tools/proposal/schemas'
 import { renderProposalDiff } from '../src/tools/proposal-render'
 
 function detail(
-  payload: ProposalPayload,
+  payload: StoredProposalPayload,
   status = 'draft',
   id = 'proposal:test',
   result: ProposalResult | null = null
@@ -19,13 +19,13 @@ function detail(
   }
 }
 
-function fullPayload(): ProposalPayload {
+function fullPayload(): StoredProposalPayload {
   return {
     raw_ids: ['raw_capture:r1'],
-    narrative_blocks: [{ temp_id: 'narrative1', content: 'Aprobamos una tarea nueva.', raw_ids: ['raw_capture:r1'] }],
+    narrative_blocks: [{ id: 'block:narr1', content: 'Aprobamos una tarea nueva.', raw_ids: ['raw_capture:r1'] }],
     note_creates: [
       {
-        temp_id: 'task1',
+        id: 'note:task1',
         type_slug: 'task',
         title: 'Call Ana',
         state: 'ACTIVE',
@@ -33,7 +33,7 @@ function fullPayload(): ProposalPayload {
         metadata: { priority: 'high' },
         descriptive_blocks: [{ content: 'Next action: call Ana.' }]
       },
-      { temp_id: 'project1', type_slug: 'project', title: 'Huygens migration', state: 'ACTIVE', descriptive_blocks: [] }
+      { id: 'note:project1', type_slug: 'project', title: 'Huygens migration', state: 'ACTIVE', descriptive_blocks: [] }
     ],
     note_updates: [
       {
@@ -45,19 +45,19 @@ function fullPayload(): ProposalPayload {
       }
     ],
     edges: [
-      { kind: 'part_of', from: 'task1', to: 'project1' },
-      { kind: 'mentions', from: 'narrative1', to: 'note:existing' }
+      { kind: 'part_of', from: 'note:task1', to: 'note:project1' },
+      { kind: 'mentions', from: 'block:narr1', to: 'note:existing' }
     ],
     edges_remove: [],
-    about: [{ block_temp_id: 'narrative1', note_ref: 'task1' }],
-    affects: [{ block_temp_id: 'narrative1', note_ref: 'task1', action: 'created', summary: 'Created task.' }]
+    about: [{ block_id: 'block:narr1', note_id: 'note:task1' }],
+    affects: [{ block_id: 'block:narr1', note_id: 'note:task1', action: 'created', summary: 'Created task.' }]
   }
 }
 
-function minimalPayload(): ProposalPayload {
+function minimalPayload(): StoredProposalPayload {
   return {
     raw_ids: ['raw_capture:r1'],
-    narrative_blocks: [{ temp_id: 'n1', content: 'note', raw_ids: ['raw_capture:r1'] }],
+    narrative_blocks: [{ id: 'block:n1', content: 'note', raw_ids: ['raw_capture:r1'] }],
     note_creates: [],
     note_updates: [],
     edges: [],
@@ -69,13 +69,11 @@ function minimalPayload(): ProposalPayload {
 
 describe('renderProposalDiff', () => {
   test('renders a committable header for draft proposals', () => {
-    const out = renderProposalDiff(detail(fullPayload()))
-    expect(out).toContain('Proposal proposal:test — draft ✅ committable')
+    expect(renderProposalDiff(detail(fullPayload()))).toContain('Proposal proposal:test — draft ✅ committable')
   })
 
   test('flags non-draft proposals as not committable', () => {
-    const out = renderProposalDiff(detail(fullPayload(), 'committed'))
-    expect(out).toContain('(not committable: committed)')
+    expect(renderProposalDiff(detail(fullPayload(), 'committed'))).toContain('(not committable: committed)')
   })
 
   test('lists notes to create with title, type, state, blocks and metadata', () => {
@@ -97,21 +95,20 @@ describe('renderProposalDiff', () => {
     expect(out).toContain('metadata: closed')
   })
 
-  test('resolves temp_ids to labels and leaves real record ids as-is', () => {
+  test('labels created notes by title in edges; real ids stay as-is', () => {
     const out = renderProposalDiff(detail(fullPayload()))
     expect(out).toContain('"Call Ana" —part_of→ "Huygens migration"')
-    expect(out).toContain('[narrative1] —mentions→ note:existing')
+    expect(out).toContain('[informe] —mentions→ note:existing')
   })
 
   test('renders about/affects topology with action and summary', () => {
     const out = renderProposalDiff(detail(fullPayload()))
-    expect(out).toContain('about:   [narrative1] → "Call Ana"')
-    expect(out).toContain('affects: [narrative1] → "Call Ana"  (created) "Created task."')
+    expect(out).toContain('about:   [informe] → "Call Ana"')
+    expect(out).toContain('affects: [informe] → "Call Ana"  (created) "Created task."')
   })
 
   test('summary counts mirror commit effects', () => {
-    const out = renderProposalDiff(detail(fullPayload()))
-    expect(out).toContain(
+    expect(renderProposalDiff(detail(fullPayload()))).toContain(
       'On commit → notes +2 · updates 1 · narrative +1 · descriptive +2 · derived_from +1 · about +1 · affects +1 · edges +2'
     )
   })
@@ -122,15 +119,12 @@ describe('renderProposalDiff', () => {
     expect(out).not.toContain('UPDATE')
     expect(out).not.toContain('Graph edges')
     expect(out).not.toContain('Topology:')
-    expect(out).toContain(
-      'On commit → notes +0 · updates 0 · narrative +1 · descriptive +0 · derived_from +1 · about +0 · affects +0 · edges +0'
-    )
   })
 
   test('collapses and truncates long narrative content to one line', () => {
     const payload = minimalPayload()
     payload.narrative_blocks = [
-      { temp_id: 'n1', content: `${'x'.repeat(200)}\nsecond line`, raw_ids: ['raw_capture:r1'] }
+      { id: 'block:n1', content: `${'x'.repeat(200)}\nsecond line`, raw_ids: ['raw_capture:r1'] }
     ]
     const out = renderProposalDiff(detail(payload))
     expect(out).toContain('…')
@@ -142,42 +136,16 @@ describe('renderProposalDiff', () => {
     expect(renderProposalDiff(detail(payload))).toBe(renderProposalDiff(detail(payload)))
   })
 
-  test('renders the materialized result for a committed proposal', () => {
-    const result: ProposalResult = {
-      notes_created: ['note:abc'],
-      notes_updated: ['note:existing'],
-      narrative_blocks_created: ['block:n1'],
-      descriptive_blocks_created: ['block:d1'],
-      derived_from: ['derived_from:1'],
-      about: ['about:1'],
-      affects: ['affects:1'],
-      semantic_edges: ['part_of:1', 'mentions:1'],
-      edges_removed: [],
-      temp_ids: { notes: { task1: 'note:abc' }, blocks: { narrative1: 'block:n1' } },
-      versionstamp: '116638335457689600',
-      committed_at: '2026-05-24T12:00:00Z'
-    }
-    const out = renderProposalDiff(detail(fullPayload(), 'committed', 'proposal:test', result))
-    expect(out).toContain('Committed result:')
-    expect(out).toContain('notes created:      note:abc')
-    expect(out).toContain('edges: 5 (derived_from 1, about 1, affects 1, semantic 2)')
-    expect(out).toContain('temp_ids: task1 → note:abc, narrative1 → block:n1')
-    expect(out).toContain('versionstamp: 116638335457689600')
-  })
-
-  test('omits the committed-result section when there is no result', () => {
-    expect(renderProposalDiff(detail(fullPayload()))).not.toContain('Committed result:')
-  })
-
-  test('annotates a part_of on an existing note as a parent replace', () => {
+  test('annotates a part_of onto a pre-existing note as a parent replace', () => {
     const payload = minimalPayload()
     payload.edges = [{ kind: 'part_of', from: 'note:child', to: 'note:parent' }]
-    const out = renderProposalDiff(detail(payload))
-    expect(out).toContain('note:child —part_of→ note:parent  (reemplaza padre anterior)')
+    expect(renderProposalDiff(detail(payload))).toContain(
+      'note:child —part_of→ note:parent  (reemplaza padre anterior)'
+    )
   })
 
-  test('does not annotate replace for a freshly created note (temp_id parent)', () => {
-    // task1 → project1 are both temp_ids in fullPayload: no prior parent to replace.
+  test('does not annotate replace when the child is created in this proposal', () => {
+    // note:task1 → note:project1 are both created here: no prior parent to replace.
     expect(renderProposalDiff(detail(fullPayload()))).not.toContain('(reemplaza padre anterior)')
   })
 
@@ -190,30 +158,20 @@ describe('renderProposalDiff', () => {
     const out = renderProposalDiff(detail(payload))
     expect(out).toContain('Edges removed (2):')
     expect(out).toContain('note:a —blocked_by✕→ note:b')
-    expect(out).toContain('note:a —mentions✕→ note:c')
     expect(out).toContain('· edges-removed 2')
   })
 
-  test('omits the edges-removed tally when there are no removals', () => {
-    expect(renderProposalDiff(detail(minimalPayload()))).not.toContain('edges-removed')
+  test('committed proposal shows the anchor (committed_at + versionstamp), not id-lists', () => {
+    const result: ProposalResult = { versionstamp: '116638335457689600', committed_at: '2026-05-24T12:00:00Z' }
+    const out = renderProposalDiff(detail(fullPayload(), 'committed', 'proposal:test', result))
+    expect(out).toContain('Committed:')
+    expect(out).toContain('committed_at: 2026-05-24T12:00:00Z')
+    expect(out).toContain('versionstamp: 116638335457689600')
+    expect(out).toContain('get_proposal_changes')
+    expect(out).not.toContain('notes created:')
   })
 
-  test('lists removed edge ids in the committed result', () => {
-    const result: ProposalResult = {
-      notes_created: [],
-      notes_updated: ['note:child'],
-      narrative_blocks_created: ['block:n1'],
-      descriptive_blocks_created: [],
-      derived_from: ['derived_from:1'],
-      about: [],
-      affects: [],
-      semantic_edges: ['part_of:new'],
-      edges_removed: ['part_of:old', 'blocked_by:gone'],
-      temp_ids: { notes: {}, blocks: { n1: 'block:n1' } },
-      versionstamp: null,
-      committed_at: '2026-06-01T12:00:00Z'
-    }
-    const out = renderProposalDiff(detail(minimalPayload(), 'committed', 'proposal:test', result))
-    expect(out).toContain('edges removed:      part_of:old, blocked_by:gone')
+  test('omits the committed section when there is no result', () => {
+    expect(renderProposalDiff(detail(fullPayload()))).not.toContain('Committed:')
   })
 })

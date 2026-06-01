@@ -1,7 +1,6 @@
-import { getDb, selectByIds } from '../../surreal'
-import { type GraphEdgeRecord, type GraphNodeRecord, idStr, tableOf } from '../graph-records'
-import type { MaterializedGraph } from './context-labels'
-import type { GetProposalInput, ProposalResult } from './schemas'
+import { getDb } from '../../surreal'
+import { idStr } from '../graph-records'
+import type { GetProposalInput } from './schemas'
 import { fetchProposal } from './store'
 
 export type ProposalChanges = {
@@ -9,7 +8,6 @@ export type ProposalChanges = {
   status: string
   versionstamp: string | null
   committed_at: string | null
-  materialized: MaterializedGraph | null
   changefeed: {
     available: boolean
     versionstamp: string | null
@@ -18,105 +16,79 @@ export type ProposalChanges = {
   }
 }
 
-/** Deep-normalize a value to JSON-safe form (changefeed versionstamps are BigInt,
- * which JSON.stringify cannot serialize). BigInt → string; record ids keep their
- * own JSON form. */
+// Every table whose mutations a commit can produce — scanned for the commit's
+// changeset. The proposal stores only the anchor, so the change detail (before→
+// after) is read here from the changefeed.
+const CRITICAL_TABLES = [
+  'note',
+  'block',
+  'raw_capture',
+  'part_of',
+  'blocked_by',
+  'mentions',
+  'about',
+  'affects',
+  'derived_from'
+] as const
+
+/** Deep-normalize to JSON-safe form (changefeed versionstamps are BigInt). */
 function jsonSafe<T>(value: T): T {
   return JSON.parse(JSON.stringify(value, (_key, val) => (typeof val === 'bigint' ? val.toString() : val)))
 }
 
-/** Changefeed changesets that belong to exactly this commit's versionstamp. */
-async function changefeedAt(table: string, vs: bigint): Promise<unknown[]> {
+/**
+ * The changeset of one commit on `table`: `SHOW CHANGES … SINCE d"<datetime>"`
+ * (datetime SINCE, **no LIMIT** — both `LIMIT` and low-versionstamp SINCE are
+ * broken on 3.0.5), anchored a second before the commit, then filtered to the
+ * commit's versionstamp.
+ */
+async function changefeedAt(table: string, vs: string, sinceIso: string): Promise<unknown[]> {
   const db = await getDb()
-  const [rows] = await db.query<[Array<{ versionstamp: bigint }>]>(
-    `SHOW CHANGES FOR TABLE ${table} SINCE ${vs - 1n} LIMIT 200`
+  const [rows] = await db.query<[Array<{ versionstamp: unknown; changes: unknown[] }>]>(
+    `SHOW CHANGES FOR TABLE ${table} SINCE d"${sinceIso}"`
   )
-  const matching = (rows ?? []).filter(change => String(change.versionstamp) === String(vs))
-  return jsonSafe(matching)
-}
-
-function tablesFromResult(result: ProposalResult): string[] {
-  const all = [
-    ...result.notes_created,
-    ...result.notes_updated,
-    ...result.narrative_blocks_created,
-    ...result.descriptive_blocks_created,
-    ...result.derived_from,
-    ...result.about,
-    ...result.affects,
-    ...result.semantic_edges,
-    ...(result.edges_removed ?? [])
-  ]
-  const tables = new Set<string>(['raw_capture'])
-  for (const id of all) {
-    const table = tableOf(id)
-    if (table) tables.add(table)
-  }
-  return [...tables]
-}
-
-async function materializeResult(result: ProposalResult): Promise<NonNullable<ProposalChanges['materialized']>> {
-  return {
-    notes_created: await selectByIds<GraphNodeRecord>(result.notes_created),
-    notes_updated: await selectByIds<GraphNodeRecord>(result.notes_updated),
-    narrative_blocks_created: await selectByIds<GraphNodeRecord>(result.narrative_blocks_created),
-    descriptive_blocks_created: await selectByIds<GraphNodeRecord>(result.descriptive_blocks_created),
-    derived_from: await selectByIds<GraphEdgeRecord>(result.derived_from),
-    about: await selectByIds<GraphEdgeRecord>(result.about),
-    affects: await selectByIds<GraphEdgeRecord>(result.affects),
-    semantic_edges: await selectByIds<GraphEdgeRecord>(result.semantic_edges),
-    // Removed edges are gone from the DB; expose their ids verbatim.
-    edges_removed: result.edges_removed ?? []
-  }
-}
-
-async function changefeedForResult(result: ProposalResult): Promise<ProposalChanges['changefeed']> {
-  if (!result.versionstamp) {
-    return {
-      available: false,
-      versionstamp: null,
-      tables: {},
-      note: 'No versionstamp captured (best-effort changefeed flush); use the materialized view.'
-    }
-  }
-  const vs = BigInt(result.versionstamp)
-  const tables: Record<string, unknown[]> = {}
-  for (const table of tablesFromResult(result)) {
-    const changes = await changefeedAt(table, vs)
-    if (changes.length > 0) tables[table] = changes
-  }
-  return { available: true, versionstamp: result.versionstamp, tables }
+  const matching = (rows ?? []).filter(row => row.versionstamp != null && String(row.versionstamp) === vs)
+  return jsonSafe(matching.flatMap(row => row.changes ?? []))
 }
 
 /**
- * Recover the exact changes a committed proposal produced, two ways:
- * - materialized: the real record ids in proposal.result resolved to records.
- * - changefeed: the literal transaction delta at the commit versionstamp.
+ * Recover the exact changes a committed proposal produced, from the changefeed
+ * at the commit versionstamp (the proposal's `result` is only the anchor). The
+ * payload (real ids) is the intent; this is the literal before→after delta.
  */
 export async function getProposalChangesImpl(input: GetProposalInput): Promise<ProposalChanges> {
   const proposal = await fetchProposal(input.proposal_id)
   if (!proposal) throw new Error(`proposal not found: ${input.proposal_id}`)
   const result = proposal.result ?? null
   const base = { proposal_id: idStr(proposal.id), status: proposal.status }
-  if (!result) {
+
+  if (!result?.versionstamp || !result.committed_at) {
     return {
       ...base,
-      versionstamp: null,
-      committed_at: null,
-      materialized: null,
+      versionstamp: result?.versionstamp ?? null,
+      committed_at: result?.committed_at ?? null,
       changefeed: {
         available: false,
         versionstamp: null,
         tables: {},
-        note: 'No materialized result: the proposal is not committed, or was committed before this feature.'
+        note: result
+          ? 'No versionstamp anchor: committed before the changefeed refactor or the anchor was not captured.'
+          : 'Not committed.'
       }
     }
+  }
+
+  // Anchor the SHOW CHANGES a second before the commit instant.
+  const sinceIso = new Date(Date.parse(result.committed_at) - 1000).toISOString()
+  const tables: Record<string, unknown[]> = {}
+  for (const table of CRITICAL_TABLES) {
+    const changes = await changefeedAt(table, result.versionstamp, sinceIso)
+    if (changes.length > 0) tables[table] = changes
   }
   return {
     ...base,
     versionstamp: result.versionstamp,
     committed_at: result.committed_at,
-    materialized: await materializeResult(result),
-    changefeed: await changefeedForResult(result)
+    changefeed: { available: true, versionstamp: result.versionstamp, tables }
   }
 }

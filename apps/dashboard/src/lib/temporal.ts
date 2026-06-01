@@ -1,29 +1,50 @@
-import type { Proposal } from './surreal'
+import { type ExistingEdge, type Proposal, replayEdgesAmong, scanEdgesAmongAt } from './surreal'
 
 /**
- * How a proposal's graph is contextualised, and why. The anchor is `committed_at`
- * (always present on a materialized commit) — not the changefeed versionstamp,
- * which was unreliable on SurrealDB 3.0.5 (see ADR-0025). The historical topology
- * is rebuilt from the SSOT (`proposal.result`) by folding earlier proposals'
- * payloads; see `buildProposalView` + `foldTopology`.
- *
- *  - `historical`: committed, with a materialized result → exact context at the
- *    commit (labels via VERSION-by-id, topology via the SSOT fold).
- *  - `degraded`:   committed but pre-materialization (no result/committed_at) →
- *    the fold can't remap its temp ids, so we fall back to the live graph and say so.
- *  - `live`:       a draft → the live graph *is* its context.
+ * The point in history a committed proposal landed: its transaction versionstamp
+ * (anchor for changefeed replay) + commit timestamp (anchor for VERSION-by-id).
  */
-export type TemporalState = 'historical' | 'degraded' | 'live'
+export type CommitAnchor = { versionstamp: string; committedAt: string }
 
-/** Commit instant (ISO) of a committed, materialized proposal, else null. */
-export function commitTime(p: Proposal): string | null {
+/**
+ * Extract the commit anchor from a proposal, or null when it can't be
+ * time-travelled — a draft (not committed yet → live view is correct), or a
+ * commit with no versionstamp captured (falls back to live).
+ */
+export function commitAnchor(p: Proposal): CommitAnchor | null {
   if (p.status !== 'committed') return null
+  const vs = p.result?.versionstamp
   const ca = p.result?.committed_at
-  if (ca == null) return null
-  return ca instanceof Date ? ca.toISOString() : String(ca)
+  if (vs == null || ca == null) return null
+  const committedAt = ca instanceof Date ? ca.toISOString() : String(ca)
+  return { versionstamp: String(vs), committedAt }
 }
 
-export function temporalState(p: Proposal): TemporalState {
-  if (p.status !== 'committed') return 'live'
-  return commitTime(p) != null ? 'historical' : 'degraded'
+/**
+ * Reads the pre-existing topology as of a commit. Two implementations behind one
+ * seam: the day SurrealDB fixes VERSION-scan we flip a flag instead of rewriting
+ * the viewer (see ADR-0025/0028). The label/node side always uses VERSION-by-id,
+ * which already works, so only the edge side needs swapping.
+ */
+export interface TemporalEdgeReader {
+  edgesAmongAt(ids: string[], anchor: CommitAnchor): Promise<ExistingEdge[]>
+}
+
+// Works on the current engine (v3.0.5): replay the changefeed up to the commit.
+const replayReader: TemporalEdgeReader = {
+  edgesAmongAt: (ids, anchor) => replayEdgesAmong(ids, anchor.versionstamp)
+}
+
+// Native VERSION-scan: correct only once the engine bug is fixed (#7245 family).
+const nativeReader: TemporalEdgeReader = {
+  edgesAmongAt: (ids, anchor) => scanEdgesAmongAt(ids, anchor.committedAt)
+}
+
+/**
+ * The active topology reader. `replay` (default) is correct on the current
+ * engine; set `HUYGENS_TEMPORAL=native` to switch to engine-native VERSION-scan
+ * once the regression tripwire goes green (the engine fix has shipped).
+ */
+export function edgeReader(): TemporalEdgeReader {
+  return process.env.HUYGENS_TEMPORAL === 'native' ? nativeReader : replayReader
 }

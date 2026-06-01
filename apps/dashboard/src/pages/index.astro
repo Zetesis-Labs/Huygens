@@ -183,18 +183,12 @@ const hasGraph = Boolean(proposalView?.proposal || dayView)
               <span
                 class="chip"
                 title={
-                  proposalView.temporal === 'historical'
-                    ? 'contexto reconstruido al instante del commit (fold del SSOT)'
-                    : proposalView.temporal === 'degraded'
-                      ? 'commit antiguo sin result materializado: no reconstruible, se muestra el grafo actual'
-                      : 'borrador: contexto en vivo (estado actual del grafo)'
+                  proposalView.historical
+                    ? 'contexto reconstruido al instante del commit (replay del changefeed)'
+                    : 'contexto en vivo (estado actual del grafo)'
                 }
               >
-                {proposalView.temporal === 'historical'
-                  ? '🕓 contexto del commit'
-                  : proposalView.temporal === 'degraded'
-                    ? '⚠ contexto actual (commit antiguo)'
-                    : '⟳ contexto actual'}
+                {proposalView.historical ? '🕓 contexto del commit' : '⟳ contexto actual'}
               </span>
               <span class="chip">{proposalView.counts.raws} raw</span>
               <span class="chip">+{proposalView.counts.creates} notas</span>

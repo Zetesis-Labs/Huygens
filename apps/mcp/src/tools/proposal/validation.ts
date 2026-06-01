@@ -1,7 +1,7 @@
 import type { RecordId } from 'surrealdb'
 import { BLOCK_ID_RE, NOTE_ID_RE } from '../../domain'
 import { getDb } from '../../surreal'
-import type { ProposalPayload } from './schemas'
+import type { ProposalPayload, StoredProposalPayload } from './schemas'
 import { toBlockRef, toNoteRef, toRawRef } from './store'
 
 function setEquals(left: string[], right: string[]): boolean {
@@ -66,22 +66,6 @@ export async function assertRawCapturesCommittable(rawIds: string[]): Promise<vo
   }
 }
 
-function collectDeclaredRefs(payload: ProposalPayload): { noteRefs: Set<string>; blockRefs: Set<string> } {
-  return {
-    noteRefs: new Set([
-      ...payload.note_creates.map(note => note.temp_id),
-      ...payload.note_updates.map(note => note.id)
-    ]),
-    blockRefs: new Set(payload.narrative_blocks.map(block => block.temp_id))
-  }
-}
-
-function classifyNodeRef(ref: string, declared: { noteRefs: Set<string>; blockRefs: Set<string> }): 'note' | 'block' {
-  if (declared.noteRefs.has(ref) || NOTE_ID_RE.test(ref)) return 'note'
-  if (declared.blockRefs.has(ref) || BLOCK_ID_RE.test(ref)) return 'block'
-  throw new Error(`unknown node ref: ${ref}`)
-}
-
 async function assertExistingRecordRefs(noteIds: Set<string>, blockIds: Set<string>): Promise<void> {
   const db = await getDb()
   if (noteIds.size > 0) {
@@ -104,37 +88,9 @@ async function assertExistingRecordRefs(noteIds: Set<string>, blockIds: Set<stri
   }
 }
 
-type RefScope = {
-  declared: { noteRefs: Set<string>; blockRefs: Set<string> }
-  rememberExisting: (ref: string) => void
-}
-
-/** A block→note trace link (about / affects): both ends must be declared or real. */
-function assertTraceLink(link: { block_temp_id: string; note_ref: string }, scope: RefScope): void {
-  if (!scope.declared.blockRefs.has(link.block_temp_id) && !BLOCK_ID_RE.test(link.block_temp_id)) {
-    throw new Error(`unknown block ref: ${link.block_temp_id}`)
-  }
-  if (!scope.declared.noteRefs.has(link.note_ref) && !NOTE_ID_RE.test(link.note_ref)) {
-    throw new Error(`unknown note ref: ${link.note_ref}`)
-  }
-  scope.rememberExisting(link.block_temp_id)
-  scope.rememberExisting(link.note_ref)
-}
-
-/** A semantic edge (in `edges` or `edges_remove`): part_of/blocked_by need notes. */
-function assertEdgeEndpoints(edge: { kind: string; from: string; to: string }, scope: RefScope): void {
-  const fromKind = classifyNodeRef(edge.from, scope.declared)
-  const toKind = classifyNodeRef(edge.to, scope.declared)
-  if ((edge.kind === 'part_of' || edge.kind === 'blocked_by') && (fromKind !== 'note' || toKind !== 'note')) {
-    throw new Error(`${edge.kind} requires note refs`)
-  }
-  scope.rememberExisting(edge.from)
-  scope.rememberExisting(edge.to)
-}
-
 /** At most one part_of parent per child in a single proposal: two different
  * parents for the same `from` is ambiguous (which wins the replace?). */
-function assertSingleParentPerChild(edges: ProposalPayload['edges']): void {
+function assertSingleParentPerChild(edges: StoredProposalPayload['edges']): void {
   const parent = new Map<string, string>()
   for (const edge of edges) {
     if (edge.kind !== 'part_of') continue
@@ -146,26 +102,56 @@ function assertSingleParentPerChild(edges: ProposalPayload['edges']): void {
   }
 }
 
-export async function assertProposalRefs(payload: ProposalPayload): Promise<void> {
-  const declared = collectDeclaredRefs(payload)
-  const existingNoteIds = new Set<string>()
-  const existingBlockIds = new Set<string>()
-  const rememberExisting = (ref: string) => {
-    if (NOTE_ID_RE.test(ref)) existingNoteIds.add(ref)
-    if (BLOCK_ID_RE.test(ref)) existingBlockIds.add(ref)
-  }
-  const scope: RefScope = { declared, rememberExisting }
-
-  for (const update of payload.note_updates) existingNoteIds.add(update.id)
-  for (const about of payload.about) assertTraceLink(about, scope)
-  for (const affect of payload.affects) assertTraceLink(affect, scope)
-  assertSingleParentPerChild(payload.edges)
-  for (const edge of payload.edges) assertEdgeEndpoints(edge, scope)
-  for (const edge of payload.edges_remove) assertEdgeEndpoints(edge, scope)
-
-  await assertExistingRecordRefs(existingNoteIds, existingBlockIds)
+function nodeKind(id: string): 'note' | 'block' {
+  if (NOTE_ID_RE.test(id)) return 'note'
+  if (BLOCK_ID_RE.test(id)) return 'block'
+  throw new Error(`unknown node ref: ${id}`)
 }
 
+/**
+ * Validate the *stored* payload (real ids everywhere) before commit: every
+ * referenced record that this proposal does NOT create must already exist, and
+ * part_of/blocked_by endpoints must be notes. Pure-id; no temp resolution.
+ */
+export async function assertProposalRefs(payload: StoredProposalPayload): Promise<void> {
+  const createdNotes = new Set(payload.note_creates.map(n => n.id))
+  const createdBlocks = new Set(payload.narrative_blocks.map(b => b.id))
+  const needNotes = new Set<string>()
+  const needBlocks = new Set<string>()
+  const needNote = (id: string): void => {
+    if (!createdNotes.has(id)) needNotes.add(id)
+  }
+  const needBlock = (id: string): void => {
+    if (!createdBlocks.has(id)) needBlocks.add(id)
+  }
+
+  for (const update of payload.note_updates) needNotes.add(update.id)
+  for (const a of payload.about) {
+    if (nodeKind(a.block_id) !== 'block') throw new Error(`about.block_id must be a block: ${a.block_id}`)
+    needBlock(a.block_id)
+    needNote(a.note_id)
+  }
+  for (const a of payload.affects) {
+    if (nodeKind(a.block_id) !== 'block') throw new Error(`affects.block_id must be a block: ${a.block_id}`)
+    needBlock(a.block_id)
+    needNote(a.note_id)
+  }
+
+  assertSingleParentPerChild(payload.edges)
+  for (const edge of [...payload.edges, ...payload.edges_remove]) {
+    const fromKind = nodeKind(edge.from)
+    const toKind = nodeKind(edge.to)
+    if ((edge.kind === 'part_of' || edge.kind === 'blocked_by') && (fromKind !== 'note' || toKind !== 'note')) {
+      throw new Error(`${edge.kind} requires note refs`)
+    }
+    fromKind === 'note' ? needNote(edge.from) : needBlock(edge.from)
+    toKind === 'note' ? needNote(edge.to) : needBlock(edge.to)
+  }
+
+  await assertExistingRecordRefs(needNotes, needBlocks)
+}
+
+/** Input-level validation (temp_id space), run on create/update before realizing. */
 export function validatePayload(rawIds: string[], payload: ProposalPayload): ProposalPayload {
   assertRawIdsMatch(rawIds, payload.raw_ids)
   assertUniqueTempIds(payload)

@@ -34,7 +34,7 @@ export type ExistingEdge = { source: string; target: string; kind: string }
  * payload types are structurally assignable to this. */
 export type GraphPayload = {
   note_creates: {
-    temp_id: string
+    id: string
     type_slug: string
     title: string
     state: string
@@ -54,7 +54,7 @@ export type GraphPayload = {
   /** Semantic edges this proposal retires (the inverse of `edges`). Optional:
    * older payloads predate the feature. Read by foldTopology, not proposalToFlow. */
   edges_remove?: { kind: string; from: string; to: string }[]
-  narrative_blocks: { temp_id: string }[]
+  narrative_blocks: { id: string }[]
 }
 
 function createAttrLines(n: GraphPayload['note_creates'][number]): string[] {
@@ -114,8 +114,8 @@ export function proposalToFlow(payload: GraphPayload, labels: Record<string, Ref
   }
 
   for (const n of payload.note_creates) {
-    nodes.set(n.temp_id, {
-      id: n.temp_id,
+    nodes.set(n.id, {
+      id: n.id,
       data: {
         title: n.title,
         type: n.type_slug,
@@ -139,7 +139,7 @@ export function proposalToFlow(payload: GraphPayload, labels: Record<string, Ref
     })
   }
 
-  const narrativeIds = new Set(payload.narrative_blocks.map(b => b.temp_id))
+  const narrativeIds = new Set(payload.narrative_blocks.map(b => b.id))
   for (const e of payload.edges) {
     if (narrativeIds.has(e.from) || narrativeIds.has(e.to)) continue
     addEdge(e.from, e.to, e.kind)
@@ -251,7 +251,7 @@ export function foldTopology(items: FuseItem[]): ExistingEdge[] {
   for (const it of items) {
     const tm = it.tempMap ?? {}
     const remap = (id: string): string => tm[id] ?? id
-    const narrative = new Set(it.payload.narrative_blocks.map(b => b.temp_id))
+    const narrative = new Set(it.payload.narrative_blocks.map(b => b.id))
 
     for (const e of it.payload.edges_remove ?? []) {
       if (narrative.has(e.from) || narrative.has(e.to)) continue

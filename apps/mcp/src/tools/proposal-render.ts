@@ -1,5 +1,4 @@
-import { NOTE_ID_RE } from '../domain'
-import type { ProposalDetail, ProposalPayload } from './proposal/schemas'
+import type { ProposalDetail, StoredProposalPayload } from './proposal/schemas'
 
 const PREVIEW_MAX = 60
 
@@ -14,15 +13,14 @@ function plural(n: number, singular: string, suffix = 's'): string {
 }
 
 /**
- * Map every ref a commit can resolve to a readable label, derived purely from
- * the payload: notes-to-create by their title, narrative blocks by [temp_id].
- * Real record ids (note:…, block:… in updates or pre-existing refs) fall back
- * to themselves.
+ * Label map for the preview, derived purely from the payload (real ids): a
+ * created note by its title, a narrative block by a short tag. Pre-existing refs
+ * (notes the proposal only links/updates) fall back to their id.
  */
-function buildLabels(payload: ProposalPayload): Map<string, string> {
+function buildLabels(payload: StoredProposalPayload): Map<string, string> {
   const labels = new Map<string, string>()
-  for (const note of payload.note_creates) labels.set(note.temp_id, `"${note.title}"`)
-  for (const block of payload.narrative_blocks) labels.set(block.temp_id, `[${block.temp_id}]`)
+  for (const note of payload.note_creates) labels.set(note.id, `"${note.title}"`)
+  for (const block of payload.narrative_blocks) labels.set(block.id, '[informe]')
   return labels
 }
 
@@ -35,13 +33,13 @@ function headerSection(detail: ProposalDetail): string[] {
   return [`Proposal ${detail.id} — ${detail.status}${committable}`]
 }
 
-function rawSection(payload: ProposalPayload): string[] {
+function rawSection(payload: StoredProposalPayload): string[] {
   return [
     `Processes ${payload.raw_ids.length} ${plural(payload.raw_ids.length, 'raw capture')}: ${payload.raw_ids.join(', ')}`
   ]
 }
 
-function createSection(payload: ProposalPayload): string[] {
+function createSection(payload: StoredProposalPayload): string[] {
   if (payload.note_creates.length === 0) return []
   const lines = [`CREATE ${payload.note_creates.length} ${plural(payload.note_creates.length, 'note')}:`]
   for (const note of payload.note_creates) {
@@ -53,12 +51,12 @@ function createSection(payload: ProposalPayload): string[] {
     const metaKeys = note.metadata ? Object.keys(note.metadata) : []
     if (metaKeys.length > 0) extras.push(`metadata: ${metaKeys.join(', ')}`)
     const suffix = extras.length > 0 ? ` · ${extras.join(' · ')}` : ''
-    lines.push(`  • "${note.title}"  ${note.type_slug} · ${note.state}${suffix}`)
+    lines.push(`  • "${note.title}"  ${note.type_slug} · ${note.state}${suffix}  (${note.id})`)
   }
   return lines
 }
 
-function updateChanges(note: ProposalPayload['note_updates'][number]): string {
+function updateChanges(note: StoredProposalPayload['note_updates'][number]): string {
   const changes: string[] = []
   if (note.title != null) changes.push(`title → "${note.title}"`)
   if (note.state != null) changes.push(`state → ${note.state}`)
@@ -74,37 +72,37 @@ function updateChanges(note: ProposalPayload['note_updates'][number]): string {
   return changes.length > 0 ? changes.join(' · ') : 'no field changes'
 }
 
-function updateSection(payload: ProposalPayload): string[] {
+function updateSection(payload: StoredProposalPayload): string[] {
   if (payload.note_updates.length === 0) return []
   const lines = [`UPDATE ${payload.note_updates.length} ${plural(payload.note_updates.length, 'note')}:`]
   for (const note of payload.note_updates) lines.push(`  • ${note.id}  ${updateChanges(note)}`)
   return lines
 }
 
-function narrativeSection(payload: ProposalPayload): string[] {
+function narrativeSection(payload: StoredProposalPayload): string[] {
   if (payload.narrative_blocks.length === 0) return []
   const lines = [
     `CREATE ${payload.narrative_blocks.length} ${plural(payload.narrative_blocks.length, 'narrative block')}:`
   ]
   for (const block of payload.narrative_blocks) {
-    lines.push(`  • [${block.temp_id}] "${oneLine(block.content)}"  ← from ${block.raw_ids.join(', ')}`)
+    lines.push(`  • "${oneLine(block.content)}"  ← from ${block.raw_ids.join(', ')}`)
   }
   return lines
 }
 
-function edgeSection(payload: ProposalPayload, labels: Map<string, string>): string[] {
+function edgeSection(payload: StoredProposalPayload, labels: Map<string, string>, createdNotes: Set<string>): string[] {
   if (payload.edges.length === 0) return []
   const lines = [`Graph edges (${payload.edges.length}):`]
   for (const edge of payload.edges) {
     const reason = edge.reason ? `  (${oneLine(edge.reason)})` : ''
-    // part_of on an existing note is a replace: the commit drops the prior parent.
-    const replace = edge.kind === 'part_of' && NOTE_ID_RE.test(edge.from) ? '  (reemplaza padre anterior)' : ''
+    // part_of onto a pre-existing note is a replace: the commit drops the prior parent.
+    const replace = edge.kind === 'part_of' && !createdNotes.has(edge.from) ? '  (reemplaza padre anterior)' : ''
     lines.push(`  • ${labelFor(edge.from, labels)} —${edge.kind}→ ${labelFor(edge.to, labels)}${reason}${replace}`)
   }
   return lines
 }
 
-function edgesRemovedSection(payload: ProposalPayload, labels: Map<string, string>): string[] {
+function edgesRemovedSection(payload: StoredProposalPayload, labels: Map<string, string>): string[] {
   if (payload.edges_remove.length === 0) return []
   const lines = [`Edges removed (${payload.edges_remove.length}):`]
   for (const edge of payload.edges_remove) {
@@ -113,23 +111,21 @@ function edgesRemovedSection(payload: ProposalPayload, labels: Map<string, strin
   return lines
 }
 
-function topologySection(payload: ProposalPayload, labels: Map<string, string>): string[] {
+function topologySection(payload: StoredProposalPayload, labels: Map<string, string>): string[] {
   if (payload.about.length === 0 && payload.affects.length === 0) return []
   const lines = ['Topology:']
   for (const a of payload.about) {
-    lines.push(`  • about:   ${labelFor(a.block_temp_id, labels)} → ${labelFor(a.note_ref, labels)}`)
+    lines.push(`  • about:   ${labelFor(a.block_id, labels)} → ${labelFor(a.note_id, labels)}`)
   }
   for (const a of payload.affects) {
     const summary = a.summary ? ` "${oneLine(a.summary)}"` : ''
-    lines.push(
-      `  • affects: ${labelFor(a.block_temp_id, labels)} → ${labelFor(a.note_ref, labels)}  (${a.action})${summary}`
-    )
+    lines.push(`  • affects: ${labelFor(a.block_id, labels)} → ${labelFor(a.note_id, labels)}  (${a.action})${summary}`)
   }
   return lines
 }
 
-/** Mirror of CommitProposalResult counts, computed deterministically from the payload. */
-function summarySection(payload: ProposalPayload): string[] {
+/** Counts computed deterministically from the payload. */
+function summarySection(payload: StoredProposalPayload): string[] {
   const descriptive =
     payload.note_creates.reduce((sum, n) => sum + n.descriptive_blocks.length, 0) +
     payload.note_updates.reduce((sum, n) => sum + n.descriptive_blocks_append.length, 0)
@@ -143,49 +139,36 @@ function summarySection(payload: ProposalPayload): string[] {
   ]
 }
 
-/** Materialized result of a committed proposal: the real record ids it produced. */
+/** A committed proposal carries only the anchor; the change detail lives in the
+ * changefeed (use get_proposal_changes). The payload above already holds the real ids. */
 function resultSection(detail: ProposalDetail): string[] {
   const r = detail.result
   if (!r) return []
-  const lines = ['Committed result:']
-  if (r.notes_created.length > 0) lines.push(`  • notes created:      ${r.notes_created.join(', ')}`)
-  if (r.notes_updated.length > 0) lines.push(`  • notes updated:      ${r.notes_updated.join(', ')}`)
-  if (r.narrative_blocks_created.length > 0)
-    lines.push(`  • narrative blocks:   ${r.narrative_blocks_created.join(', ')}`)
-  if (r.descriptive_blocks_created.length > 0)
-    lines.push(`  • descriptive blocks: ${r.descriptive_blocks_created.join(', ')}`)
-  const edges = r.derived_from.length + r.about.length + r.affects.length + r.semantic_edges.length
-  if (edges > 0) {
-    lines.push(
-      `  • edges: ${edges} (derived_from ${r.derived_from.length}, about ${r.about.length}, ` +
-        `affects ${r.affects.length}, semantic ${r.semantic_edges.length})`
-    )
-  }
-  if (r.edges_removed.length > 0) lines.push(`  • edges removed:      ${r.edges_removed.join(', ')}`)
-  const temps = [...Object.entries(r.temp_ids.notes), ...Object.entries(r.temp_ids.blocks)]
-  if (temps.length > 0) {
-    lines.push(`  • temp_ids: ${temps.map(([temp, id]) => `${temp} → ${id}`).join(', ')}`)
-  }
-  lines.push(`  • versionstamp: ${r.versionstamp ?? '—'} · committed ${r.committed_at}`)
-  return lines
+  return [
+    'Committed:',
+    `  • committed_at: ${r.committed_at}`,
+    `  • versionstamp: ${r.versionstamp ?? '— (not changefeed-anchored)'}`,
+    '  • change detail → get_proposal_changes (changefeed)'
+  ]
 }
 
 /**
- * Render a deterministic, human-readable preview of what committing this
- * proposal will create and change. Pure: same input → same output, no I/O.
- * Empty sections are omitted; the summary always shows the full tally. For a
- * committed proposal, the materialized result (real ids) is appended.
+ * Render a deterministic, human-readable preview of what committing this proposal
+ * will create and change, from the stored payload (real ids). Pure: no I/O. Empty
+ * sections omitted; the summary always shows the full tally. For a committed
+ * proposal the anchor (committed_at + versionstamp) is appended.
  */
 export function renderProposalDiff(detail: ProposalDetail): string {
   const { payload } = detail
   const labels = buildLabels(payload)
+  const createdNotes = new Set(payload.note_creates.map(n => n.id))
   const sections: string[][] = [
     headerSection(detail),
     rawSection(payload),
     createSection(payload),
     updateSection(payload),
     narrativeSection(payload),
-    edgeSection(payload, labels),
+    edgeSection(payload, labels, createdNotes),
     edgesRemovedSection(payload, labels),
     topologySection(payload, labels),
     summarySection(payload),
