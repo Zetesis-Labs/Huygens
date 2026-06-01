@@ -26,41 +26,12 @@ function buildNoteCreateData(note: NoteCreate): Record<string, unknown> {
 }
 
 /**
- * The versionstamp of the commit transaction, recovered from the proposal's own
- * changefeed entry. The proposal record is upserted inside the commit tx, so its
- * changefeed entry carries the transaction's (single, table-global) versionstamp.
- *
- * We query `SHOW CHANGES FOR TABLE proposal SINCE d"<before>"` with a DB-clock
- * datetime captured before the commit. Datetime `SINCE` works; `SINCE 0` /
- * `SINCE <low versionstamp>` are broken in SurrealDB 3.0.5 and silently return
- * empty — which is why this used to come back null on nearly every commit. The
- * entry is durable, so we only retry to absorb the changefeed flush lag. Returns
- * the u64 as a string (beyond Number precision), or null if nothing surfaced.
- */
-async function versionstampForProposal(proposalId: RecordId, since: string): Promise<string | null> {
-  const db = await getDb()
-  const id = String(proposalId)
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const [rows] = await db.query<[Array<{ versionstamp: bigint; changes: Array<{ update?: { id?: unknown } }> }>]>(
-      `SHOW CHANGES FOR TABLE proposal SINCE d"${since}"`
-    )
-    for (const row of rows ?? []) {
-      if (typeof row.versionstamp !== 'bigint') continue
-      for (const change of row.changes ?? []) {
-        if (change.update && String(change.update.id) === id) return String(row.versionstamp)
-      }
-    }
-    await new Promise(resolve => setTimeout(resolve, 150))
-  }
-  return null
-}
-
-/**
  * Build the single SurrealQL transaction that materializes a committed proposal.
- * All mutations run inside one BEGIN…COMMIT (atomic: all-or-nothing) and share a
- * single versionstamp. The created/touched record ids are captured in LET vars and
- * stored verbatim into `proposal.result`, so "what did this proposal change" is
- * answerable without the changefeed. The versionstamp is filled in afterwards.
+ * All mutations run inside one BEGIN…COMMIT (atomic: all-or-nothing). The
+ * created/touched record ids are captured in LET vars and stored verbatim into
+ * `proposal.result`, so "what did this proposal change" — and the graph's history —
+ * is answerable directly from `result` (the SSOT, ADR-0024/0025), with no depend
+ * on the changefeed (unreliable on 3.0.5). `committed_at` is the time anchor.
  */
 class CommitTx {
   readonly params: Record<string, unknown> = {}
@@ -80,7 +51,10 @@ class CommitTx {
     derived_from: [] as string[],
     about: [] as string[],
     affects: [] as string[],
-    semantic_edges: [] as string[]
+    semantic_edges: [] as string[],
+    // Each entry is a LET var holding an ARRAY of removed edge ids (a DELETE may
+    // hit 0..n rows), so finalize() flattens them. See removeEdges()/edges().
+    edges_removed: [] as string[]
   }
 
   private p(value: unknown): string {
@@ -208,6 +182,24 @@ class CommitTx {
     }
   }
 
+  // Explicit retirada of semantic edges (the inverse of edges()). DELETE …
+  // RETURN BEFORE captures the real ids removed; `.id` projects the deleted rows
+  // to their ids (an array, since a kind+from+to is at most one but we don't
+  // assume). Removing a non-existent edge is a no-op, not an error.
+  private removeEdges(payload: ProposalPayload): void {
+    for (const edge of payload.edges_remove) {
+      const from = this.nodeToken(edge.from)
+      const to = this.nodeToken(edge.to)
+      if (edge.kind === 'part_of' || edge.kind === 'blocked_by') {
+        if (!from.isNote) throw new Error(`${edge.kind} requires a note ref: ${edge.from}`)
+        if (!to.isNote) throw new Error(`${edge.kind} requires a note ref: ${edge.to}`)
+      }
+      const ev = this.letVar()
+      this.lines.push(`LET ${ev} = (DELETE ${edge.kind} WHERE in = ${from.tok} AND out = ${to.tok} RETURN BEFORE).id;`)
+      this.out.edges_removed.push(ev)
+    }
+  }
+
   private edges(payload: ProposalPayload): void {
     for (const edge of payload.edges) {
       const from = this.nodeToken(edge.from)
@@ -215,6 +207,15 @@ class CommitTx {
       if (edge.kind === 'part_of' || edge.kind === 'blocked_by') {
         if (!from.isNote) throw new Error(`${edge.kind} requires a note ref: ${edge.from}`)
         if (!to.isNote) throw new Error(`${edge.kind} requires a note ref: ${edge.to}`)
+      }
+      // part_of is single-parent (UNIQUE(in)). Reparenting is a replace: drop the
+      // note's previous parent (if any, and only if it differs from the new one)
+      // inside this same tx, so the RELATE below doesn't collide with the index.
+      // The DELETE-then-RELATE in one transaction is engine-verified safe on 3.0.5.
+      if (edge.kind === 'part_of') {
+        const rv = this.letVar()
+        this.lines.push(`LET ${rv} = (DELETE part_of WHERE in = ${from.tok} AND out != ${to.tok} RETURN BEFORE).id;`)
+        this.out.edges_removed.push(rv)
       }
       const ev = this.letVar()
       this.lines.push(`LET ${ev} = (RELATE ${from.tok}->${edge.kind}->${to.tok} RETURN AFTER)[0].id;`)
@@ -232,6 +233,7 @@ class CommitTx {
         `notes_created: ${CommitTx.arr(o.notes_created)}, notes_updated: ${CommitTx.arr(o.notes_updated)}, ` +
         `narrative_blocks_created: ${CommitTx.arr(o.narrative_blocks_created)}, descriptive_blocks_created: ${CommitTx.arr(o.descriptive_blocks_created)}, ` +
         `derived_from: ${CommitTx.arr(o.derived_from)}, about: ${CommitTx.arr(o.about)}, affects: ${CommitTx.arr(o.affects)}, semantic_edges: ${CommitTx.arr(o.semantic_edges)}, ` +
+        `edges_removed: array::flatten(${CommitTx.arr(o.edges_removed)}), ` +
         `temp_ids: { notes: ${CommitTx.obj(this.tempNotes)}, blocks: ${CommitTx.obj(this.tempBlocks)} }, ` +
         'versionstamp: NONE, committed_at: time::now() };'
     )
@@ -243,13 +245,14 @@ class CommitTx {
     this.updates(payload)
     this.narratives(payload)
     this.topology(payload)
+    this.removeEdges(payload)
     this.edges(payload)
     this.finalize(payload, proposalId)
     return { query: this.lines.join('\n'), params: this.params }
   }
 }
 
-function buildCommitTx(
+export function buildCommitTx(
   payload: ProposalPayload,
   proposalId: RecordId
 ): { query: string; params: Record<string, unknown> } {
@@ -264,19 +267,8 @@ export async function commitProposalImpl(input: CommitProposalInput): Promise<Co
   await assertRawCapturesCommittable(payload.raw_ids)
   await assertProposalRefs(payload)
 
-  // DB-clock timestamp captured before the commit, used afterwards to locate the
-  // commit's versionstamp via the proposal's own changefeed entry.
-  const [before] = await db.query<[string]>('RETURN <string> time::now();')
-
   const { query, params } = buildCommitTx(payload, proposal.id)
   await db.query(query, params) // atomic: any failure rolls the whole commit back
-
-  // Stamp the proposal with the transaction's versionstamp (anchor for replaying
-  // the exact changeset / reconstructing the graph at commit time).
-  const versionstamp = await versionstampForProposal(proposal.id, before)
-  if (versionstamp != null) {
-    await db.query('UPDATE $proposal SET result.versionstamp = $vs', { proposal: proposal.id, vs: versionstamp })
-  }
 
   const committed = await fetchProposal(input.proposal_id)
   const result = normalizeResult(committed?.result)
@@ -286,7 +278,7 @@ export async function commitProposalImpl(input: CommitProposalInput): Promise<Co
     actor: 'user',
     session_id: newSessionId(),
     subject: proposal.id,
-    payload: { raw_ids: payload.raw_ids, versionstamp }
+    payload: { raw_ids: payload.raw_ids }
   })
 
   return {
@@ -300,6 +292,7 @@ export async function commitProposalImpl(input: CommitProposalInput): Promise<Co
     about_created: result?.about.length ?? 0,
     affects_created: result?.affects.length ?? 0,
     semantic_edges_created: result?.semantic_edges.length ?? 0,
+    semantic_edges_removed: result?.edges_removed.length ?? 0,
     temp_ids: result?.temp_ids ?? { notes: {}, blocks: {} }
   }
 }

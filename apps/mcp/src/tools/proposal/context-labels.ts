@@ -11,6 +11,10 @@ export type MaterializedGraph = {
   about: GraphEdgeRecord[]
   affects: GraphEdgeRecord[]
   semantic_edges: GraphEdgeRecord[]
+  /** Ids of edges this commit removed — kept as raw strings, not resolved: the
+   * records no longer exist, so selectByIds would silently drop them. The
+   * per-table changefeed shows the real DELETE. */
+  edges_removed: string[]
 }
 
 /** Ids of every node the commit created or updated. */

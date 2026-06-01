@@ -1,3 +1,4 @@
+import { NOTE_ID_RE } from '../domain'
 import type { ProposalDetail, ProposalPayload } from './proposal/schemas'
 
 const PREVIEW_MAX = 60
@@ -96,7 +97,18 @@ function edgeSection(payload: ProposalPayload, labels: Map<string, string>): str
   const lines = [`Graph edges (${payload.edges.length}):`]
   for (const edge of payload.edges) {
     const reason = edge.reason ? `  (${oneLine(edge.reason)})` : ''
-    lines.push(`  • ${labelFor(edge.from, labels)} —${edge.kind}→ ${labelFor(edge.to, labels)}${reason}`)
+    // part_of on an existing note is a replace: the commit drops the prior parent.
+    const replace = edge.kind === 'part_of' && NOTE_ID_RE.test(edge.from) ? '  (reemplaza padre anterior)' : ''
+    lines.push(`  • ${labelFor(edge.from, labels)} —${edge.kind}→ ${labelFor(edge.to, labels)}${reason}${replace}`)
+  }
+  return lines
+}
+
+function edgesRemovedSection(payload: ProposalPayload, labels: Map<string, string>): string[] {
+  if (payload.edges_remove.length === 0) return []
+  const lines = [`Edges removed (${payload.edges_remove.length}):`]
+  for (const edge of payload.edges_remove) {
+    lines.push(`  • ${labelFor(edge.from, labels)} —${edge.kind}✕→ ${labelFor(edge.to, labels)}`)
   }
   return lines
 }
@@ -126,7 +138,8 @@ function summarySection(payload: ProposalPayload): string[] {
     `On commit → notes +${payload.note_creates.length} · updates ${payload.note_updates.length} · ` +
       `narrative +${payload.narrative_blocks.length} · descriptive +${descriptive} · ` +
       `derived_from +${derivedFrom} · about +${payload.about.length} · ` +
-      `affects +${payload.affects.length} · edges +${payload.edges.length}`
+      `affects +${payload.affects.length} · edges +${payload.edges.length}` +
+      (payload.edges_remove.length > 0 ? ` · edges-removed ${payload.edges_remove.length}` : '')
   ]
 }
 
@@ -148,6 +161,7 @@ function resultSection(detail: ProposalDetail): string[] {
         `affects ${r.affects.length}, semantic ${r.semantic_edges.length})`
     )
   }
+  if (r.edges_removed.length > 0) lines.push(`  • edges removed:      ${r.edges_removed.join(', ')}`)
   const temps = [...Object.entries(r.temp_ids.notes), ...Object.entries(r.temp_ids.blocks)]
   if (temps.length > 0) {
     lines.push(`  • temp_ids: ${temps.map(([temp, id]) => `${temp} → ${id}`).join(', ')}`)
@@ -172,6 +186,7 @@ export function renderProposalDiff(detail: ProposalDetail): string {
     updateSection(payload),
     narrativeSection(payload),
     edgeSection(payload, labels),
+    edgesRemovedSection(payload, labels),
     topologySection(payload, labels),
     summarySection(payload),
     resultSection(detail)

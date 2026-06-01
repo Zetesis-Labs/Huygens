@@ -74,6 +74,16 @@ const ProposalEdgeSchema = z.object({
   reason: z.string().optional()
 })
 
+// Retirada explícita de un edge semántico (part_of / blocked_by / mentions): el
+// inverso de `edges`. No lleva `reason` — el porqué vive en el informe-block. El
+// reparent de part_of NO necesita declararse aquí: el commit hace replace
+// implícito (borra el padre anterior). Declararlo aquí solo mejora el preview.
+const EdgeRemoveSchema = z.object({
+  kind: EdgeKindSchema,
+  from: NodeRefSchema,
+  to: NodeRefSchema
+})
+
 const ProposalAboutSchema = z.object({
   block_temp_id: BlockRefSchema,
   note_ref: NoteRefSchema
@@ -92,6 +102,7 @@ export const proposalPayloadSchema = z.object({
   note_creates: z.array(NoteCreateSchema).default([]),
   note_updates: z.array(NoteUpdateSchema).default([]),
   edges: z.array(ProposalEdgeSchema).default([]),
+  edges_remove: z.array(EdgeRemoveSchema).default([]),
   about: z.array(ProposalAboutSchema).default([]),
   affects: z.array(ProposalAffectsSchema).default([])
 })
@@ -148,6 +159,10 @@ export type ProposalResult = {
   about: string[]
   affects: string[]
   semantic_edges: string[]
+  /** Record ids of the semantic edges this commit removed (explicit edges_remove
+   * + the implicit part_of replace). SSOT for the retirada; legacy results pre
+   * this feature get `[]` via normalizeResult. */
+  edges_removed: string[]
   temp_ids: TempIdMap
   versionstamp: string | null
   committed_at: string
@@ -184,5 +199,6 @@ export type CommitProposalResult = {
   about_created: number
   affects_created: number
   semantic_edges_created: number
+  semantic_edges_removed: number
   temp_ids: TempIdMap
 }

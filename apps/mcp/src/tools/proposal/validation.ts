@@ -104,51 +104,64 @@ async function assertExistingRecordRefs(noteIds: Set<string>, blockIds: Set<stri
   }
 }
 
+type RefScope = {
+  declared: { noteRefs: Set<string>; blockRefs: Set<string> }
+  rememberExisting: (ref: string) => void
+}
+
+/** A block→note trace link (about / affects): both ends must be declared or real. */
+function assertTraceLink(link: { block_temp_id: string; note_ref: string }, scope: RefScope): void {
+  if (!scope.declared.blockRefs.has(link.block_temp_id) && !BLOCK_ID_RE.test(link.block_temp_id)) {
+    throw new Error(`unknown block ref: ${link.block_temp_id}`)
+  }
+  if (!scope.declared.noteRefs.has(link.note_ref) && !NOTE_ID_RE.test(link.note_ref)) {
+    throw new Error(`unknown note ref: ${link.note_ref}`)
+  }
+  scope.rememberExisting(link.block_temp_id)
+  scope.rememberExisting(link.note_ref)
+}
+
+/** A semantic edge (in `edges` or `edges_remove`): part_of/blocked_by need notes. */
+function assertEdgeEndpoints(edge: { kind: string; from: string; to: string }, scope: RefScope): void {
+  const fromKind = classifyNodeRef(edge.from, scope.declared)
+  const toKind = classifyNodeRef(edge.to, scope.declared)
+  if ((edge.kind === 'part_of' || edge.kind === 'blocked_by') && (fromKind !== 'note' || toKind !== 'note')) {
+    throw new Error(`${edge.kind} requires note refs`)
+  }
+  scope.rememberExisting(edge.from)
+  scope.rememberExisting(edge.to)
+}
+
+/** At most one part_of parent per child in a single proposal: two different
+ * parents for the same `from` is ambiguous (which wins the replace?). */
+function assertSingleParentPerChild(edges: ProposalPayload['edges']): void {
+  const parent = new Map<string, string>()
+  for (const edge of edges) {
+    if (edge.kind !== 'part_of') continue
+    const existing = parent.get(edge.from)
+    if (existing != null && existing !== edge.to) {
+      throw new Error(`note ${edge.from} is given two part_of parents in one proposal: ${existing} and ${edge.to}`)
+    }
+    parent.set(edge.from, edge.to)
+  }
+}
+
 export async function assertProposalRefs(payload: ProposalPayload): Promise<void> {
   const declared = collectDeclaredRefs(payload)
   const existingNoteIds = new Set<string>()
   const existingBlockIds = new Set<string>()
-
   const rememberExisting = (ref: string) => {
     if (NOTE_ID_RE.test(ref)) existingNoteIds.add(ref)
     if (BLOCK_ID_RE.test(ref)) existingBlockIds.add(ref)
   }
+  const scope: RefScope = { declared, rememberExisting }
 
-  for (const update of payload.note_updates) {
-    existingNoteIds.add(update.id)
-  }
-
-  for (const about of payload.about) {
-    if (!declared.blockRefs.has(about.block_temp_id) && !BLOCK_ID_RE.test(about.block_temp_id)) {
-      throw new Error(`unknown block ref: ${about.block_temp_id}`)
-    }
-    if (!declared.noteRefs.has(about.note_ref) && !NOTE_ID_RE.test(about.note_ref)) {
-      throw new Error(`unknown note ref: ${about.note_ref}`)
-    }
-    rememberExisting(about.block_temp_id)
-    rememberExisting(about.note_ref)
-  }
-
-  for (const affect of payload.affects) {
-    if (!declared.blockRefs.has(affect.block_temp_id) && !BLOCK_ID_RE.test(affect.block_temp_id)) {
-      throw new Error(`unknown block ref: ${affect.block_temp_id}`)
-    }
-    if (!declared.noteRefs.has(affect.note_ref) && !NOTE_ID_RE.test(affect.note_ref)) {
-      throw new Error(`unknown note ref: ${affect.note_ref}`)
-    }
-    rememberExisting(affect.block_temp_id)
-    rememberExisting(affect.note_ref)
-  }
-
-  for (const edge of payload.edges) {
-    const fromKind = classifyNodeRef(edge.from, declared)
-    const toKind = classifyNodeRef(edge.to, declared)
-    if ((edge.kind === 'part_of' || edge.kind === 'blocked_by') && (fromKind !== 'note' || toKind !== 'note')) {
-      throw new Error(`${edge.kind} requires note refs`)
-    }
-    rememberExisting(edge.from)
-    rememberExisting(edge.to)
-  }
+  for (const update of payload.note_updates) existingNoteIds.add(update.id)
+  for (const about of payload.about) assertTraceLink(about, scope)
+  for (const affect of payload.affects) assertTraceLink(affect, scope)
+  assertSingleParentPerChild(payload.edges)
+  for (const edge of payload.edges) assertEdgeEndpoints(edge, scope)
+  for (const edge of payload.edges_remove) assertEdgeEndpoints(edge, scope)
 
   await assertExistingRecordRefs(existingNoteIds, existingBlockIds)
 }

@@ -48,6 +48,7 @@ export function normalizeResult(result: ProposalResult | null | undefined): Prop
     about: ids(result.about),
     affects: ids(result.affects),
     semantic_edges: ids(result.semantic_edges),
+    edges_removed: ids(result.edges_removed),
     temp_ids: {
       notes: idStrMap(result.temp_ids?.notes as Record<string, RecordIdish> | undefined),
       blocks: idStrMap(result.temp_ids?.blocks as Record<string, RecordIdish> | undefined)

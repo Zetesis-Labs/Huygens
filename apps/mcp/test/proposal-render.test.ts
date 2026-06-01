@@ -48,6 +48,7 @@ function fullPayload(): ProposalPayload {
       { kind: 'part_of', from: 'task1', to: 'project1' },
       { kind: 'mentions', from: 'narrative1', to: 'note:existing' }
     ],
+    edges_remove: [],
     about: [{ block_temp_id: 'narrative1', note_ref: 'task1' }],
     affects: [{ block_temp_id: 'narrative1', note_ref: 'task1', action: 'created', summary: 'Created task.' }]
   }
@@ -60,6 +61,7 @@ function minimalPayload(): ProposalPayload {
     note_creates: [],
     note_updates: [],
     edges: [],
+    edges_remove: [],
     about: [],
     affects: []
   }
@@ -150,6 +152,7 @@ describe('renderProposalDiff', () => {
       about: ['about:1'],
       affects: ['affects:1'],
       semantic_edges: ['part_of:1', 'mentions:1'],
+      edges_removed: [],
       temp_ids: { notes: { task1: 'note:abc' }, blocks: { narrative1: 'block:n1' } },
       versionstamp: '116638335457689600',
       committed_at: '2026-05-24T12:00:00Z'
@@ -164,5 +167,53 @@ describe('renderProposalDiff', () => {
 
   test('omits the committed-result section when there is no result', () => {
     expect(renderProposalDiff(detail(fullPayload()))).not.toContain('Committed result:')
+  })
+
+  test('annotates a part_of on an existing note as a parent replace', () => {
+    const payload = minimalPayload()
+    payload.edges = [{ kind: 'part_of', from: 'note:child', to: 'note:parent' }]
+    const out = renderProposalDiff(detail(payload))
+    expect(out).toContain('note:child —part_of→ note:parent  (reemplaza padre anterior)')
+  })
+
+  test('does not annotate replace for a freshly created note (temp_id parent)', () => {
+    // task1 → project1 are both temp_ids in fullPayload: no prior parent to replace.
+    expect(renderProposalDiff(detail(fullPayload()))).not.toContain('(reemplaza padre anterior)')
+  })
+
+  test('renders the edges_remove section and tallies it in the summary', () => {
+    const payload = minimalPayload()
+    payload.edges_remove = [
+      { kind: 'blocked_by', from: 'note:a', to: 'note:b' },
+      { kind: 'mentions', from: 'note:a', to: 'note:c' }
+    ]
+    const out = renderProposalDiff(detail(payload))
+    expect(out).toContain('Edges removed (2):')
+    expect(out).toContain('note:a —blocked_by✕→ note:b')
+    expect(out).toContain('note:a —mentions✕→ note:c')
+    expect(out).toContain('· edges-removed 2')
+  })
+
+  test('omits the edges-removed tally when there are no removals', () => {
+    expect(renderProposalDiff(detail(minimalPayload()))).not.toContain('edges-removed')
+  })
+
+  test('lists removed edge ids in the committed result', () => {
+    const result: ProposalResult = {
+      notes_created: [],
+      notes_updated: ['note:child'],
+      narrative_blocks_created: ['block:n1'],
+      descriptive_blocks_created: [],
+      derived_from: ['derived_from:1'],
+      about: [],
+      affects: [],
+      semantic_edges: ['part_of:new'],
+      edges_removed: ['part_of:old', 'blocked_by:gone'],
+      temp_ids: { notes: {}, blocks: { n1: 'block:n1' } },
+      versionstamp: null,
+      committed_at: '2026-06-01T12:00:00Z'
+    }
+    const out = renderProposalDiff(detail(minimalPayload(), 'committed', 'proposal:test', result))
+    expect(out).toContain('edges removed:      part_of:old, blocked_by:gone')
   })
 })

@@ -44,7 +44,8 @@ function tablesFromResult(result: ProposalResult): string[] {
     ...result.derived_from,
     ...result.about,
     ...result.affects,
-    ...result.semantic_edges
+    ...result.semantic_edges,
+    ...(result.edges_removed ?? [])
   ]
   const tables = new Set<string>(['raw_capture'])
   for (const id of all) {
@@ -63,7 +64,9 @@ async function materializeResult(result: ProposalResult): Promise<NonNullable<Pr
     derived_from: await selectByIds<GraphEdgeRecord>(result.derived_from),
     about: await selectByIds<GraphEdgeRecord>(result.about),
     affects: await selectByIds<GraphEdgeRecord>(result.affects),
-    semantic_edges: await selectByIds<GraphEdgeRecord>(result.semantic_edges)
+    semantic_edges: await selectByIds<GraphEdgeRecord>(result.semantic_edges),
+    // Removed edges are gone from the DB; expose their ids verbatim.
+    edges_removed: result.edges_removed ?? []
   }
 }
 
