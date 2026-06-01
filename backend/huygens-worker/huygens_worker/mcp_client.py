@@ -1,62 +1,19 @@
-"""Small MCP client wrapper for future specialized worker agents.
+"""MCP client boundary for the worker.
 
-The worker no longer owns inbox polling, interpretation, or direct database writes.
-Any future worker behavior must go through the MCP tools exposed by the TS
-server, using this module as the boundary.
+The worker reaches the graph only through the MCP tools (wired via Agno's
+MCPTools). The one thing Agno drops is the server `instructions` (the SurrealQL
+cookbook + live schema) returned by `initialize`, so the agent fetches them here
+to inject into its own instructions.
 """
 
 from __future__ import annotations
-
-import json
-import logging
-from typing import Any
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.shared.exceptions import McpError
 
-from .errors import HuygensError, huygens_error_from_mcp, huygens_error_from_structured
+from .errors import HuygensError, huygens_error_from_mcp
 from .settings import settings
-
-log = logging.getLogger(__name__)
-
-
-def _extract_json_block(text_blocks: list[str]) -> Any:
-    """MCP tools include a trailing `\\n[raw JSON]\\n…` block as the
-    machine-readable payload. Returns whatever was JSON-parsed there —
-    dict for object-returning tools, list for find_related."""
-    for block in text_blocks:
-        if "[raw JSON]" in block:
-            _, _, body = block.partition("[raw JSON]")
-            return json.loads(body.strip())
-    raise RuntimeError(f"MCP tool: no [raw JSON] block in response: {text_blocks!r}")
-
-
-async def index_block_via_mcp(block_ids: list[str]) -> dict[str, Any]:
-    """Embed blocks and persist their vectors.
-
-    The MCP enforces a max of 64 ids per call.
-    """
-    if not block_ids:
-        return {"indexed": [], "dimensions": 0, "input_tokens": 0}
-    return await _call_mcp_tool("index_block", {"block_ids": block_ids})
-
-
-async def find_related_via_mcp(
-    query: str, *, k: int = 5, threshold: float = 0.5
-) -> list[dict[str, Any]]:
-    """Pre-fetch RAG: retrieve existing notes related to a concept.
-
-    Returns an empty list (not an error) when the corpus has no matches
-    above threshold.
-    """
-    result = await _call_mcp_tool(
-        "find_related", {"query": query, "k": k, "threshold": threshold}
-    )
-    # find_related's [raw JSON] block is the hits list, not an object.
-    if isinstance(result, list):
-        return result
-    return []
 
 
 async def get_server_instructions_via_mcp() -> str:
@@ -71,84 +28,6 @@ async def get_server_instructions_via_mcp() -> str:
         ):
             result = await session.initialize()
             return result.instructions or ""
-    except BaseExceptionGroup as eg:
-        for leaf in _flatten_exception_group(eg):
-            if isinstance(leaf, McpError):
-                raise huygens_error_from_mcp(leaf) from eg
-            if isinstance(leaf, HuygensError):
-                raise leaf from eg
-        raise
-
-
-async def list_tools_via_mcp() -> list[str]:
-    try:
-        async with (
-            streamablehttp_client(settings.mcp_url) as (read, write, _),
-            ClientSession(read, write) as session,
-        ):
-            await session.initialize()
-            result = await session.list_tools()
-            return [tool.name for tool in result.tools]
-    except BaseExceptionGroup as eg:
-        for leaf in _flatten_exception_group(eg):
-            if isinstance(leaf, McpError):
-                raise huygens_error_from_mcp(leaf) from eg
-            if isinstance(leaf, HuygensError):
-                raise leaf from eg
-        raise
-
-
-async def get_prompt_via_mcp(name: str) -> str:
-    """Fetch a canonical prompt the MCP advertises.
-
-    The MCP returns a list of messages; we concatenate text content from the
-    user-role messages and use the result as the worker prompt.
-    """
-    try:
-        async with (
-            streamablehttp_client(settings.mcp_url) as (read, write, _),
-            ClientSession(read, write) as session,
-        ):
-            await session.initialize()
-            result = await session.get_prompt(name)
-            chunks: list[str] = []
-            for message in result.messages:
-                content = message.content
-                text = getattr(content, "text", None)
-                if isinstance(text, str):
-                    chunks.append(text)
-            if not chunks:
-                raise RuntimeError(f"MCP prompt {name!r}: no text content in messages")
-            return "\n\n".join(chunks)
-    except BaseExceptionGroup as eg:
-        for leaf in _flatten_exception_group(eg):
-            if isinstance(leaf, McpError):
-                raise huygens_error_from_mcp(leaf) from eg
-            if isinstance(leaf, HuygensError):
-                raise leaf from eg
-        raise
-
-
-async def call_tool_via_mcp(name: str, arguments: dict[str, Any]) -> Any:
-    return await _call_mcp_tool(name, arguments)
-
-
-async def _call_mcp_tool(name: str, arguments: dict[str, Any]) -> Any:
-    try:
-        async with (
-            streamablehttp_client(settings.mcp_url) as (read, write, _),
-            ClientSession(read, write) as session,
-        ):
-            await session.initialize()
-            result = await session.call_tool(name, arguments=arguments)
-            if result.isError:
-                typed = huygens_error_from_structured(result.structuredContent)
-                if typed is not None:
-                    raise typed
-                detail = " | ".join(getattr(b, "text", str(b)) for b in result.content)
-                raise HuygensError(f"MCP {name}: {detail}")
-            text_blocks = [getattr(b, "text", "") for b in result.content if hasattr(b, "text")]
-            return _extract_json_block(text_blocks)
     except BaseExceptionGroup as eg:
         for leaf in _flatten_exception_group(eg):
             if isinstance(leaf, McpError):
