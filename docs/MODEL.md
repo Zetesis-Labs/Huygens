@@ -186,6 +186,15 @@ Solo estos edges son objetivo para v2.1-lite:
 `mentions` es el fallback deliberado. Antes de crear un edge nuevo, primero hay
 que comprobar que aparece en conversaciones reales y responde a una query real.
 
+`part_of` es de **padre unico** (una note cuelga de una sola). Por eso es
+**replace-on-write**: declarar un `part_of` para una note que ya tenia padre
+**reemplaza** el anterior — el commit retira el viejo en la misma transaccion
+(queda registrado en `proposal.result.edges_removed`). No hace falta declarar la
+retirada a mano. Para quitar un `blocked_by` o un `mentions` (o declarar el
+reparent de forma explicita para que el preview lo muestre) se usa
+`payload.edges_remove`, el inverso de `edges`. Los trace-edges de procedencia
+(`derived_from` / `about` / `affects`) son **append-only**: no se retiran.
+
 Un block narrativo puede tener varios `derived_from` si sintetiza varios raws
 del inbox en una sola interpretacion.
 

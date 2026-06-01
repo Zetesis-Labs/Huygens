@@ -10,6 +10,12 @@ dependencies = [
     "pydantic>=2.0",
     "pydantic-settings>=2.6",
     "mcp>=1.0",
+    # Dashboard chat agent served over AG-UI.
+    "agno>=2.0",
+    "openai>=1.0",
+    "ag-ui-protocol>=0.1",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
 ]
 
 [project.scripts]

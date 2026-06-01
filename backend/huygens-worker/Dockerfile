@@ -25,4 +25,8 @@ ENV PATH=/app/.venv/bin:$PATH
 RUN useradd -u 65532 -ms /bin/bash app
 USER app
 
+# AG-UI endpoint (POST /agui). Exposed for the internal network; the dashboard
+# SSR proxies to it. Not published to the host (see docker-compose).
+EXPOSE 7777
+
 CMD ["python", "-m", "huygens_worker"]

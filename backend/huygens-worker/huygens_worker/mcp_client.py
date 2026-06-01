@@ -59,6 +59,27 @@ async def find_related_via_mcp(
     return []
 
 
+async def get_server_instructions_via_mcp() -> str:
+    """The MCP returns its `instructions` (the SurrealQL cookbook + live schema)
+    in the initialize result. Agno's MCPTools only wires up the tools and drops
+    this, so the agent never sees it — we fetch it explicitly to inject into the
+    agent's own instructions. Returns "" when the server sends none."""
+    try:
+        async with (
+            streamablehttp_client(settings.mcp_url) as (read, write, _),
+            ClientSession(read, write) as session,
+        ):
+            result = await session.initialize()
+            return result.instructions or ""
+    except BaseExceptionGroup as eg:
+        for leaf in _flatten_exception_group(eg):
+            if isinstance(leaf, McpError):
+                raise huygens_error_from_mcp(leaf) from eg
+            if isinstance(leaf, HuygensError):
+                raise leaf from eg
+        raise
+
+
 async def list_tools_via_mcp() -> list[str]:
     try:
         async with (

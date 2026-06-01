@@ -61,8 +61,20 @@ El usuario debe aprobar esa propuesta o pedir ajustes.
 Tras `commit_proposal`, el MCP ejecuta una transaccion atomica (BEGIN…COMMIT):
 todas las mutaciones aterrizan juntas o ninguna. El resultado materializado
 queda en `proposal.result` con los record ids reales, el mapa `temp_ids`
-(temp_id → record id real) y el `versionstamp` de la transaccion. Para
-inspeccionar qué cambió exactamente usa `get_proposal_changes`.
+(temp_id → record id real), el `versionstamp` de la transaccion y los edges
+retirados en `edges_removed`. Para inspeccionar qué cambió exactamente usa
+`get_proposal_changes`.
+
+### Mover una note de padre / retirar relaciones
+
+`part_of` es de padre unico y **replace-on-write**: para mover una note de un
+padre a otro basta con declarar el `part_of` nuevo en `payload.edges` — el commit
+retira el anterior solo. Para **quitar** un `blocked_by` o un `mentions` (un
+desbloqueo, deshacer una mencion), o para que el preview muestre la retirada del
+padre de forma explicita, anade la relacion a `payload.edges_remove` (mismo
+`{kind, from, to}` que `edges`). Retirar un edge inexistente es no-op, no error.
+Los trace-edges de procedencia (`derived_from`/`about`/`affects`) **no se
+retiran**: son append-only.
 
 ### Cambios de estado y metadata
 

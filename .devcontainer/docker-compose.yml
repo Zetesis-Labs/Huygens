@@ -116,6 +116,8 @@ services:
       SURREAL_NS: huygens
       SURREAL_DB: main
       SURREAL_READER_USER: huygens_reader
+      # AG-UI upstream the /api/agui SSR proxy forwards to (internal network).
+      HUYGENS_AGUI_URL: http://huygens-worker:7777
     ports:
       - "4321:4321"
     volumes:
@@ -127,8 +129,11 @@ services:
     networks:
       - default_network
 
+  # Dashboard chat agent (Agno) served over AG-UI. The dashboard SSR proxies to
+  # it by service name on the internal network — the port is exposed, not
+  # published, so there's no new public surface (see ADR-0026). OPENAI_API_KEY
+  # comes from the env_file below.
   huygens-worker:
-    profiles: ["worker"]
     build:
       context: ../backend/huygens-worker
       dockerfile: Dockerfile
@@ -136,8 +141,12 @@ services:
     env_file:
       - ../backend/huygens-worker/.env
     environment:
-      WORKER_ENABLED: ${WORKER_ENABLED:-false}
+      WORKER_ENABLED: ${WORKER_ENABLED:-true}
       MCP_URL: http://huygens-mcp:3030/mcp
+      AGUI_HOST: 0.0.0.0
+      AGUI_PORT: "7777"
+    expose:
+      - "7777"
     depends_on:
       surrealdb:
         condition: service_healthy
