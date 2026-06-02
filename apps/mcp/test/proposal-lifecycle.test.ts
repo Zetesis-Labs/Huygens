@@ -358,6 +358,24 @@ describe('part_of single-parent enforcement at commit', () => {
     expect(parents).toHaveLength(1)
     expect(String(parents[0]?.out)).toBe(String(newParent[0]?.id))
   })
+
+  test('commit persists blocked_by.reason on the edge (no longer dropped)', async () => {
+    const rawIds = await captureMany(['a'])
+    const created = await createProposalImpl({
+      raw_ids: rawIds,
+      payload: payload(rawIds, {
+        edges: [
+          { kind: 'part_of', from: 'task1', to: 'project1' },
+          { kind: 'blocked_by', from: 'task1', to: 'project1', reason: 'esperando aprobación de presupuesto' }
+        ]
+      })
+    })
+    await commitProposalImpl({ proposal_id: created.id })
+
+    const [bb] = await ctx.db.query<[{ reason: string | null }[]]>('SELECT reason FROM blocked_by')
+    expect(bb).toHaveLength(1)
+    expect(bb[0]?.reason).toBe('esperando aprobación de presupuesto')
+  })
 })
 
 describe('commit result mapping & materialized changes', () => {
