@@ -204,6 +204,31 @@ export async function listCommittedProposalsForDay(day: string): Promise<Committ
   }))
 }
 
+/** The committed proposals that landed strictly *before* `committedAt`, oldest
+ * first — the input to `foldTopology` for reconstructing a proposal's historical
+ * context from the SSOT (the payloads), no changefeed. Read-only. */
+export async function listCommittedProposalsBefore(committedAt: string): Promise<CommittedProposal[]> {
+  const db = await getDb()
+  const [rows] = await db.query<
+    [Array<{ id: unknown; payload: Proposal['payload']; landed: unknown; temp?: Record<string, string> | null }>]
+  >(
+    `SELECT meta::id(id) AS id, payload,
+            (result.committed_at ?? updated_at) AS landed,
+            result.temp_ids.notes AS temp
+     FROM proposal
+     WHERE status = 'committed'
+       AND (result.committed_at ?? updated_at) < type::datetime($before)
+     ORDER BY landed ASC`,
+    { before: committedAt }
+  )
+  return (rows ?? []).map(r => ({
+    id: String(r.id),
+    committedAt: toIso(r.landed),
+    payload: r.payload,
+    tempMap: r.temp ? Object.fromEntries(Object.entries(r.temp).map(([k, v]) => [k, String(v)])) : {}
+  }))
+}
+
 const REAL_ID = /^(note|block|raw_capture):/
 
 /** Record ids of the existing records a proposal references (notes it updates,
