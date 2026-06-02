@@ -139,16 +139,15 @@ function summarySection(payload: StoredProposalPayload): string[] {
   ]
 }
 
-/** A committed proposal carries only the anchor; the change detail lives in the
- * changefeed (use get_proposal_changes). The payload above already holds the real ids. */
+/** A committed proposal carries only the anchor; the change detail is derived from
+ * the payload (the SSOT) — see get_proposal_changes. The payload above holds the real ids. */
 function resultSection(detail: ProposalDetail): string[] {
   const r = detail.result
   if (!r) return []
   return [
     'Committed:',
     `  • committed_at: ${r.committed_at}`,
-    `  • versionstamp: ${r.versionstamp ?? '— (not changefeed-anchored)'}`,
-    '  • change detail → get_proposal_changes (changefeed)'
+    '  • change detail → get_proposal_changes (from payload)'
   ]
 }
 

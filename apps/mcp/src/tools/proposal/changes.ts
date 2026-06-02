@@ -1,94 +1,74 @@
-import { getDb } from '../../surreal'
 import { idStr } from '../graph-records'
-import type { GetProposalInput } from './schemas'
+import type { GetProposalInput, StoredProposalPayload } from './schemas'
 import { fetchProposal } from './store'
 
 export type ProposalChanges = {
   proposal_id: string
   status: string
-  versionstamp: string | null
   committed_at: string | null
-  changefeed: {
-    available: boolean
-    versionstamp: string | null
-    tables: Record<string, unknown[]>
-    note?: string
+  /** Where the delta comes from: the proposal payload (SSOT), not the changefeed. */
+  source: 'payload'
+  changes: {
+    notes_created: { id: string; type_slug: string; title: string; state: string }[]
+    notes_updated: { id: string; fields: string[]; descriptive_blocks_appended: number }[]
+    narrative_blocks: { id: string; raw_ids: string[] }[]
+    descriptive_blocks_created: number
+    edges_added: { kind: string; from: string; to: string }[]
+    edges_removed: { kind: string; from: string; to: string }[]
+    about: { block_id: string; note_id: string }[]
+    affects: { block_id: string; note_id: string; action: string }[]
+    raws_processed: string[]
   }
 }
 
-// Every table whose mutations a commit can produce — scanned for the commit's
-// changeset. The proposal stores only the anchor, so the change detail (before→
-// after) is read here from the changefeed.
-const CRITICAL_TABLES = [
-  'note',
-  'block',
-  'raw_capture',
-  'part_of',
-  'blocked_by',
-  'mentions',
-  'about',
-  'affects',
-  'derived_from'
-] as const
+function updatedFields(u: StoredProposalPayload['note_updates'][number]): string[] {
+  const f: string[] = []
+  if (u.title != null) f.push('title')
+  if (u.state != null) f.push('state')
+  if (u.mit_for !== undefined) f.push('mit_for')
+  if (u.metadata_merge != null) f.push('metadata')
+  return f
+}
 
-/** Deep-normalize to JSON-safe form (changefeed versionstamps are BigInt). */
-function jsonSafe<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value, (_key, val) => (typeof val === 'bigint' ? val.toString() : val)))
+function summarize(payload: StoredProposalPayload): ProposalChanges['changes'] {
+  return {
+    notes_created: payload.note_creates.map(n => ({
+      id: n.id,
+      type_slug: n.type_slug,
+      title: n.title,
+      state: n.state
+    })),
+    notes_updated: payload.note_updates.map(u => ({
+      id: u.id,
+      fields: updatedFields(u),
+      descriptive_blocks_appended: u.descriptive_blocks_append.length
+    })),
+    narrative_blocks: payload.narrative_blocks.map(b => ({ id: b.id, raw_ids: b.raw_ids })),
+    descriptive_blocks_created: payload.note_creates.reduce((n, c) => n + c.descriptive_blocks.length, 0),
+    edges_added: payload.edges.map(e => ({ kind: e.kind, from: e.from, to: e.to })),
+    edges_removed: payload.edges_remove.map(e => ({ kind: e.kind, from: e.from, to: e.to })),
+    about: payload.about.map(a => ({ block_id: a.block_id, note_id: a.note_id })),
+    affects: payload.affects.map(a => ({ block_id: a.block_id, note_id: a.note_id, action: a.action })),
+    raws_processed: payload.raw_ids
+  }
 }
 
 /**
- * The changeset of one commit on `table`: `SHOW CHANGES … SINCE d"<datetime>"`
- * (datetime SINCE, **no LIMIT** — both `LIMIT` and low-versionstamp SINCE are
- * broken on 3.0.5), anchored a second before the commit, then filtered to the
- * commit's versionstamp.
- */
-async function changefeedAt(table: string, vs: string, sinceIso: string): Promise<unknown[]> {
-  const db = await getDb()
-  const [rows] = await db.query<[Array<{ versionstamp: unknown; changes: unknown[] }>]>(
-    `SHOW CHANGES FOR TABLE ${table} SINCE d"${sinceIso}"`
-  )
-  const matching = (rows ?? []).filter(row => row.versionstamp != null && String(row.versionstamp) === vs)
-  return jsonSafe(matching.flatMap(row => row.changes ?? []))
-}
-
-/**
- * Recover the exact changes a committed proposal produced, from the changefeed
- * at the commit versionstamp (the proposal's `result` is only the anchor). The
- * payload (real ids) is the intent; this is the literal before→after delta.
+ * The delta a proposal applies, read straight from its payload — the SSOT. The
+ * stored payload (real ids) IS the set of mutations: notes created/updated, blocks,
+ * edges added/removed, topology. No changefeed dependency, so it's durable (survives
+ * EXPORT/IMPORT and engine-format upgrades) and works identically for any proposal,
+ * including the genesis. `committed_at` is the commit anchor (null if not committed).
  */
 export async function getProposalChangesImpl(input: GetProposalInput): Promise<ProposalChanges> {
   const proposal = await fetchProposal(input.proposal_id)
   if (!proposal) throw new Error(`proposal not found: ${input.proposal_id}`)
-  const result = proposal.result ?? null
-  const base = { proposal_id: idStr(proposal.id), status: proposal.status }
-
-  if (!result?.versionstamp || !result.committed_at) {
-    return {
-      ...base,
-      versionstamp: result?.versionstamp ?? null,
-      committed_at: result?.committed_at ?? null,
-      changefeed: {
-        available: false,
-        versionstamp: null,
-        tables: {},
-        note: result
-          ? 'No versionstamp anchor: committed before the changefeed refactor or the anchor was not captured.'
-          : 'Not committed.'
-      }
-    }
-  }
-
-  // Anchor the SHOW CHANGES a second before the commit instant.
-  const sinceIso = new Date(Date.parse(result.committed_at) - 1000).toISOString()
-  const tables: Record<string, unknown[]> = {}
-  for (const table of CRITICAL_TABLES) {
-    const changes = await changefeedAt(table, result.versionstamp, sinceIso)
-    if (changes.length > 0) tables[table] = changes
-  }
+  const ca: unknown = proposal.result?.committed_at
   return {
-    ...base,
-    versionstamp: result.versionstamp,
-    committed_at: result.committed_at,
-    changefeed: { available: true, versionstamp: result.versionstamp, tables }
+    proposal_id: idStr(proposal.id),
+    status: proposal.status,
+    committed_at: ca == null ? null : ca instanceof Date ? ca.toISOString() : String(ca),
+    source: 'payload',
+    changes: summarize(proposal.payload)
   }
 }

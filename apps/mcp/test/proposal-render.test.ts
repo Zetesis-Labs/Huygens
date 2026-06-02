@@ -161,12 +161,11 @@ describe('renderProposalDiff', () => {
     expect(out).toContain('· edges-removed 2')
   })
 
-  test('committed proposal shows the anchor (committed_at + versionstamp), not id-lists', () => {
+  test('committed proposal shows the anchor (committed_at) + the changes pointer, not id-lists', () => {
     const result: ProposalResult = { versionstamp: '116638335457689600', committed_at: '2026-05-24T12:00:00Z' }
     const out = renderProposalDiff(detail(fullPayload(), 'committed', 'proposal:test', result))
     expect(out).toContain('Committed:')
     expect(out).toContain('committed_at: 2026-05-24T12:00:00Z')
-    expect(out).toContain('versionstamp: 116638335457689600')
     expect(out).toContain('get_proposal_changes')
     expect(out).not.toContain('notes created:')
   })

@@ -144,7 +144,7 @@ describe('proposal v2.1-lite flow', () => {
     expect(committed?.status).toBe('committed')
   })
 
-  test('commit_proposal materializes the result (real ids + versionstamp) on the proposal', async () => {
+  test('commit_proposal stamps just the anchor on the proposal (máximo-limpio)', async () => {
     const rawIds = await captureMany(['raw one', 'raw two', 'raw three'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
 
@@ -153,62 +153,51 @@ describe('proposal v2.1-lite flow', () => {
     const committed = await getProposalImpl({ proposal_id: created.id })
     const result = committed?.result
     expect(result).toBeTruthy()
-    expect(result?.notes_created).toHaveLength(2)
-    expect(result?.narrative_blocks_created).toHaveLength(1)
-    expect(result?.descriptive_blocks_created).toHaveLength(1)
-    expect(result?.derived_from).toHaveLength(3)
-    expect(result?.about).toHaveLength(1)
-    expect(result?.affects).toHaveLength(1)
-    expect(result?.semantic_edges).toHaveLength(2)
-    // the stored ids are real records, not temp ids
-    expect(String(result?.notes_created[0])).toMatch(/^note:/)
-    expect(String(result?.semantic_edges[0])).toMatch(/^(part_of|blocked_by|mentions):/)
+    // result is just the anchor; the delta lives in the payload (get_proposal_changes)
     expect(result?.committed_at).toBeTruthy()
-    // versionstamp capture is best-effort (changefeed flush): a string, or null
     expect(result?.versionstamp == null || typeof result?.versionstamp === 'string').toBe(true)
+    // the stored payload speaks real record ids, not temp ids
+    expect(committed?.payload.note_creates[0]?.id).toMatch(/^note:/)
   })
 
-  test('get_proposal_changes recovers materialized records and the changefeed delta', async () => {
+  test('get_proposal_changes derives the delta from the payload (SSOT, no changefeed)', async () => {
     const rawIds = await captureMany(['raw one', 'raw two', 'raw three'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
     await commitProposalImpl({ proposal_id: created.id })
 
     const changes = await getProposalChangesImpl({ proposal_id: created.id })
     expect(changes.status).toBe('committed')
+    expect(changes.source).toBe('payload')
+    expect(changes.committed_at).toBeTruthy()
 
-    // Vía 1: materialized — real records resolved from the stored ids
-    expect(changes.materialized?.notes_created).toHaveLength(2)
-    expect(changes.materialized?.narrative_blocks_created).toHaveLength(1)
-    expect(changes.materialized?.semantic_edges).toHaveLength(2)
-    const note = changes.materialized?.notes_created[0] as { title?: string }
-    expect(typeof note?.title).toBe('string')
-
-    // Vía 2: changefeed — best-effort (available iff a versionstamp was captured)
-    if (changes.changefeed.available) {
-      expect(Object.keys(changes.changefeed.tables).length).toBeGreaterThan(0)
-    }
+    expect(changes.changes.notes_created).toHaveLength(2)
+    expect(changes.changes.narrative_blocks).toHaveLength(1)
+    expect(changes.changes.edges_added).toHaveLength(2)
+    expect(changes.changes.about).toHaveLength(1)
+    expect(changes.changes.affects).toHaveLength(1)
+    expect(changes.changes.descriptive_blocks_created).toBe(1)
+    // real record ids everywhere — no temp ids
+    expect(changes.changes.notes_created[0]?.id).toMatch(/^note:/)
+    expect(changes.changes.edges_added[0]?.kind).toMatch(/^(part_of|blocked_by|mentions)$/)
   })
 
-  test('get_proposal_changes on a non-committed proposal returns no materialized result', async () => {
+  test('get_proposal_changes on a draft: changes from payload, committed_at null', async () => {
     const rawIds = await captureMany(['solo raw'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
     const changes = await getProposalChangesImpl({ proposal_id: created.id })
-    expect(changes.materialized).toBeNull()
-    expect(changes.changefeed.available).toBe(false)
+    expect(changes.status).toBe('draft')
+    expect(changes.committed_at).toBeNull()
+    expect(changes.source).toBe('payload')
+    expect(changes.changes.notes_created.length).toBeGreaterThan(0)
   })
 
-  test('get_proposal_changes output is JSON-serializable (changefeed BigInt → string)', async () => {
+  test('get_proposal_changes output is JSON-serializable', async () => {
     const rawIds = await captureMany(['raw one', 'raw two', 'raw three'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
     await commitProposalImpl({ proposal_id: created.id })
 
     const changes = await getProposalChangesImpl({ proposal_id: created.id })
     expect(() => JSON.stringify(changes)).not.toThrow()
-    for (const rows of Object.values(changes.changefeed.tables)) {
-      for (const changeset of rows as Array<{ versionstamp?: unknown }>) {
-        expect(typeof changeset.versionstamp).not.toBe('bigint')
-      }
-    }
   })
 
   test('commit_proposal writes mit_for top-level so list_mits_for_date finds it', async () => {
@@ -247,22 +236,24 @@ describe('proposal v2.1-lite flow', () => {
     expect(mits27).toEqual([])
   })
 
-  test('commit_proposal returns a temp_id → real_id map for created notes and narrative blocks', async () => {
+  test('create_proposal pre-assigns real ids; commit creates the records at those ids', async () => {
     const rawIds = await captureMany(['a'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
-    const result = await commitProposalImpl({ proposal_id: created.id })
 
-    expect(Object.keys(result.temp_ids.notes).sort()).toEqual(['project1', 'task1'])
-    expect(result.temp_ids.notes.task1).toMatch(/^note:/)
-    expect(result.temp_ids.blocks.narrative1).toMatch(/^block:/)
-    // the mapped ids are exactly the ones reported as created
-    expect(result.notes_created).toContain(result.temp_ids.notes.task1)
-    expect(result.notes_created).toContain(result.temp_ids.notes.project1)
-    expect(result.narrative_blocks_created).toContain(result.temp_ids.blocks.narrative1)
+    // máximo-limpio: ids are realized at create time — real ids in the stored payload,
+    // no temp_id and no commit-returned temp→real map.
+    const noteIds = created.payload.note_creates.map(n => n.id)
+    expect(noteIds).toHaveLength(2)
+    for (const id of noteIds) expect(id).toMatch(/^note:/)
+    expect(created.payload.narrative_blocks[0]?.id).toMatch(/^block:/)
 
-    // the persisted proposal carries the same map
+    await commitProposalImpl({ proposal_id: created.id })
+
+    // the records now exist, created at exactly the pre-assigned ids
+    const [notes] = await ctx.db.query<[{ count: number }[]]>('SELECT count() AS count FROM note GROUP ALL')
+    expect(notes[0]?.count).toBe(2)
     const committed = await getProposalImpl({ proposal_id: created.id })
-    expect(committed?.result?.temp_ids.notes.task1).toBe(result.temp_ids.notes.task1)
+    expect(committed?.payload.note_creates.map(n => n.id)).toEqual(noteIds)
   })
 
   test('commit_proposal rejects non-draft proposals', async () => {
@@ -281,14 +272,17 @@ describe('proposal v2.1-lite flow', () => {
     await expect(commitProposalImpl({ proposal_id: created.id })).rejects.toThrow('raw_capture not committable')
   })
 
-  test('commit_proposal rejects unknown temporary refs before mutating the graph', async () => {
+  test('commit_proposal rejects an unresolved ref before mutating the graph', async () => {
     const rawIds = await captureMany(['a'])
+    // 'missingBlock' matches no narrative block, so realize leaves it untouched in
+    // about.block_id — a bare temp_id, not a real record id. assertProposalRefs
+    // catches it (nodeKind → "unknown node ref") before any graph mutation.
     const created = await createProposalImpl({
       raw_ids: rawIds,
       payload: payload(rawIds, { about: [{ block_temp_id: 'missingBlock', note_ref: 'task1' }] })
     })
 
-    await expect(commitProposalImpl({ proposal_id: created.id })).rejects.toThrow('unknown block ref')
+    await expect(commitProposalImpl({ proposal_id: created.id })).rejects.toThrow('unknown node ref')
 
     const [notes] = await ctx.db.query<[{ count: number }[]]>('SELECT count() AS count FROM note GROUP ALL')
     expect(notes[0]?.count ?? 0).toBe(0)

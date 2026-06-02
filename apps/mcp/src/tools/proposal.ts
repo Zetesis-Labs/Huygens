@@ -79,7 +79,7 @@ export function registerProposalTools(server: McpServer): void {
   defineTool(
     server,
     'get_proposal_changes',
-    'Recover the exact changes a committed proposal produced: JSON with two views — "materialized" (real record ids resolved to records) and "changefeed" (the transaction delta at the commit versionstamp). Read-only.',
+    'The exact changes a proposal applies, derived from its payload (the SSOT): notes created/updated, narrative/descriptive blocks, edges added/removed, about/affects, raws. Real record ids; durable; no changefeed. Read-only.',
     getProposalChangesShape,
     async args => {
       const changes = await getProposalChangesImpl(args)
