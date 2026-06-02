@@ -70,8 +70,7 @@ export const EVENT_KINDS = [
   'proposal_created',
   'proposal_updated',
   'proposal_discarded',
-  'proposal_committed',
-  'note_state_changed'
+  'proposal_committed'
 ] as const
 export type EventKind = (typeof EVENT_KINDS)[number]
 

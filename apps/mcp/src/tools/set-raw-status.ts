@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { type RecordId, StringRecordId } from 'surrealdb'
 import { z } from 'zod'
 import { RAW_CAPTURE_ID_RE, RawStatusSchema } from '../domain'
+import { RawNotFoundError } from '../errors'
 import { emitEvent, newSessionId } from '../events'
 import { getDb } from '../surreal'
 import { defineTool, jsonBlock } from './define-tool'
@@ -45,7 +46,7 @@ export async function setRawStatusImpl(input: SetRawStatusInput): Promise<RawSta
   const existingIds = new Set(existing.map(row => idStr(row.id)))
   const missing = input.raw_ids.filter(id => !existingIds.has(id))
   if (missing.length > 0) {
-    throw new Error(`raw_capture not found: ${missing.join(', ')}`)
+    throw new RawNotFoundError(missing.join(', '))
   }
 
   const setProcessedAt =

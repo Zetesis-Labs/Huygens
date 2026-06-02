@@ -33,7 +33,7 @@ internal network (not published); the dashboard SSR proxies to it.
 |---|---|---|
 | `WORKER_ENABLED` | `false` (compose sets `true`) | must be `true` to serve the agent |
 | `OPENAI_API_KEY` | — | required; read from `.env` |
-| `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model id |
+| `OPENAI_MODEL` | `gpt-5.5` | OpenAI model id |
 | `MCP_URL` | `http://huygens-mcp:3030/mcp` | MCP endpoint the agent's tools call |
 | `AGUI_HOST` | `0.0.0.0` | AG-UI bind host |
 | `AGUI_PORT` | `7777` | AG-UI port |

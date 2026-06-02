@@ -104,9 +104,9 @@ export type Proposal = {
   status: string
   payload: {
     raw_ids: string[]
-    narrative_blocks: { temp_id: string; content: string; raw_ids: string[] }[]
+    narrative_blocks: { id: string; content: string; raw_ids: string[] }[]
     note_creates: {
-      temp_id: string
+      id: string
       type_slug: string
       title: string
       state: string
@@ -205,13 +205,9 @@ export async function listCommittedProposalsForDay(day: string): Promise<Committ
 }
 
 /** The committed proposals that landed strictly *before* `committedAt`, oldest
- * first — the input to foldTopology for reconstructing a proposal's historical
- * context from the SSOT (proposal.result), no changefeed. Excludes `excludeId`
- * (the proposal being viewed). Read-only. */
-export async function listCommittedProposalsBefore(
-  committedAt: string,
-  excludeId: string
-): Promise<CommittedProposal[]> {
+ * first — the input to `foldTopology` for reconstructing a proposal's historical
+ * context from the SSOT (the payloads), no changefeed. Read-only. */
+export async function listCommittedProposalsBefore(committedAt: string): Promise<CommittedProposal[]> {
   const db = await getDb()
   const [rows] = await db.query<
     [Array<{ id: unknown; payload: Proposal['payload']; landed: unknown; temp?: Record<string, string> | null }>]
@@ -221,10 +217,9 @@ export async function listCommittedProposalsBefore(
             result.temp_ids.notes AS temp
      FROM proposal
      WHERE status = 'committed'
-       AND meta::id(id) != $exclude
        AND (result.committed_at ?? updated_at) < type::datetime($before)
      ORDER BY landed ASC`,
-    { before: committedAt, exclude: excludeId }
+    { before: committedAt }
   )
   return (rows ?? []).map(r => ({
     id: String(r.id),
@@ -240,7 +235,7 @@ const REAL_ID = /^(note|block|raw_capture):/
  * source raws, pre-existing edge endpoints). temp_ids are skipped. */
 function referencedRealIds(p: Proposal): string[] {
   const ids = new Set<string>()
-  const narrativeIds = new Set(p.payload.narrative_blocks.map(b => b.temp_id))
+  const narrativeIds = new Set(p.payload.narrative_blocks.map(b => b.id))
   for (const u of p.payload.note_updates) ids.add(u.id)
   for (const e of p.payload.edges) {
     if (narrativeIds.has(e.from) || narrativeIds.has(e.to)) continue

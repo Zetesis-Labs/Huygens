@@ -9,8 +9,8 @@ filtrando en cada salto y **anidando subqueries**.
 > tiempo, grafo a medida). Si hay una tool dedicada, úsala — da formato canónico y validación:
 > búsqueda semántica → `vector_search`; ¿ya existe algo parecido? → `find_related`;
 > vecindario/contexto como texto → `neighborhood` / `expand_context`; provenance de una note →
-> `trace_provenance`; inbox / notas por tipo / MITs → `list_inbox` / `list_notes_by_type` /
-> `list_mits_for_date`; verificar una afirmación → `check_claim`. Para recetas que repites,
+> `trace_provenance`; inbox → `list_inbox`; notas por tipo / MITs → `query_query` (filtra por
+> `type.slug` / `mit_for`); verificar una afirmación → `check_claim`. Para recetas que repites,
 > guárdalas con `save_query` y descúbrelas con `list_queries` / `run_query`.
 
 ## Reglas (dónde fallan las queries)

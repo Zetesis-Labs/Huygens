@@ -324,7 +324,7 @@ describe('part_of single-parent enforcement at commit', () => {
     expect((await getProposalImpl({ proposal_id: created.id }))?.status).toBe('draft')
   })
 
-  test('existing parent + a new part_of for the same child fails the commit', async () => {
+  test('existing parent + a new part_of for the same child reparents it (replace)', async () => {
     const rawIds = await captureMany(['a'])
     // Pre-existing topology: child -> oldParent already in the graph.
     const child = await insertNote(ctx.db, { title: 'Child', type_slug: 'task' })
@@ -340,19 +340,23 @@ describe('part_of single-parent enforcement at commit', () => {
         note_creates: [
           { temp_id: 'project1', type_slug: 'project', title: 'New parent', state: 'ACTIVE', descriptive_blocks: [] }
         ],
-        // child already has a parent; this second part_of must be rejected.
+        // child already has a parent; part_of is single-parent, so the commit
+        // drops the old edge and reparents (máximo-limpio replace), not fails.
         edges: [{ kind: 'part_of', from: child.note_id, to: 'project1' }],
         about: [{ block_temp_id: 'narrative1', note_ref: child.note_id }],
         affects: []
       })
     })
 
-    await expect(commitProposalImpl({ proposal_id: created.id })).rejects.toThrow()
-    // The new "New parent" note must not survive (atomic rollback).
-    const [projects] = await ctx.db.query<[{ count: number }[]]>(
-      'SELECT count() AS count FROM note WHERE title = "New parent" GROUP ALL'
-    )
-    expect(projects[0]?.count ?? 0).toBe(0)
+    await commitProposalImpl({ proposal_id: created.id })
+
+    // child now has exactly one parent — the new one — and the old edge is gone.
+    const [newParent] = await ctx.db.query<[{ id: unknown }[]]>('SELECT id FROM note WHERE title = "New parent"')
+    const [parents] = await ctx.db.query<[{ out: unknown }[]]>('SELECT out FROM part_of WHERE in = $c', {
+      c: new StringRecordId(child.note_id)
+    })
+    expect(parents).toHaveLength(1)
+    expect(String(parents[0]?.out)).toBe(String(newParent[0]?.id))
   })
 })
 
@@ -365,26 +369,28 @@ describe('commit result mapping & materialized changes', () => {
     await ctx.cleanup()
   })
 
-  test('temp_id→real_id map drives the about/affects edges to the created note', async () => {
+  test('about/affects and part_of edges land on the created records (real ids from payload)', async () => {
     const rawIds = await captureMany(['a'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
-    const result = await commitProposalImpl({ proposal_id: created.id })
-
-    const taskId = result.temp_ids.notes.task1
-    const narrativeId = result.temp_ids.blocks.narrative1
+    // ids are pre-assigned in the stored payload — no commit-returned temp map.
+    const taskId = created.payload.note_creates.find(n => n.title === 'Call Ana')?.id as string
+    const projectId = created.payload.note_creates.find(n => n.title === 'Huygens migration')?.id as string
+    const narrativeId = created.payload.narrative_blocks[0]?.id as string
     expect(taskId).toMatch(/^note:/)
     expect(narrativeId).toMatch(/^block:/)
 
-    // about edge: narrative block -> the very note temp_id task1 resolved to.
+    await commitProposalImpl({ proposal_id: created.id })
+
+    // about edge: narrative block -> the created task note.
     const [about] = await ctx.db.query<[{ in: string; out: string }[]]>('SELECT in, out FROM about')
     expect(about).toHaveLength(1)
     expect(String(about[0]?.in)).toBe(narrativeId)
     expect(String(about[0]?.out)).toBe(taskId)
 
-    // part_of edge: task1 -> project1, both via the temp map.
+    // part_of edge: task -> project.
     const [partOf] = await ctx.db.query<[{ in: string; out: string }[]]>('SELECT in, out FROM part_of')
     expect(String(partOf[0]?.in)).toBe(taskId)
-    expect(String(partOf[0]?.out)).toBe(result.temp_ids.notes.project1)
+    expect(String(partOf[0]?.out)).toBe(projectId)
   })
 
   test('raws end up processed with a processed_at after commit', async () => {
@@ -399,42 +405,38 @@ describe('commit result mapping & materialized changes', () => {
     for (const row of rows) expect(row.processed_at).toBeTruthy()
   })
 
-  test('get_proposal_changes materialized view carries real ids and resolved records', async () => {
+  test('get_proposal_changes derives a real-id delta from the payload', async () => {
     const rawIds = await captureMany(['a', 'b'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
-    const result = await commitProposalImpl({ proposal_id: created.id })
+    await commitProposalImpl({ proposal_id: created.id })
 
     const changes = await getProposalChangesImpl({ proposal_id: created.id })
     expect(changes.status).toBe('committed')
-    expect(changes.materialized).not.toBeNull()
-    expect(changes.materialized?.notes_created).toHaveLength(2)
-    expect(changes.materialized?.narrative_blocks_created).toHaveLength(1)
-    expect(changes.materialized?.descriptive_blocks_created).toHaveLength(1)
-    expect(changes.materialized?.derived_from).toHaveLength(2)
-    expect(changes.materialized?.about).toHaveLength(1)
-    expect(changes.materialized?.affects).toHaveLength(1)
-    expect(changes.materialized?.semantic_edges).toHaveLength(2)
+    expect(changes.source).toBe('payload')
+    expect(changes.changes.notes_created).toHaveLength(2)
+    expect(changes.changes.narrative_blocks).toHaveLength(1)
+    expect(changes.changes.descriptive_blocks_created).toBe(1)
+    expect(changes.changes.about).toHaveLength(1)
+    expect(changes.changes.affects).toHaveLength(1)
+    expect(changes.changes.edges_added).toHaveLength(2)
+    expect(changes.changes.narrative_blocks[0]?.raw_ids).toHaveLength(2)
 
-    // the resolved note records actually carry the created titles
-    const titles = (changes.materialized?.notes_created as Array<{ title?: string }>).map(n => n.title).sort()
+    const titles = changes.changes.notes_created.map(n => n.title).sort()
     expect(titles).toEqual(['Call Ana', 'Huygens migration'])
-
-    // every materialized note id is one of the ids reported in the commit result
-    const realIds = new Set(result.notes_created)
-    for (const n of changes.materialized?.notes_created as Array<{ id: unknown }>) {
-      expect(realIds.has(String(n.id))).toBe(true)
+    for (const n of changes.changes.notes_created) {
+      expect(n.id).toMatch(/^note:/)
     }
   })
 
-  test('get_proposal_changes on a discarded proposal yields no materialized result', async () => {
+  test('get_proposal_changes on a discarded proposal: committed_at null, changes from payload', async () => {
     const rawIds = await captureMany(['a'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
     await discardProposalImpl({ proposal_id: created.id })
 
     const changes = await getProposalChangesImpl({ proposal_id: created.id })
     expect(changes.status).toBe('discarded')
-    expect(changes.materialized).toBeNull()
-    expect(changes.changefeed.available).toBe(false)
+    expect(changes.committed_at).toBeNull()
+    expect(changes.source).toBe('payload')
   })
 
   test('get_proposal_changes throws for an unknown proposal id', async () => {

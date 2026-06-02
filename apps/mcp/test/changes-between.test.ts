@@ -4,14 +4,15 @@ import { aggregateChanges, type CommittedInput, renderAggregate } from '../src/t
 function payload(over: Partial<CommittedInput['payload']> = {}): CommittedInput['payload'] {
   return {
     raw_ids: [],
-    narrative_blocks: [{ temp_id: 'narr', content: 'x', raw_ids: [] }],
+    narrative_blocks: [{ id: 'block:narr', content: 'x', raw_ids: [] }],
     note_creates: [],
     note_updates: [],
     edges: [],
+    edges_remove: [],
     about: [],
     affects: [],
     ...over
-  } as CommittedInput['payload']
+  }
 }
 
 describe('aggregateChanges', () => {
@@ -26,15 +27,17 @@ describe('aggregateChanges', () => {
     expect(agg.proposalCount).toBe(2)
   })
 
-  test('rewrites temp ids to real note ids so a note links across proposals', () => {
+  test('a note created in one proposal links from another (by real id)', () => {
     const props: CommittedInput[] = [
       {
         id: 'p1',
         landedAt: '2026-05-22T10:00:00.000Z',
         payload: payload({
-          note_creates: [{ temp_id: 't1', type_slug: 'area', title: 'Salud', state: 'ACTIVE', descriptive_blocks: [] }]
+          note_creates: [
+            { id: 'note:salud', type_slug: 'area', title: 'Salud', state: 'ACTIVE', descriptive_blocks: [] }
+          ]
         }),
-        tempMap: { t1: 'note:salud' }
+        tempMap: {}
       },
       {
         id: 'p2',
@@ -44,7 +47,6 @@ describe('aggregateChanges', () => {
       }
     ]
     const agg = aggregateChanges(props, '2026-05-22T00:00:00.000Z', '2026-05-22T23:59:59.999Z')
-    // The created note is keyed by its real id, so the part_of edge from p2 lands on it.
     const salud = agg.graph.nodes.find(n => n.id === 'note:salud')
     expect(salud?.data).toMatchObject({ status: 'created', title: 'Salud', type: 'area' })
     expect(agg.graph.edges).toMatchObject([{ source: 'note:cita', target: 'note:salud', label: 'part_of' }])

@@ -52,7 +52,6 @@ EventKind = Literal[
     "proposal_updated",
     "proposal_discarded",
     "proposal_committed",
-    "note_state_changed",
 ]
 EVENT_KINDS: Final[tuple[str, ...]] = get_args(EventKind)
 

@@ -110,6 +110,46 @@ export const proposalPayloadSchema = z.object({
 export type ProposalPayload = z.infer<typeof proposalPayloadSchema>
 export type NoteCreate = z.infer<typeof NoteCreateSchema>
 
+// ── Stored payload (máximo-limpio) ──────────────────────────────────────────
+// The INPUT payload above speaks in `temp_id` placeholders (ergonomic: the agent
+// references not-yet-created notes in edges). On create_proposal we *realize* it:
+// every new note/narrative-block gets a real record id (uuidv7) and EVERY ref is
+// rewritten temp→real. What we persist — and what commit, the readers and the
+// dashboard see — is this `StoredProposalPayload`: real ids everywhere, no temp_id,
+// no bridge. The changefeed (anchored by the commit versionstamp) is the history.
+export type StoredNoteCreate = {
+  id: string
+  type_slug: string
+  title: string
+  state: string
+  mit_for?: string
+  metadata?: Record<string, unknown>
+  descriptive_blocks: { content: string }[]
+}
+export type StoredNarrativeBlock = { id: string; content: string; raw_ids: string[] }
+export type StoredNoteUpdate = {
+  id: string
+  title?: string
+  state?: string
+  mit_for?: string | null
+  metadata_merge?: Record<string, unknown>
+  descriptive_blocks_append: { content: string }[]
+}
+export type StoredEdge = { kind: string; from: string; to: string; reason?: string }
+export type StoredEdgeRemove = { kind: string; from: string; to: string }
+export type StoredAbout = { block_id: string; note_id: string }
+export type StoredAffect = { block_id: string; note_id: string; action: string; summary?: string }
+export type StoredProposalPayload = {
+  raw_ids: string[]
+  narrative_blocks: StoredNarrativeBlock[]
+  note_creates: StoredNoteCreate[]
+  note_updates: StoredNoteUpdate[]
+  edges: StoredEdge[]
+  edges_remove: StoredEdgeRemove[]
+  about: StoredAbout[]
+  affects: StoredAffect[]
+}
+
 export const createProposalShape = {
   raw_ids: z
     .array(z.string().regex(RAW_CAPTURE_ID_RE, 'Must be a record id like "raw_capture:abc123"'))
@@ -144,35 +184,40 @@ export type GetProposalInput = z.infer<typeof getProposalSchema>
 export type DiscardProposalInput = z.infer<typeof discardProposalSchema>
 export type CommitProposalInput = z.infer<typeof commitProposalSchema>
 
-/** Maps each payload temp_id to the real record id the commit created. */
+/** Legacy: maps payload temp_id → real id. Only present on results committed
+ * before the changefeed refactor; new commits don't write it. */
 export type TempIdMap = {
   notes: Record<string, string>
   blocks: Record<string, string>
 }
 
+/**
+ * What a commit stamps on the proposal: just the **anchor**. `committed_at` (the
+ * time anchor) + `versionstamp` (the changefeed anchor — which entries are this
+ * commit's). The history lives in the changefeed; the payload (real ids) is the
+ * intent. The optional fields below only appear on *legacy* results (pre-refactor);
+ * new commits never write them and the readers ignore them.
+ */
 export type ProposalResult = {
-  notes_created: string[]
-  notes_updated: string[]
-  narrative_blocks_created: string[]
-  descriptive_blocks_created: string[]
-  derived_from: string[]
-  about: string[]
-  affects: string[]
-  semantic_edges: string[]
-  /** Record ids of the semantic edges this commit removed (explicit edges_remove
-   * + the implicit part_of replace). SSOT for the retirada; legacy results pre
-   * this feature get `[]` via normalizeResult. */
-  edges_removed: string[]
-  temp_ids: TempIdMap
   versionstamp: string | null
   committed_at: string
+  notes_created?: string[]
+  notes_updated?: string[]
+  narrative_blocks_created?: string[]
+  descriptive_blocks_created?: string[]
+  derived_from?: string[]
+  about?: string[]
+  affects?: string[]
+  semantic_edges?: string[]
+  edges_removed?: string[]
+  temp_ids?: TempIdMap
 }
 
 export type ProposalRow = {
   id: RecordId
   status: string
   raw_captures: RecordRef[]
-  payload: ProposalPayload
+  payload: StoredProposalPayload
   result?: ProposalResult | null
   created_at: Date
   updated_at: Date
@@ -182,7 +227,7 @@ export type ProposalDetail = {
   id: string
   status: string
   raw_captures: string[]
-  payload: ProposalPayload
+  payload: StoredProposalPayload
   result: ProposalResult | null
   created_at: string
   updated_at: string
@@ -200,5 +245,4 @@ export type CommitProposalResult = {
   affects_created: number
   semantic_edges_created: number
   semantic_edges_removed: number
-  temp_ids: TempIdMap
 }

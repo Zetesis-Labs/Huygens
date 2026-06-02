@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { getDb } from '../surreal'
 import { defineTool } from './define-tool'
 import { idStr, type RecordIdish } from './graph-records'
-import type { ProposalPayload } from './proposal/schemas'
+import type { StoredProposalPayload } from './proposal/schemas'
 
 function plural(n: number, singular: string, suffix = 's'): string {
   return `${singular}${n === 1 ? '' : suffix}`
@@ -27,7 +27,7 @@ function endBound(s: string): string {
 export type CommittedInput = {
   id: string
   landedAt: string
-  payload: ProposalPayload
+  payload: StoredProposalPayload
   /** temp note id → the real `note:` id the commit produced. */
   tempMap: Record<string, string>
 }
@@ -156,7 +156,7 @@ async function fetchCommitted(from: string, to: string): Promise<CommittedInput[
     [
       Array<{
         id: unknown
-        payload: ProposalPayload
+        payload: StoredProposalPayload
         result?: { committed_at?: unknown; temp_ids?: { notes?: Record<string, RecordIdish> } } | null
         updated_at: unknown
       }>

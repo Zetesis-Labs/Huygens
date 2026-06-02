@@ -11,7 +11,6 @@ export type SavedQuery = {
   id: string
   name: string
   query: string | null
-  script: string | null
   pinned: boolean
   updated_at: string | null
 }
@@ -66,8 +65,6 @@ export const runAdhoc = (query: string): Promise<unknown[]> => callTool('query_q
 export const runSaved = (id: string): Promise<unknown[]> => callTool('run_query', { id })
 export const saveQuery = (name: string, query: string, pinned: boolean): Promise<{ id: string }> =>
   callTool('save_query', { name, query, pinned })
-export const saveScript = (name: string, script: string, pinned: boolean): Promise<{ id: string }> =>
-  callTool('save_query', { name, script, pinned })
 export const deleteQuery = (id: string): Promise<{ deleted: string }> => callTool('delete_query', { id })
 
 /** SurrealDB returns one result per statement. Take the last statement's rows. */

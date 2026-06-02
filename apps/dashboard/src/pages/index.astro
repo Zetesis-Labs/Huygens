@@ -42,7 +42,8 @@ try {
 const STATUS_COLOR: Record<string, string> = {
   draft: '#9a7d0a',
   committed: '#2e7d32',
-  discarded: '#8a93a6'
+  discarded: '#8a93a6',
+  superseded: '#5b6b8c'
 }
 
 const laidOut = proposalView?.laidOut ?? dayView?.laidOut ?? null
@@ -165,7 +166,10 @@ const hasGraph = Boolean(proposalView?.proposal || dayView)
         {!viewError && !hasGraph && <div class="placeholder">Selecciona una proposal o un día del diario.</div>}
         {!viewError && selectedId && !proposalView?.proposal && <div class="placeholder">Proposal no encontrada.</div>}
         {!viewError && selectedDay && !dayView && <div class="placeholder">Sin cambios ese día.</div>}
-        {!viewError && hasGraph && laidOut && (
+        {!viewError && proposalView?.legacy && (
+          <div class="placeholder">Proposal aplanada en el génesis (formato legacy) — sin grafo. El informe está a la derecha.</div>
+        )}
+        {!viewError && hasGraph && laidOut && !proposalView?.legacy && (
           <ChangeGraph client:only="react" nodes={laidOut.nodes} edges={laidOut.edges} />
         )}
       </div>
@@ -183,18 +187,12 @@ const hasGraph = Boolean(proposalView?.proposal || dayView)
               <span
                 class="chip"
                 title={
-                  proposalView.temporal === 'historical'
+                  proposalView.historical
                     ? 'contexto reconstruido al instante del commit (fold del SSOT)'
-                    : proposalView.temporal === 'degraded'
-                      ? 'commit antiguo sin result materializado: no reconstruible, se muestra el grafo actual'
-                      : 'borrador: contexto en vivo (estado actual del grafo)'
+                    : 'contexto en vivo (estado actual del grafo)'
                 }
               >
-                {proposalView.temporal === 'historical'
-                  ? '🕓 contexto del commit'
-                  : proposalView.temporal === 'degraded'
-                    ? '⚠ contexto actual (commit antiguo)'
-                    : '⟳ contexto actual'}
+                {proposalView.historical ? '🕓 contexto del commit' : '⟳ contexto actual'}
               </span>
               <span class="chip">{proposalView.counts.raws} raw</span>
               <span class="chip">+{proposalView.counts.creates} notas</span>

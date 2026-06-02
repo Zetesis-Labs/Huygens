@@ -79,7 +79,7 @@ describe('foldTopology', () => {
   test('skips edges touching narrative blocks', () => {
     const edges = foldTopology([
       item({
-        narrative_blocks: [{ temp_id: 'n1' }],
+        narrative_blocks: [{ id: 'n1' }],
         edges: [{ kind: 'mentions', from: 'n1', to: 'note:a' }]
       })
     ])

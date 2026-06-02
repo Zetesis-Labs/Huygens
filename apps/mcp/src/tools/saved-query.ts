@@ -21,14 +21,7 @@ const QUERY_ID = z.string().regex(/^saved_query:[A-Za-z0-9_-]+$/, 'must be a sav
 
 const saveQueryShape = {
   name: z.string().min(1).describe('Human-friendly name'),
-  query: z.string().min(1).optional().describe('SurrealQL (read-only; runs as huygens_reader)'),
-  script: z
-    .string()
-    .min(1)
-    .optional()
-    .describe(
-      'TS composer source: exports `inputs` (Zod) + `build(params): string`. Stored as-is; built/run client-side.'
-    ),
+  query: z.string().min(1).describe('SurrealQL (read-only; runs as huygens_reader)'),
   pinned: z.boolean().default(false).describe('Pin as a favorite'),
   id: QUERY_ID.optional().describe('Pass an existing id to update instead of creating')
 }
@@ -36,11 +29,8 @@ const saveQuerySchema = z.object(saveQueryShape)
 export type SaveQueryInput = z.infer<typeof saveQuerySchema>
 
 export async function saveQueryImpl(input: SaveQueryInput): Promise<{ id: string; updated: boolean }> {
-  if (!input.query && !input.script) throw new QueryError('save_query requires `query` or `script`')
   const db = await getDb()
-  const doc: Record<string, unknown> = { name: input.name, pinned: input.pinned }
-  if (input.query !== undefined) doc.query = input.query
-  if (input.script !== undefined) doc.script = input.script
+  const doc: Record<string, unknown> = { name: input.name, pinned: input.pinned, query: input.query }
   if (input.id) {
     // Upsert: a caller-chosen id creates the query if it doesn't exist yet, and
     // updates it if it does — so agents can use a stable, memorable id without a
@@ -70,7 +60,6 @@ export interface SavedQuerySummary {
   id: string
   name: string
   query: string | null
-  script: string | null
   pinned: boolean
   updated_at: string | null
 }
@@ -82,7 +71,6 @@ export async function listQueriesImpl(input: ListQueriesInput): Promise<SavedQue
     id: RecordIdish
     name: string
     query?: string
-    script?: string
     pinned?: boolean
     updated_at?: Date | string
   }
@@ -94,7 +82,6 @@ export async function listQueriesImpl(input: ListQueriesInput): Promise<SavedQue
     id: idStr(r.id),
     name: r.name,
     query: r.query ?? null,
-    script: r.script ?? null,
     pinned: Boolean(r.pinned),
     updated_at: r.updated_at ? isoString(r.updated_at) : null
   }))
