@@ -199,7 +199,9 @@ DEFINE INDEX OVERWRITE derived_from_unique ON derived_from FIELDS in, out UNIQUE
 DEFINE TABLE OVERWRITE proposal SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE status       ON proposal TYPE string
   DEFAULT 'draft'
-  ASSERT $value INSIDE ['draft', 'committed', 'discarded'];
+  -- 'superseded': proposal legacy aplanado en el commit génesis (queda fuera de
+  -- la ventana de fold/rebuild, que solo miran 'committed'). Ver genesis.ts.
+  ASSERT $value INSIDE ['draft', 'committed', 'discarded', 'superseded'];
 DEFINE FIELD OVERWRITE raw_captures ON proposal TYPE array<record<raw_capture>> DEFAULT [];
 DEFINE FIELD OVERWRITE payload      ON proposal TYPE object FLEXIBLE;
 -- Resultado materializado del commit: IDs reales creados/tocados + committed_at.

@@ -13,7 +13,8 @@
     "db:define-reader": "bun run scripts/define-reader.ts",
     "db:smoke": "bun run scripts/smoke.ts",
     "db:reindex": "bun run scripts/reindex.ts",
-    "db:rebuild": "bun run scripts/rebuild-graph.ts"
+    "db:rebuild": "bun run scripts/rebuild-graph.ts",
+    "db:genesis": "bun run scripts/genesis.ts"
   },
   "dependencies": {
     "@huygens/graph": "workspace:*",
