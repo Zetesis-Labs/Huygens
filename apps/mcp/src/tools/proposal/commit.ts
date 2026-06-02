@@ -2,6 +2,7 @@ import { type RecordId, StringRecordId } from 'surrealdb'
 import { uuidv7 } from 'uuidv7'
 import { emitEvent, newSessionId } from '../../events'
 import { getDb } from '../../surreal'
+import { indexBlockImpl } from '../index-block'
 import type { CommitProposalInput, CommitProposalResult, StoredNoteCreate, StoredProposalPayload } from './schemas'
 import { requireDraftProposal } from './store'
 import { assertProposalRefs, assertRawCapturesCommittable } from './validation'
@@ -152,7 +153,13 @@ class CommitTx {
       if (edge.kind === 'part_of') {
         this.lines.push(`DELETE part_of WHERE in = ${from} AND out != ${to} RETURN NONE;`)
       }
-      this.lines.push(`RELATE ${from}->${edge.kind}->${to} RETURN NONE;`)
+      // blocked_by carries an optional `reason` (a schema field) — persist it at
+      // commit instead of dropping it. Other edge kinds have no reason field.
+      if (edge.kind === 'blocked_by' && edge.reason != null) {
+        this.lines.push(`RELATE ${from}->blocked_by->${to} CONTENT { reason: ${this.p(edge.reason)} } RETURN NONE;`)
+      } else {
+        this.lines.push(`RELATE ${from}->${edge.kind}->${to} RETURN NONE;`)
+      }
     }
   }
 
@@ -235,6 +242,24 @@ export async function commitProposalImpl(input: CommitProposalInput): Promise<Co
     subject: proposal.id,
     payload: { raw_ids: payload.raw_ids, versionstamp }
   })
+
+  // Best-effort: embed the blocks this commit created so vector search stays
+  // complete (closes the P0 hygiene gap of un-indexed blocks). The graph is the
+  // SSOT and is already committed; if embedding fails (no key / provider / network)
+  // the block is simply left un-indexed and `db:reindex` backfills it later — it
+  // must never fail or roll back the commit. Chunked to the embedder's 64 limit.
+  const newBlockIds = [...payload.narrative_blocks.map(b => b.id), ...descriptiveIds]
+  if (process.env.DEEPINFRA_API_KEY && newBlockIds.length > 0) {
+    for (let i = 0; i < newBlockIds.length; i += 64) {
+      try {
+        await indexBlockImpl({ block_ids: newBlockIds.slice(i, i + 64) })
+      } catch (err) {
+        console.error(
+          `[commit] post-commit embed failed; block(s) left un-indexed: ${err instanceof Error ? err.message : String(err)}`
+        )
+      }
+    }
+  }
 
   // Counts/ids come straight from the stored payload (already real ids).
   return {
