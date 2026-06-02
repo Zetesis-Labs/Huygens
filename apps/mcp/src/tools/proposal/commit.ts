@@ -177,6 +177,21 @@ class CommitTx {
     this.finalize(payload, proposalId)
     return { query: this.lines.join('\n'), params: this.params }
   }
+
+  // Replay: only the graph mutations, atomically — NO finalize. Used by
+  // rebuildGraph() to re-derive the projection from the log without touching the
+  // log itself (the proposal's `result`/status and the raw_capture statuses stay
+  // exactly as committed). The graph is a projection of the committed proposals.
+  buildReplay(payload: StoredProposalPayload): { query: string; params: Record<string, unknown> } {
+    this.creates(payload)
+    this.updates(payload)
+    this.narratives(payload)
+    this.topology(payload)
+    this.removeEdges(payload)
+    this.edges(payload)
+    this.lines.push('COMMIT;')
+    return { query: this.lines.join('\n'), params: this.params }
+  }
 }
 
 export function buildCommitTx(
@@ -186,6 +201,12 @@ export function buildCommitTx(
   const tx = new CommitTx()
   const { query, params } = tx.build(payload, proposalId)
   return { query, params, descriptiveIds: tx.descriptiveIds }
+}
+
+/** Graph-mutations-only transaction for replay (rebuildGraph). No finalize: the
+ * log (proposal.result/status, raw statuses) is left untouched. */
+export function buildReplayTx(payload: StoredProposalPayload): { query: string; params: Record<string, unknown> } {
+  return new CommitTx().buildReplay(payload)
 }
 
 export async function commitProposalImpl(input: CommitProposalInput): Promise<CommitProposalResult> {
