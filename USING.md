@@ -202,8 +202,12 @@ discard_proposal     discard a draft proposal
 commit_proposal      atomic approved graph commit (BEGIN…COMMIT, all-or-nothing); returns real record ids + temp_ids map
 find_related         find existing notes related to a concept (vector, deduped by note)
 vector_search        search indexed blocks via HNSW (BGE-M3, cosine)
+lexical_search       BM25 full-text over block content (exact terms, names, IDs, acronyms)
+hybrid_search        fuse semantic + lexical retrieval via Reciprocal Rank Fusion (highest recall)
 index_block          embed 1..64 blocks and persist embeddings for vector search
 query_query          read-only SurrealQL against the graph (VIEWER role)
+retract              auditably delete records + their edges (atomic; dry_run previews by default)
+collection_stats     graph health: counts by status/state + embedded vs unembedded blocks
 chunk_markdown       split markdown into heading-aware chunks (pure, no DB)
 embed_text           embed 1..64 strings with BGE-M3 (1024 dims)
 ```

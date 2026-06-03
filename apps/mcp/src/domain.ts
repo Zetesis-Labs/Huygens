@@ -42,6 +42,9 @@ export const TRACE_EDGE_KINDS = ['derived_from', 'about', 'affects'] as const
 export type TraceEdgeKind = (typeof TRACE_EDGE_KINDS)[number]
 export const TraceEdgeKindSchema = z.enum(TRACE_EDGE_KINDS)
 
+/** Every edge (RELATION) table in the schema. The graph's full edge vocabulary. */
+export const ALL_EDGE_TABLES = [...EDGE_KINDS, ...TRACE_EDGE_KINDS] as const
+
 export const AFFECT_ACTIONS = ['created', 'updated', 'state_changed', 'linked', 'archived'] as const
 export type AffectAction = (typeof AFFECT_ACTIONS)[number]
 export const AffectActionSchema = z.enum(AFFECT_ACTIONS)
@@ -70,7 +73,9 @@ export const EVENT_KINDS = [
   'proposal_created',
   'proposal_updated',
   'proposal_discarded',
-  'proposal_committed'
+  'proposal_committed',
+  'note_state_changed',
+  'retracted'
 ] as const
 export type EventKind = (typeof EVENT_KINDS)[number]
 

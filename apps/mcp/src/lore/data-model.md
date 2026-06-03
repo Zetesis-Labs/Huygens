@@ -155,10 +155,14 @@ change graph lives in the dashboard (React Flow), not in the MCP.
 | `get_proposal_changes` | Read exact changes of a committed proposal (materialized + changefeed, optional D2 diagram). |
 | `find_related` | Semantic search returning up to K distinct notes (deduped). Use before creating a new note to avoid duplicates. |
 | `vector_search` | K-nearest blocks via HNSW (cosine, BGE-M3). Optional filters by note state, type slug, updated-since. |
+| `lexical_search` | BM25 full-text over block content (analyzer `huygens_text`). For literal terms — names, IDs, acronyms — that semantic search misses. Score is BM25, not cosine. |
+| `hybrid_search` | Fuse `vector_search` (semantic) + `lexical_search` (BM25) via Reciprocal Rank Fusion. Highest-recall default search; same parent-note filters. |
 | `index_block` | Embed 1..64 blocks with BGE-M3 and persist embedding on each block. |
 | `chunk_markdown` | Split markdown into heading-aware chunks. Pure function, no DB. |
 | `embed_text` | Embed 1..64 strings with BGE-M3 (1024 dims, normalized). No DB. |
 | `query_query` | Read-only SurrealQL. Executes as `huygens_reader` (VIEWER); writes rejected. |
+| `retract` | Auditable delete of records + incident edges (atomic, `dry_run` default). The only delete path: mistaken ingest, correction, "forget this". Note→owned blocks cascade; emits a `retracted` agent_event. |
+| `collection_stats` | Graph health: counts of raw_captures/notes/blocks/edges/proposals, and embedded vs unembedded blocks (the index-coverage signal). Read-only. |
 
 ## Audit
 

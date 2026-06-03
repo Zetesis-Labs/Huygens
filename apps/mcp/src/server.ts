@@ -4,15 +4,19 @@ import { registerCapture } from './tools/capture'
 import { registerChangesBetween } from './tools/changes-between'
 import { registerCheckClaim } from './tools/check-claim'
 import { registerChunkMarkdown } from './tools/chunk-markdown'
+import { registerCollectionStats } from './tools/collection-stats'
 import { registerConversation } from './tools/conversation'
 import { registerEmbedText } from './tools/embed-text'
 import { registerExpandContext } from './tools/expand-context'
 import { registerFindRelated } from './tools/find-related'
+import { registerHybridSearch } from './tools/hybrid-search'
 import { registerIndexBlock } from './tools/index-block'
+import { registerLexicalSearch } from './tools/lexical-search'
 import { registerListInbox } from './tools/list-inbox'
 import { registerNeighborhood } from './tools/neighborhood'
 import { registerProposalTools } from './tools/proposal'
 import { registerQueryQuery } from './tools/query/query'
+import { registerRetract } from './tools/retract'
 import { registerSavedQuery } from './tools/saved-query'
 import { registerSetRawStatus } from './tools/set-raw-status'
 import { registerTraceProvenance } from './tools/trace-provenance'
@@ -40,9 +44,13 @@ export function createServer(instructions?: string): McpServer {
   registerEmbedText(server)
   registerIndexBlock(server)
   registerVectorSearch(server)
+  registerLexicalSearch(server)
+  registerHybridSearch(server)
   registerFindRelated(server)
   registerQueryQuery(server)
   registerSavedQuery(server)
+  registerRetract(server)
+  registerCollectionStats(server)
   registerConversation(server)
 
   registerLoreAndPrompts(server)
