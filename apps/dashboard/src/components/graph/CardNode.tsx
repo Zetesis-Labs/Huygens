@@ -11,12 +11,14 @@ function CardNode({ data }: NodeProps) {
   const Icon = t.Icon
   const isContext = d.status === 'context'
   const done = d.state === 'DONE'
-  // DONE notes are de-emphasized like context (dimmed), but keep a SOLID border so
-  // they read as "real, just finished" vs merely-referenced context (dashed).
-  const dimmed = isContext || done
-  const dashed = isContext && !done
+  const isMit = Boolean(d.mit)
+  // MIT nodes are the focus of the MITs view: always solid + full opacity. Else
+  // DONE notes are de-emphasized like context (dimmed) but keep a SOLID border;
+  // context (referenced, unchanged) is dashed + dimmed.
+  const dimmed = !isMit && (isContext || done)
+  const dashed = !isMit && isContext && !done
   const hasDesc = d.descriptives.length > 0
-  const badge = d.status === 'created' ? 'nuevo' : d.status === 'updated' ? 'editado' : null
+  const badge = isMit ? '🎯 MIT' : d.status === 'created' ? 'nuevo' : d.status === 'updated' ? 'editado' : null
   return (
     <div
       style={{

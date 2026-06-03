@@ -17,6 +17,9 @@ export type FlowNodeData = {
    * state filter and the DONE styling (dimmed like context, but solid border).
    * Absent for raw/block nodes and notes whose state couldn't be resolved. */
   state?: string
+  /** This node is a MIT (Most Important Task) in the MITs view: rendered as the
+   * focus — solid, full opacity, 🎯 badge — regardless of status. */
+  mit?: boolean
   lines: string[]
   /** Full content of the note's descriptive blocks (markdown), shown on click. */
   descriptives: string[]

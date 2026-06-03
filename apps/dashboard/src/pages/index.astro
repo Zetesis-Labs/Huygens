@@ -1,7 +1,8 @@
 ---
 import ChangeGraph from '../components/ChangeGraph.tsx'
 import DateRangePicker from '../components/DateRangePicker.tsx'
-import { buildDayView, buildRangeView, dayLabel, listDiaryDays } from '../lib/diaryView'
+import { buildDayView, buildRangeView, listDiaryDays } from '../lib/diaryView'
+import { buildMitView } from '../lib/mitView'
 import { buildProposalView } from '../lib/proposalView'
 import { listMits, listProposals } from '../lib/surreal'
 
@@ -12,11 +13,12 @@ import { listMits, listProposals } from '../lib/surreal'
 // committed that day. The selection travels in the URL (?proposal=<id> or
 // ?day=<YYYY-MM-DD>) so the whole view is server-rendered and deep-linkable.
 const params = Astro.url.searchParams
-const selectedDay = params.get('day')
+const mitsView = params.get('view') === 'mits'
+const selectedDay = mitsView ? null : params.get('day')
 const from = params.get('from')
 const to = params.get('to')
-const rangeMode = !selectedDay && Boolean(from && to)
-const selectedId = selectedDay || rangeMode ? null : params.get('proposal')
+const rangeMode = !mitsView && !selectedDay && Boolean(from && to)
+const selectedId = mitsView || selectedDay || rangeMode ? null : params.get('proposal')
 
 let proposals = [] as Awaited<ReturnType<typeof listProposals>>
 let listError: string | null = null
@@ -43,7 +45,6 @@ try {
 }
 const todayMadrid = new Date(Date.now() + 2 * 3600 * 1000).toISOString().slice(0, 10)
 const todayMits = mits.filter(m => m.day === todayMadrid)
-const otherMits = mits.filter(m => m.day !== todayMadrid)
 const MIT_STATE_COLOR: Record<string, string> = {
   ACTIVE: '#2e7d32',
   CLARIFIED: '#5b6b8c',
@@ -56,9 +57,11 @@ const MIT_STATE_COLOR: Record<string, string> = {
 let proposalView: Awaited<ReturnType<typeof buildProposalView>> | null = null
 let dayView: Awaited<ReturnType<typeof buildDayView>> = null
 let rangeView: Awaited<ReturnType<typeof buildRangeView>> = null
+let mitView: Awaited<ReturnType<typeof buildMitView>> = null
 let viewError: string | null = null
 try {
-  if (selectedId) proposalView = await buildProposalView(selectedId)
+  if (mitsView) mitView = await buildMitView(todayMadrid)
+  else if (selectedId) proposalView = await buildProposalView(selectedId)
   else if (selectedDay) dayView = await buildDayView(selectedDay)
   else if (rangeMode && from && to) rangeView = await buildRangeView(from, to)
 } catch (e) {
@@ -79,8 +82,8 @@ const diarioOpen = Boolean(selectedDay || selectedProposalDay)
 const drafts = proposals.filter(p => p.status === 'draft')
 const draftsOpen = Boolean(selectedId && !selectedProposalDay && drafts.some(p => p.id === selectedId))
 
-const laidOut = proposalView?.laidOut ?? dayView?.laidOut ?? rangeView?.laidOut ?? null
-const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView)
+const laidOut = proposalView?.laidOut ?? dayView?.laidOut ?? rangeView?.laidOut ?? mitView?.laidOut ?? null
+const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitView)
 ---
 
 <html lang="es">
@@ -224,40 +227,11 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView)
           <span class="icon">📥</span><span>Inbox</span><span class="soon">pronto</span>
         </div>
 
-        <!-- MITs: el foco del día, justo encima del Diario (read-only; se marcan vía proposal) -->
-        <div class="mit-panel">
-          <div class="mit-head"><span>🎯</span> MITs · hoy</div>
-          {todayMits.length === 0 && <p class="mit-empty">Sin MITs para hoy.</p>}
-          {todayMits.map(m => (
-            <div class="mit-item" title={m.title}>
-              <span class="mit-state" style={`background:${MIT_STATE_COLOR[m.state] ?? '#5b6b8c'}`}>{m.state}</span>
-              <span class="mit-info">
-                <span class="mit-title">{m.title}</span>
-                {m.parent && <span class="mit-parent">{m.parent}</span>}
-              </span>
-            </div>
-          ))}
-          {otherMits.length > 0 && (
-            <Fragment>
-              <button class="mit-more" type="button" data-toggle="mit-others"><span class="chev">▸</span> Otros días ({otherMits.length})</button>
-              <div class="drawer" data-drawer="mit-others">
-                <div class="inner">
-                  <div class="drawer-pad">
-                    {otherMits.map(m => (
-                      <div class="mit-item" title={m.title}>
-                        <span class="mit-state" style={`background:${MIT_STATE_COLOR[m.state] ?? '#5b6b8c'}`}>{m.state}</span>
-                        <span class="mit-info">
-                          <span class="mit-title">{m.title}</span>
-                          <span class="mit-parent">{dayLabel(m.day)}{m.parent ? ` · ${m.parent}` : ''}</span>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </Fragment>
-          )}
-        </div>
+        <!-- MITs: el foco del día → grafo en el canvas (/?view=mits) -->
+        <a class={`nav-item ${mitsView ? 'on' : ''}`} href="/?view=mits">
+          <span class="icon">🎯</span><span>MITs</span>
+          {todayMits.length > 0 && <span class="count">{todayMits.length}</span>}
+        </a>
 
         <!-- Diario: días, cada uno desplegable a sus proposals committed -->
         <button class={`nav-item ${diarioOpen ? 'on open' : ''}`} type="button" data-toggle="diario">
@@ -341,6 +315,9 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView)
         {!viewError && selectedId && !proposalView?.proposal && <div class="placeholder">Proposal no encontrada.</div>}
         {!viewError && selectedDay && !dayView && <div class="placeholder">Sin cambios ese día.</div>}
         {!viewError && rangeMode && !rangeView && <div class="placeholder">Sin cambios en ese rango.</div>}
+        {!viewError && mitsView && !mitView && (
+          <div class="placeholder">Sin MITs para hoy. Márcalos con el agente (vía proposal) y aparecerán aquí.</div>
+        )}
         {!viewError && proposalView?.legacy && (
           <div class="placeholder">Proposal aplanada en el génesis (formato legacy) — sin grafo. El informe está a la derecha.</div>
         )}
@@ -413,6 +390,26 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView)
             <span class="chip">{rangeView.counts.updates} updates</span>
             <span class="chip">{rangeView.counts.edges} edges</span>
           </div>
+        </aside>
+      )}
+
+      {!viewError && mitView && (
+        <aside class="informe">
+          <div class="head">
+            <span class="icon" style="font-size:18px">🎯</span>
+            <h1>MITs · hoy</h1>
+            <span class="count">{mitView.mits.length}</span>
+          </div>
+          <h2>Foco del día</h2>
+          {mitView.mits.map(m => (
+            <div class="mit-item" title={m.title}>
+              <span class="mit-state" style={`background:${MIT_STATE_COLOR[m.state] ?? '#5b6b8c'}`}>{m.state}</span>
+              <span class="mit-info">
+                <span class="mit-title">{m.title}</span>
+                {m.parent && <span class="mit-parent">{m.parent}</span>}
+              </span>
+            </div>
+          ))}
         </aside>
       )}
     </div>
