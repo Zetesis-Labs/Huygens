@@ -1,6 +1,7 @@
 ---
 import ChangeGraph from '../components/ChangeGraph.tsx'
-import { buildDayView, listDiaryDays } from '../lib/diaryView'
+import DateRangePicker from '../components/DateRangePicker.tsx'
+import { buildDayView, buildRangeView, listDiaryDays } from '../lib/diaryView'
 import { buildProposalView } from '../lib/proposalView'
 import { listProposals } from '../lib/surreal'
 
@@ -12,7 +13,10 @@ import { listProposals } from '../lib/surreal'
 // ?day=<YYYY-MM-DD>) so the whole view is server-rendered and deep-linkable.
 const params = Astro.url.searchParams
 const selectedDay = params.get('day')
-const selectedId = selectedDay ? null : params.get('proposal')
+const from = params.get('from')
+const to = params.get('to')
+const rangeMode = !selectedDay && Boolean(from && to)
+const selectedId = selectedDay || rangeMode ? null : params.get('proposal')
 
 let proposals = [] as Awaited<ReturnType<typeof listProposals>>
 let listError: string | null = null
@@ -31,10 +35,12 @@ try {
 
 let proposalView: Awaited<ReturnType<typeof buildProposalView>> | null = null
 let dayView: Awaited<ReturnType<typeof buildDayView>> = null
+let rangeView: Awaited<ReturnType<typeof buildRangeView>> = null
 let viewError: string | null = null
 try {
   if (selectedId) proposalView = await buildProposalView(selectedId)
   else if (selectedDay) dayView = await buildDayView(selectedDay)
+  else if (rangeMode && from && to) rangeView = await buildRangeView(from, to)
 } catch (e) {
   viewError = e instanceof Error ? e.message : String(e)
 }
@@ -53,8 +59,8 @@ const diarioOpen = Boolean(selectedDay || selectedProposalDay)
 const drafts = proposals.filter(p => p.status === 'draft')
 const draftsOpen = Boolean(selectedId && !selectedProposalDay && drafts.some(p => p.id === selectedId))
 
-const laidOut = proposalView?.laidOut ?? dayView?.laidOut ?? null
-const hasGraph = Boolean(proposalView?.proposal || dayView)
+const laidOut = proposalView?.laidOut ?? dayView?.laidOut ?? rangeView?.laidOut ?? null
+const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView)
 ---
 
 <html lang="es">
@@ -134,6 +140,46 @@ const hasGraph = Boolean(proposalView?.proposal || dayView)
       .item.sub { padding: 6px 10px; }
       .item.sub .title { font-size: 12.5px; font-weight: 500; }
     </style>
+
+    <style is:global>
+      /* ---- Date review: trigger (fila del nav) + calendario de rango doble-mes (isla React) ---- */
+      .cal-trigger { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: none; background: transparent; border-radius: 9px; cursor: pointer; font: inherit; font-size: 14px; color: #2a3346; text-align: left; }
+      .cal-trigger:hover { background: #f4f6fb; }
+      .cal-trigger.on { background: #eef1ff; color: #2f54eb; font-weight: 600; }
+      .cal-tic { font-size: 16px; line-height: 1; }
+      .cal-chev { margin-left: auto; font-size: 11px; color: #9aa3b2; }
+      .cal-tag { margin-left: auto; font-size: 11px; font-weight: 600; color: #2f54eb; background: #fff; border: 1px solid #d6deff; border-radius: 999px; padding: 1px 8px; }
+
+      .cal-backdrop { position: fixed; inset: 0; background: rgba(20,26,38,.28); z-index: 1000; display: flex; align-items: flex-start; justify-content: center; padding-top: 72px; }
+      .cal-pop { background: #fff; border-radius: 14px; box-shadow: 0 18px 48px rgba(20,26,38,.28); padding: 16px 18px 14px; width: 640px; max-width: calc(100vw - 32px); }
+      .cal-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+      .cal-titles { flex: 1; display: flex; }
+      .cal-mtitle { flex: 1; text-align: center; font-size: 14px; font-weight: 700; text-transform: capitalize; color: #1f2530; }
+      .cal-arrow { width: 30px; height: 30px; border: 1px solid #e6e8eb; background: #fff; border-radius: 8px; cursor: pointer; font-size: 16px; line-height: 1; color: #3a4252; }
+      .cal-arrow:hover { background: #f4f6fb; }
+
+      .cal-months { display: flex; gap: 22px; }
+      .cal-month { flex: 1; }
+      .cal-week, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+      .cal-wd { text-align: center; font-size: 11px; font-weight: 600; color: #9aa3b2; padding-bottom: 4px; }
+      .cal-cell { position: relative; aspect-ratio: 1 / 1; border: none; background: transparent; border-radius: 8px; cursor: pointer; font: inherit; font-size: 13px; color: #2a3346; display: flex; align-items: center; justify-content: center; }
+      .cal-cell.pad { visibility: hidden; cursor: default; }
+      .cal-cell:hover { background: #eef1ff; }
+      .cal-cell.in { background: #e7ecff; border-radius: 0; }
+      .cal-cell.end { background: #2f54eb; color: #fff; border-radius: 8px; }
+      .cal-cell.has { font-weight: 700; }
+      .cal-dot { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; border-radius: 999px; background: #2f54eb; }
+      .cal-cell.end .cal-dot { background: #fff; }
+
+      .cal-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding-top: 12px; border-top: 1px solid #eef0f2; }
+      .cal-range { font-size: 13px; color: #3a4252; }
+      .cal-actions { display: flex; gap: 8px; }
+      .cal-btn { border: none; background: #2f54eb; color: #fff; border-radius: 8px; padding: 7px 16px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; }
+      .cal-btn:hover { background: #2647d4; }
+      .cal-btn:disabled { background: #c3cbe0; cursor: default; }
+      .cal-btn.ghost { background: #f0f2f5; color: #3a4252; }
+      .cal-btn.ghost:hover { background: #e6e9ef; }
+    </style>
   </head>
   <body>
     <nav class="side">
@@ -175,7 +221,7 @@ const hasGraph = Boolean(proposalView?.proposal || dayView)
                       <div class="inner">
                         <div class="day-sub">
                           {d.proposals.map(p => (
-                            <a class={`item sub ${p.id === selectedId ? 'active' : ''}`} href={`/?proposal=${encodeURIComponent(p.id)}`}>
+                            <a class={`item sub ${p.id === selectedId ? 'active' : ''}`} href={`/?proposal=${encodeURIComponent(p.id)}`} title={p.title}>
                               <span class="info"><span class="title">{p.title}</span></span>
                             </a>
                           ))}
@@ -189,6 +235,9 @@ const hasGraph = Boolean(proposalView?.proposal || dayView)
           </div>
         </div>
 
+        <!-- Date review: calendario de rango (popover). Filtro temporal; no sustituye al Diario. -->
+        <DateRangePicker client:load daysWith={days} from={from} to={to} />
+
         {drafts.length > 0 && (
           <Fragment>
             <!-- Borradores: proposals sin commitear (viven fuera de cualquier día) -->
@@ -199,7 +248,7 @@ const hasGraph = Boolean(proposalView?.proposal || dayView)
               <div class="inner">
                 <div class="drawer-pad">
                   {drafts.map(p => (
-                    <a class={`item ${p.id === selectedId ? 'active' : ''}`} href={`/?proposal=${encodeURIComponent(p.id)}`}>
+                    <a class={`item ${p.id === selectedId ? 'active' : ''}`} href={`/?proposal=${encodeURIComponent(p.id)}`} title={p.title}>
                       <span class="badge" style={`background:${STATUS_COLOR[p.status] ?? '#5b6b8c'}`}>{p.status}</span>
                       <span class="info">
                         <span class="title">{p.title}</span>
@@ -218,9 +267,10 @@ const hasGraph = Boolean(proposalView?.proposal || dayView)
     <div class="main">
       <div class="canvas">
         {viewError && <div class="placeholder err">Error: {viewError}</div>}
-        {!viewError && !hasGraph && <div class="placeholder">Selecciona una proposal o un día del diario.</div>}
+        {!viewError && !hasGraph && <div class="placeholder">Selecciona una proposal, un día del Diario o un rango (Date review).</div>}
         {!viewError && selectedId && !proposalView?.proposal && <div class="placeholder">Proposal no encontrada.</div>}
         {!viewError && selectedDay && !dayView && <div class="placeholder">Sin cambios ese día.</div>}
+        {!viewError && rangeMode && !rangeView && <div class="placeholder">Sin cambios en ese rango.</div>}
         {!viewError && proposalView?.legacy && (
           <div class="placeholder">Proposal aplanada en el génesis (formato legacy) — sin grafo. El informe está a la derecha.</div>
         )}
@@ -273,6 +323,25 @@ const hasGraph = Boolean(proposalView?.proposal || dayView)
             <span class="chip">+{dayView.counts.creates} notas</span>
             <span class="chip">{dayView.counts.updates} updates</span>
             <span class="chip">{dayView.counts.edges} edges</span>
+          </div>
+        </aside>
+      )}
+
+      {!viewError && rangeView && (
+        <aside class="informe">
+          <div class="head">
+            <span class="icon" style="font-size:18px">📅</span>
+            <h1>{rangeView.label}</h1>
+            <span class="count">{rangeView.counts.proposals} proposals</span>
+          </div>
+          <h2>Cambios del rango</h2>
+          {rangeView.narratives.map(n => <p class="narrative">{n}</p>)}
+          <div class="counts">
+            <span class="chip" title="relaciones pre-existentes hidratadas en vivo">⟳ contexto actual</span>
+            <span class="chip">{rangeView.counts.raws} raw</span>
+            <span class="chip">+{rangeView.counts.creates} notas</span>
+            <span class="chip">{rangeView.counts.updates} updates</span>
+            <span class="chip">{rangeView.counts.edges} edges</span>
           </div>
         </aside>
       )}

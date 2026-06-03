@@ -200,7 +200,9 @@ export async function listCommittedProposalRows(): Promise<CommittedProposalRow[
     id: String(r.id),
     day: r.day,
     status: r.status,
-    title: oneLine(r.narrative) || oneLine(r.first_note) || String(r.id)
+    // Generous single-line clamp: the nav truncates it visually with CSS, but the
+    // full string rides on the link's `title` so a hover shows it complete.
+    title: oneLine(r.narrative, 240) || oneLine(r.first_note, 240) || String(r.id)
   }))
 }
 
@@ -224,6 +226,30 @@ export async function listCommittedProposalsForDay(day: string): Promise<Committ
     payload: r.payload,
     // The driver hands back `temp_ids.notes` values as RecordId objects; the
     // graph keys everything by string id, so flatten them here.
+    tempMap: r.temp ? Object.fromEntries(Object.entries(r.temp).map(([k, v]) => [k, String(v)])) : {}
+  }))
+}
+
+/** The committed proposals that landed within an inclusive Madrid-day range
+ * [`from`, `to`] (`YYYY-MM-DD` strings; lexical compare = chronological), oldest
+ * first — the input the diary fuses over for the Date-review range view. */
+export async function listCommittedProposalsForRange(from: string, to: string): Promise<CommittedProposal[]> {
+  const db = await getDb()
+  const [rows] = await db.query<
+    [Array<{ id: unknown; payload: Proposal['payload']; landed: unknown; temp?: Record<string, string> | null }>]
+  >(
+    `SELECT meta::id(id) AS id, payload,
+            (result.committed_at ?? updated_at) AS landed,
+            result.temp_ids.notes AS temp
+     FROM proposal
+     WHERE status = 'committed' AND ${MADRID_DAY} >= $from AND ${MADRID_DAY} <= $to
+     ORDER BY landed ASC`,
+    { from, to }
+  )
+  return (rows ?? []).map(r => ({
+    id: String(r.id),
+    committedAt: toIso(r.landed),
+    payload: r.payload,
     tempMap: r.temp ? Object.fromEntries(Object.entries(r.temp).map(([k, v]) => [k, String(v)])) : {}
   }))
 }

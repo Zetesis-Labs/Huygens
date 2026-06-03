@@ -5,6 +5,7 @@ import {
   existingEdgesAmong,
   listCommittedProposalRows,
   listCommittedProposalsForDay,
+  listCommittedProposalsForRange,
   type Proposal,
   resolveLabels
 } from './surreal'
@@ -39,25 +40,16 @@ function asProposal(p: CommittedProposal): Proposal {
   return { id: p.id, status: 'committed', payload: p.payload, result: null }
 }
 
-export type DayView = {
-  day: string
-  label: string
-  laidOut: LaidOutGraph
-  counts: { creates: number; updates: number; edges: number; raws: number; proposals: number }
-  narratives: string[]
-}
+type FusedCounts = { creates: number; updates: number; edges: number; raws: number }
+type Fused = { laidOut: LaidOutGraph; counts: FusedCounts; narratives: string[] }
 
 /**
- * Fuse every change that landed on `day` into a single graph (via the shared
+ * Fuse a set of committed proposals into a single graph (via the shared
  * `fuseProposals`): temp ids rewritten to the real notes the commits produced, so
  * a note created by one proposal and linked by another collapses to one node.
- * Pre-existing relations among the day's nodes are hydrated live (dashed) for
- * context. Returns null if nothing committed that day.
+ * Pre-existing relations among the nodes are hydrated live (dashed) for context.
  */
-export async function buildDayView(day: string): Promise<DayView | null> {
-  const committed = await listCommittedProposalsForDay(day)
-  if (committed.length === 0) return null
-
+async function fuseCommitted(committed: CommittedProposal[]): Promise<Fused> {
   const items: FuseItem[] = []
   let creates = 0
   let updates = 0
@@ -79,11 +71,60 @@ export async function buildDayView(day: string): Promise<DayView | null> {
   const realIds = flow.nodes.map(n => n.id).filter(id => id.includes(':'))
   flow = mergeExistingEdges(flow, await existingEdgesAmong(realIds))
 
+  return { laidOut: await layoutGraph(flow), counts: { creates, updates, edges: edgeCount, raws }, narratives }
+}
+
+export type DayView = {
+  day: string
+  label: string
+  laidOut: LaidOutGraph
+  counts: { creates: number; updates: number; edges: number; raws: number; proposals: number }
+  narratives: string[]
+}
+
+/** Aggregate everything that committed on `day` into one graph. Null if empty. */
+export async function buildDayView(day: string): Promise<DayView | null> {
+  const committed = await listCommittedProposalsForDay(day)
+  if (committed.length === 0) return null
+  const f = await fuseCommitted(committed)
   return {
     day,
     label: dayLabel(day),
-    laidOut: await layoutGraph(flow),
-    counts: { creates, updates, edges: edgeCount, raws, proposals: committed.length },
-    narratives
+    laidOut: f.laidOut,
+    counts: { ...f.counts, proposals: committed.length },
+    narratives: f.narratives
+  }
+}
+
+export type RangeView = {
+  from: string
+  to: string
+  label: string
+  laidOut: LaidOutGraph
+  counts: { creates: number; updates: number; edges: number; raws: number; proposals: number }
+  narratives: string[]
+}
+
+const dayMonthFmt = new Intl.DateTimeFormat('es-ES', { timeZone: 'UTC', day: 'numeric', month: 'short' })
+
+export function rangeLabel(from: string, to: string): string {
+  if (from === to) return dayLabel(from)
+  return `del ${dayMonthFmt.format(new Date(`${from}T12:00:00Z`))} al ${dayLabel(to)}`
+}
+
+/** Aggregate everything that committed within the inclusive day range into one
+ * graph (the Date-review range view). Order-agnostic. Null if nothing in range. */
+export async function buildRangeView(from: string, to: string): Promise<RangeView | null> {
+  const [lo, hi] = from <= to ? [from, to] : [to, from]
+  const committed = await listCommittedProposalsForRange(lo, hi)
+  if (committed.length === 0) return null
+  const f = await fuseCommitted(committed)
+  return {
+    from: lo,
+    to: hi,
+    label: rangeLabel(lo, hi),
+    laidOut: f.laidOut,
+    counts: { ...f.counts, proposals: committed.length },
+    narratives: f.narratives
   }
 }
