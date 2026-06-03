@@ -9,7 +9,12 @@ function CardNode({ data }: NodeProps) {
   const d = data as FlowNodeData
   const t = TYPE_STYLE[d.type] ?? TYPE_STYLE._
   const Icon = t.Icon
-  const dashed = d.status === 'context'
+  const isContext = d.status === 'context'
+  const done = d.state === 'DONE'
+  // DONE notes are de-emphasized like context (dimmed), but keep a SOLID border so
+  // they read as "real, just finished" vs merely-referenced context (dashed).
+  const dimmed = isContext || done
+  const dashed = isContext && !done
   const hasDesc = d.descriptives.length > 0
   const badge = d.status === 'created' ? 'nuevo' : d.status === 'updated' ? 'editado' : null
   return (
@@ -25,10 +30,10 @@ function CardNode({ data }: NodeProps) {
         fontSize: 12,
         color: '#1f2530',
         cursor: hasDesc ? 'pointer' : 'default',
-        boxShadow: dashed ? 'none' : '0 1px 4px rgba(0,0,0,.12)',
-        // context nodes (referenced but not changed by the proposal) are dimmed
-        // so the actual creates/updates stand out
-        opacity: dashed ? 0.6 : 1
+        boxShadow: dimmed ? 'none' : '0 1px 4px rgba(0,0,0,.12)',
+        // context (referenced, unchanged) AND done notes are dimmed so the active
+        // creates/updates stand out; done keeps the solid border (see above).
+        opacity: dimmed ? 0.6 : 1
       }}
     >
       <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />

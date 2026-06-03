@@ -322,7 +322,9 @@ function referencedRealIds(p: Proposal): string[] {
 
 /** Type + human title of the existing records a proposal references, so the
  * graph can icon/colour them by type and show real titles instead of bare ids. */
-export async function resolveLabels(p: Proposal): Promise<Record<string, { type: string; title: string }>> {
+export async function resolveLabels(
+  p: Proposal
+): Promise<Record<string, { type: string; title: string; state?: string }>> {
   const ids = referencedRealIds(p)
   if (ids.length === 0) return {}
   const db = await getDb()
@@ -332,21 +334,22 @@ export async function resolveLabels(p: Proposal): Promise<Record<string, { type:
   const params = { ids: ids.map(s => new StringRecordId(s)) }
   const [notes, raws, blocks] = await db.query<
     [
-      Array<{ id: unknown; title?: string; type?: unknown }>,
+      Array<{ id: unknown; title?: string; type?: unknown; state?: string }>,
       Array<{ id: unknown; content?: string }>,
       Array<{ id: unknown; content?: string }>
     ]
   >(
-    `SELECT id, title, type FROM note WHERE id IN $ids;
+    `SELECT id, title, type, state FROM note WHERE id IN $ids;
      SELECT id, content FROM raw_capture WHERE id IN $ids;
      SELECT id, content FROM block WHERE id IN $ids`,
     params
   )
-  const labels: Record<string, { type: string; title: string }> = {}
+  const labels: Record<string, { type: string; title: string; state?: string }> = {}
   for (const r of notes ?? [])
     labels[String(r.id)] = {
       type: String(r.type ?? '').replace(/^note_type:/, '') || '?',
-      title: r.title ?? String(r.id)
+      title: r.title ?? String(r.id),
+      state: r.state
     }
   for (const r of raws ?? []) labels[String(r.id)] = { type: 'raw', title: (r.content ?? '').slice(0, 60) }
   for (const r of blocks ?? []) labels[String(r.id)] = { type: 'block', title: (r.content ?? '').slice(0, 60) }
