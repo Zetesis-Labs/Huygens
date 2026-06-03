@@ -1,9 +1,9 @@
 ---
 import ChangeGraph from '../components/ChangeGraph.tsx'
 import DateRangePicker from '../components/DateRangePicker.tsx'
-import { buildDayView, buildRangeView, listDiaryDays } from '../lib/diaryView'
+import { buildDayView, buildRangeView, dayLabel, listDiaryDays } from '../lib/diaryView'
 import { buildProposalView } from '../lib/proposalView'
-import { listProposals } from '../lib/surreal'
+import { listMits, listProposals } from '../lib/surreal'
 
 // Unified workspace: a single left panel with three nav sections (Inbox, Diario,
 // Proposals) and a main canvas. Inbox is a placeholder for now. Proposals lists
@@ -31,6 +31,26 @@ try {
   days = await listDiaryDays()
 } catch {
   /* best-effort diary list */
+}
+
+// MITs (Most Important Tasks): today's are the focus; the rest go under "otros días".
+// Madrid day = server clock + 2h, matching the diary's bucketing.
+let mits = [] as Awaited<ReturnType<typeof listMits>>
+try {
+  mits = await listMits()
+} catch {
+  /* best-effort MIT panel */
+}
+const todayMadrid = new Date(Date.now() + 2 * 3600 * 1000).toISOString().slice(0, 10)
+const todayMits = mits.filter(m => m.day === todayMadrid)
+const otherMits = mits.filter(m => m.day !== todayMadrid)
+const MIT_STATE_COLOR: Record<string, string> = {
+  ACTIVE: '#2e7d32',
+  CLARIFIED: '#5b6b8c',
+  WAITING: '#9a7d0a',
+  SOMEDAY: '#8a93a6',
+  DONE: '#9aa3b2',
+  ARCHIVED: '#c3cbe0'
 }
 
 let proposalView: Awaited<ReturnType<typeof buildProposalView>> | null = null
@@ -139,6 +159,21 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView)
       .day-sub { padding-left: 16px; }
       .item.sub { padding: 6px 10px; }
       .item.sub .title { font-size: 12.5px; font-weight: 500; }
+
+      /* ---- MITs panel (foco del día, encima del Diario) ---- */
+      .mit-panel { padding: 4px 4px 8px; margin-bottom: 4px; border-bottom: 1px solid #eef0f2; }
+      .mit-head { display: flex; align-items: center; gap: 6px; padding: 4px 8px 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; }
+      .mit-empty { margin: 0; padding: 2px 10px 4px; font-size: 12px; color: #9aa3b2; }
+      .mit-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 10px; border-radius: 8px; }
+      .mit-item:hover { background: #f4f6fb; }
+      .mit-state { flex: 0 0 auto; margin-top: 1px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: 2px 6px; border-radius: 999px; color: #fff; }
+      .mit-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+      .mit-title { font-size: 13px; font-weight: 600; color: #2a3346; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mit-parent { font-size: 11px; color: #9aa3b2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mit-more { width: 100%; display: flex; align-items: center; gap: 6px; padding: 5px 10px; border: none; background: transparent; cursor: pointer; font: inherit; font-size: 11px; color: #6b7280; }
+      .mit-more:hover { color: #2f54eb; }
+      .mit-more .chev { font-size: 10px; transition: transform .2s ease; }
+      .mit-more.open .chev { transform: rotate(90deg); }
     </style>
 
     <style is:global>
@@ -187,6 +222,41 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView)
       <div class="nav">
         <div class="nav-item disabled">
           <span class="icon">📥</span><span>Inbox</span><span class="soon">pronto</span>
+        </div>
+
+        <!-- MITs: el foco del día, justo encima del Diario (read-only; se marcan vía proposal) -->
+        <div class="mit-panel">
+          <div class="mit-head"><span>🎯</span> MITs · hoy</div>
+          {todayMits.length === 0 && <p class="mit-empty">Sin MITs para hoy.</p>}
+          {todayMits.map(m => (
+            <div class="mit-item" title={m.title}>
+              <span class="mit-state" style={`background:${MIT_STATE_COLOR[m.state] ?? '#5b6b8c'}`}>{m.state}</span>
+              <span class="mit-info">
+                <span class="mit-title">{m.title}</span>
+                {m.parent && <span class="mit-parent">{m.parent}</span>}
+              </span>
+            </div>
+          ))}
+          {otherMits.length > 0 && (
+            <Fragment>
+              <button class="mit-more" type="button" data-toggle="mit-others"><span class="chev">▸</span> Otros días ({otherMits.length})</button>
+              <div class="drawer" data-drawer="mit-others">
+                <div class="inner">
+                  <div class="drawer-pad">
+                    {otherMits.map(m => (
+                      <div class="mit-item" title={m.title}>
+                        <span class="mit-state" style={`background:${MIT_STATE_COLOR[m.state] ?? '#5b6b8c'}`}>{m.state}</span>
+                        <span class="mit-info">
+                          <span class="mit-title">{m.title}</span>
+                          <span class="mit-parent">{dayLabel(m.day)}{m.parent ? ` · ${m.parent}` : ''}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Fragment>
+          )}
         </div>
 
         <!-- Diario: días, cada uno desplegable a sus proposals committed -->

@@ -206,6 +206,31 @@ export async function listCommittedProposalRows(): Promise<CommittedProposalRow[
   }))
 }
 
+export type MitRow = { id: string; title: string; state: string; day: string; parent: string | null }
+
+/** Notes flagged as a MIT (`mit_for` set), newest MIT-day first, with their
+ * parent (project/area) title — for the MITs panel. `mit_for + 2h` → Madrid day,
+ * matching the diary's bucketing. Read-only. */
+export async function listMits(): Promise<MitRow[]> {
+  const db = await getDb()
+  const [rows] = await db.query<
+    [Array<{ id: unknown; title: string; state: string; mit_for: unknown; day: string; parent?: string | null }>]
+  >(
+    `SELECT meta::id(id) AS id, title, state, mit_for,
+            time::format(mit_for + 2h, '%Y-%m-%d') AS day,
+            ->part_of->note[0].title AS parent
+     FROM note WHERE mit_for IS NOT NONE
+     ORDER BY mit_for DESC`
+  )
+  return (rows ?? []).map(r => ({
+    id: String(r.id),
+    title: r.title,
+    state: r.state,
+    day: r.day,
+    parent: r.parent ?? null
+  }))
+}
+
 /** The committed proposals that landed on a given Madrid day (`YYYY-MM-DD`),
  * with the bits the diary fuses over. Filtered in SurrealDB. Read-only. */
 export async function listCommittedProposalsForDay(day: string): Promise<CommittedProposal[]> {
