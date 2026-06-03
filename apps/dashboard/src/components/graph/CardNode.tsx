@@ -3,6 +3,9 @@ import { FileText } from 'lucide-react'
 import type { FlowNodeData } from '../../lib/graph'
 import { TYPE_STYLE } from './styles'
 
+/** Amber accent for an overdue MIT (border + badge). */
+const OVERDUE_COLOR = '#d97706'
+
 /** A note/context card: type icon (corner chip), provenance badge + border,
  * change lines, and a footer hinting at descriptive blocks when present. */
 function CardNode({ data }: NodeProps) {
@@ -12,19 +15,23 @@ function CardNode({ data }: NodeProps) {
   const isContext = d.status === 'context'
   const done = d.state === 'DONE'
   const isMit = Boolean(d.mit)
+  const overdue = isMit && Boolean(d.overdue)
   // MIT nodes are the focus of the MITs view: always solid + full opacity. Else
   // DONE notes are de-emphasized like context (dimmed) but keep a SOLID border;
   // context (referenced, unchanged) is dashed + dimmed.
   const dimmed = !isMit && (isContext || done)
   const dashed = !isMit && isContext && !done
   const hasDesc = d.descriptives.length > 0
-  const badge = isMit ? '🎯 MIT' : d.status === 'created' ? 'nuevo' : d.status === 'updated' ? 'editado' : null
+  // Overdue MITs swap the type colour for amber on the border + badge so an
+  // unfinished MIT from a past day reads as "vencido" at a glance.
+  const accent = overdue ? OVERDUE_COLOR : t.color
+  const badge = isMit ? (overdue ? '⏰ vencido' : '🎯 MIT') : d.status === 'created' ? 'nuevo' : d.status === 'updated' ? 'editado' : null
   return (
     <div
       style={{
         position: 'relative',
         background: t.bg,
-        border: `2px ${dashed ? 'dashed' : 'solid'} ${t.color}`,
+        border: `2px ${dashed ? 'dashed' : 'solid'} ${accent}`,
         borderRadius: 10,
         padding: '16px 13px 11px',
         width: 240,
@@ -69,7 +76,7 @@ function CardNode({ data }: NodeProps) {
             letterSpacing: '.04em',
             textTransform: 'uppercase',
             color: '#fff',
-            background: t.color,
+            background: accent,
             borderRadius: 999,
             padding: '2px 8px',
             boxShadow: '0 1px 3px rgba(0,0,0,.2)'

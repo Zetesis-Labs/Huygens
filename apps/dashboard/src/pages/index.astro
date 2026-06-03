@@ -402,11 +402,20 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
           </div>
           <h2>Foco del día</h2>
           {mitView.mits.map(m => (
-            <div class="mit-item" title={m.title}>
-              <span class="mit-state" style={`background:${MIT_STATE_COLOR[m.state] ?? '#5b6b8c'}`}>{m.state}</span>
+            <div class="mit-item" title={m.day !== mitView.date ? `${m.title} · vencido ${m.day}` : m.title}>
+              <span
+                class="mit-state"
+                style={`background:${m.day !== mitView.date ? '#d97706' : (MIT_STATE_COLOR[m.state] ?? '#5b6b8c')}`}
+              >
+                {m.day !== mitView.date ? '⏰ vencido' : m.state}
+              </span>
               <span class="mit-info">
                 <span class="mit-title">{m.title}</span>
-                {m.parent && <span class="mit-parent">{m.parent}</span>}
+                {m.day !== mitView.date ? (
+                  <span class="mit-parent">{m.day}{m.parent ? ` · ${m.parent}` : ''}</span>
+                ) : (
+                  m.parent && <span class="mit-parent">{m.parent}</span>
+                )}
               </span>
             </div>
           ))}

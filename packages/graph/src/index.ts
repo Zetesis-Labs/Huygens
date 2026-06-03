@@ -20,6 +20,10 @@ export type FlowNodeData = {
   /** This node is a MIT (Most Important Task) in the MITs view: rendered as the
    * focus — solid, full opacity, 🎯 badge — regardless of status. */
   mit?: boolean
+  /** This MIT is overdue: dated before today and not DONE/ARCHIVED. Rendered with
+   * an amber "vencido" accent so an unfinished MIT doesn't silently vanish when
+   * the day rolls over — it stays on the board until done, moved, or dropped. */
+  overdue?: boolean
   lines: string[]
   /** Full content of the note's descriptive blocks (markdown), shown on click. */
   descriptives: string[]
