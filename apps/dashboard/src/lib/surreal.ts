@@ -180,6 +180,32 @@ export async function diaryDayCounts(): Promise<DiaryDayCount[]> {
   return rows ?? []
 }
 
+export type CommittedProposalRow = { id: string; day: string; status: string; title: string }
+
+/** Every committed proposal with its Madrid day + a light title (no payloads
+ * cross the wire), newest first — for nesting proposals under their day in the
+ * diary nav. Title = the informe-block (first narrative) or first created note. */
+export async function listCommittedProposalRows(): Promise<CommittedProposalRow[]> {
+  const db = await getDb()
+  const [rows] = await db.query<
+    [Array<{ id: unknown; day: string; status: string; narrative?: string; first_note?: string }>]
+  >(
+    `SELECT meta::id(id) AS id, ${MADRID_DAY} AS day, status, created_at,
+            payload.narrative_blocks[0].content AS narrative,
+            payload.note_creates[0].title AS first_note
+     FROM proposal WHERE status = 'committed'
+     ORDER BY day DESC, created_at DESC`
+  )
+  return (rows ?? []).map(r => ({
+    id: String(r.id),
+    day: r.day,
+    status: r.status,
+    // Generous single-line clamp: the nav truncates it visually with CSS, but the
+    // full string rides on the link's `title` so a hover shows it complete.
+    title: oneLine(r.narrative, 240) || oneLine(r.first_note, 240) || String(r.id)
+  }))
+}
+
 /** The committed proposals that landed on a given Madrid day (`YYYY-MM-DD`),
  * with the bits the diary fuses over. Filtered in SurrealDB. Read-only. */
 export async function listCommittedProposalsForDay(day: string): Promise<CommittedProposal[]> {
@@ -200,6 +226,30 @@ export async function listCommittedProposalsForDay(day: string): Promise<Committ
     payload: r.payload,
     // The driver hands back `temp_ids.notes` values as RecordId objects; the
     // graph keys everything by string id, so flatten them here.
+    tempMap: r.temp ? Object.fromEntries(Object.entries(r.temp).map(([k, v]) => [k, String(v)])) : {}
+  }))
+}
+
+/** The committed proposals that landed within an inclusive Madrid-day range
+ * [`from`, `to`] (`YYYY-MM-DD` strings; lexical compare = chronological), oldest
+ * first — the input the diary fuses over for the Date-review range view. */
+export async function listCommittedProposalsForRange(from: string, to: string): Promise<CommittedProposal[]> {
+  const db = await getDb()
+  const [rows] = await db.query<
+    [Array<{ id: unknown; payload: Proposal['payload']; landed: unknown; temp?: Record<string, string> | null }>]
+  >(
+    `SELECT meta::id(id) AS id, payload,
+            (result.committed_at ?? updated_at) AS landed,
+            result.temp_ids.notes AS temp
+     FROM proposal
+     WHERE status = 'committed' AND ${MADRID_DAY} >= $from AND ${MADRID_DAY} <= $to
+     ORDER BY landed ASC`,
+    { from, to }
+  )
+  return (rows ?? []).map(r => ({
+    id: String(r.id),
+    committedAt: toIso(r.landed),
+    payload: r.payload,
     tempMap: r.temp ? Object.fromEntries(Object.entries(r.temp).map(([k, v]) => [k, String(v)])) : {}
   }))
 }
