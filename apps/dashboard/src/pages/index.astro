@@ -46,6 +46,13 @@ const STATUS_COLOR: Record<string, string> = {
   superseded: '#5b6b8c'
 }
 
+// Diary nav: which committed day a selected proposal belongs to (to auto-expand
+// it), and the draft proposals that live outside any committed day (Borradores).
+const selectedProposalDay = selectedId ? (days.find(d => d.proposals.some(p => p.id === selectedId))?.day ?? null) : null
+const diarioOpen = Boolean(selectedDay || selectedProposalDay)
+const drafts = proposals.filter(p => p.status === 'draft')
+const draftsOpen = Boolean(selectedId && !selectedProposalDay && drafts.some(p => p.id === selectedId))
+
 const laidOut = proposalView?.laidOut ?? dayView?.laidOut ?? null
 const hasGraph = Boolean(proposalView?.proposal || dayView)
 ---
@@ -108,6 +115,24 @@ const hasGraph = Boolean(proposalView?.proposal || dayView)
       .narrative:last-of-type { border-bottom: none; }
       .counts { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid #eef0f2; padding-top: 14px; }
       .chip { font-size: 12px; background: #f4f4f6; border-radius: 999px; padding: 3px 10px; color: #3a4252; }
+
+      /* ---- diario: día = link al agregado; el número de proposals es el botón
+             que despliega la lista (al hover/abierto el número muta a iconito) ---- */
+      .day-group { margin: 1px 0; }
+      .day-row { display: flex; align-items: center; border-radius: 8px; }
+      .day-row:hover { background: #f4f6fb; }
+      .day-link { flex: 1; min-width: 0; display: flex; align-items: center; padding: 8px 10px; text-decoration: none; color: #2a3346; }
+      .day-row.on .day-link { color: #2f54eb; }
+      .day-link .title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .day-expand { flex: 0 0 auto; min-width: 30px; height: 24px; margin-right: 6px; display: inline-flex; align-items: center; justify-content: center; border: none; background: #f0f2f5; color: #6b7280; border-radius: 999px; font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; padding: 0 9px; }
+      .day-expand:hover { background: #e2e8f8; color: #2f54eb; }
+      .day-expand .exp-icon { display: none; font-size: 11px; line-height: 1; transition: transform .2s ease; }
+      .day-expand:hover .num, .day-expand.open .num { display: none; }
+      .day-expand:hover .exp-icon, .day-expand.open .exp-icon { display: inline; }
+      .day-expand.open .exp-icon { transform: rotate(90deg); }
+      .day-sub { padding-left: 16px; }
+      .item.sub { padding: 6px 10px; }
+      .item.sub .title { font-size: 12.5px; font-weight: 500; }
     </style>
   </head>
   <body>
@@ -118,45 +143,75 @@ const hasGraph = Boolean(proposalView?.proposal || dayView)
           <span class="icon">📥</span><span>Inbox</span><span class="soon">pronto</span>
         </div>
 
-        <!-- Diario -->
-        <button class={`nav-item ${selectedDay ? 'on open' : ''}`} type="button" data-toggle="diario">
+        <!-- Diario: días, cada uno desplegable a sus proposals committed -->
+        <button class={`nav-item ${diarioOpen ? 'on open' : ''}`} type="button" data-toggle="diario">
           <span class="icon">📓</span><span>Diario</span><span class="chev">▸</span>
         </button>
-        <div class={`drawer ${selectedDay ? 'open' : ''}`} data-drawer="diario">
+        <div class={`drawer ${diarioOpen ? 'open' : ''}`} data-drawer="diario">
           <div class="inner">
             <div class="drawer-pad">
-              {days.length === 0 && <p class="empty">Sin días con cambios.</p>}
-              {days.map(d => (
-                <a class={`item ${d.day === selectedDay ? 'active' : ''}`} href={`/?day=${d.day}`}>
-                  <span class="info"><span class="title">{d.label}</span></span>
-                  <span class="count">{d.count}</span>
-                </a>
-              ))}
+              {listError && <p class="err">No pude leer SurrealDB: {listError}</p>}
+              {!listError && days.length === 0 && <p class="empty">Sin días con cambios.</p>}
+              {days.map(d => {
+                const dayOpen = d.day === selectedDay || d.day === selectedProposalDay
+                return (
+                  <div class="day-group">
+                    <div class={`day-row ${d.day === selectedDay ? 'on' : ''}`}>
+                      <a class="day-link" href={`/?day=${d.day}`}>
+                        <span class="title">{d.label}</span>
+                      </a>
+                      <button
+                        class={`day-expand ${dayOpen ? 'open' : ''}`}
+                        type="button"
+                        data-toggle={`day-${d.day}`}
+                        title="Desplegar los proposals del día"
+                        aria-label="Desplegar proposals del día"
+                      >
+                        <span class="num">{d.count}</span>
+                        <span class="exp-icon">▸</span>
+                      </button>
+                    </div>
+                    <div class={`drawer ${dayOpen ? 'open' : ''}`} data-drawer={`day-${d.day}`}>
+                      <div class="inner">
+                        <div class="day-sub">
+                          {d.proposals.map(p => (
+                            <a class={`item sub ${p.id === selectedId ? 'active' : ''}`} href={`/?proposal=${encodeURIComponent(p.id)}`}>
+                              <span class="info"><span class="title">{p.title}</span></span>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>
 
-        <!-- Proposals -->
-        <button class={`nav-item ${selectedId ? 'on open' : ''}`} type="button" data-toggle="proposals">
-          <span class="icon">📋</span><span>Proposals</span><span class="chev">▸</span>
-        </button>
-        <div class={`drawer ${selectedId ? 'open' : ''}`} data-drawer="proposals">
-          <div class="inner">
-            <div class="drawer-pad">
-              {listError && <p class="err">No pude leer SurrealDB: {listError}</p>}
-              {!listError && proposals.length === 0 && <p class="empty">No hay proposals todavía.</p>}
-              {proposals.map(p => (
-                <a class={`item ${p.id === selectedId ? 'active' : ''}`} href={`/?proposal=${encodeURIComponent(p.id)}`}>
-                  <span class="badge" style={`background:${STATUS_COLOR[p.status] ?? '#5b6b8c'}`}>{p.status}</span>
-                  <span class="info">
-                    <span class="title">{p.title}</span>
-                    <span class="meta">{p.raw_count} raw · {new Date(p.created_at).toLocaleDateString('es-ES')}</span>
-                  </span>
-                </a>
-              ))}
+        {drafts.length > 0 && (
+          <Fragment>
+            <!-- Borradores: proposals sin commitear (viven fuera de cualquier día) -->
+            <button class={`nav-item ${draftsOpen ? 'on open' : ''}`} type="button" data-toggle="drafts">
+              <span class="icon">📝</span><span>Borradores</span><span class="count">{drafts.length}</span>
+            </button>
+            <div class={`drawer ${draftsOpen ? 'open' : ''}`} data-drawer="drafts">
+              <div class="inner">
+                <div class="drawer-pad">
+                  {drafts.map(p => (
+                    <a class={`item ${p.id === selectedId ? 'active' : ''}`} href={`/?proposal=${encodeURIComponent(p.id)}`}>
+                      <span class="badge" style={`background:${STATUS_COLOR[p.status] ?? '#5b6b8c'}`}>{p.status}</span>
+                      <span class="info">
+                        <span class="title">{p.title}</span>
+                        <span class="meta">{p.raw_count} raw · {new Date(p.created_at).toLocaleDateString('es-ES')}</span>
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          </Fragment>
+        )}
       </div>
     </nav>
 

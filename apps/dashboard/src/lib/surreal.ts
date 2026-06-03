@@ -180,6 +180,30 @@ export async function diaryDayCounts(): Promise<DiaryDayCount[]> {
   return rows ?? []
 }
 
+export type CommittedProposalRow = { id: string; day: string; status: string; title: string }
+
+/** Every committed proposal with its Madrid day + a light title (no payloads
+ * cross the wire), newest first — for nesting proposals under their day in the
+ * diary nav. Title = the informe-block (first narrative) or first created note. */
+export async function listCommittedProposalRows(): Promise<CommittedProposalRow[]> {
+  const db = await getDb()
+  const [rows] = await db.query<
+    [Array<{ id: unknown; day: string; status: string; narrative?: string; first_note?: string }>]
+  >(
+    `SELECT meta::id(id) AS id, ${MADRID_DAY} AS day, status, created_at,
+            payload.narrative_blocks[0].content AS narrative,
+            payload.note_creates[0].title AS first_note
+     FROM proposal WHERE status = 'committed'
+     ORDER BY day DESC, created_at DESC`
+  )
+  return (rows ?? []).map(r => ({
+    id: String(r.id),
+    day: r.day,
+    status: r.status,
+    title: oneLine(r.narrative) || oneLine(r.first_note) || String(r.id)
+  }))
+}
+
 /** The committed proposals that landed on a given Madrid day (`YYYY-MM-DD`),
  * with the bits the diary fuses over. Filtered in SurrealDB. Read-only. */
 export async function listCommittedProposalsForDay(day: string): Promise<CommittedProposal[]> {

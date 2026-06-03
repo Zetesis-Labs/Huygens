@@ -2,8 +2,8 @@ import { type FuseItem, fuseProposals, mergeExistingEdges } from './graph'
 import { type LaidOutGraph, layoutGraph } from './layout'
 import {
   type CommittedProposal,
-  diaryDayCounts,
   existingEdgesAmong,
+  listCommittedProposalRows,
   listCommittedProposalsForDay,
   type Proposal,
   resolveLabels
@@ -18,12 +18,21 @@ export function dayLabel(day: string): string {
   return labelFmt.format(new Date(`${day}T12:00:00Z`))
 }
 
-export type DiaryDay = { day: string; label: string; count: number }
+export type DiaryProposal = { id: string; title: string; status: string }
+export type DiaryDay = { day: string; label: string; count: number; proposals: DiaryProposal[] }
 
-/** Days that have at least one committed proposal, newest first. */
+/** Days with at least one committed proposal, newest first, each with its
+ * committed proposals nested — so the diary nav can drill day → proposals
+ * instead of keeping a separate flat Proposals section. */
 export async function listDiaryDays(): Promise<DiaryDay[]> {
-  const days = await diaryDayCounts()
-  return days.map(d => ({ day: d.day, label: dayLabel(d.day), count: d.count }))
+  const rows = await listCommittedProposalRows()
+  const byDay = new Map<string, DiaryProposal[]>()
+  for (const r of rows) {
+    const list = byDay.get(r.day) ?? []
+    list.push({ id: r.id, title: r.title, status: r.status })
+    byDay.set(r.day, list)
+  }
+  return [...byDay].map(([day, proposals]) => ({ day, label: dayLabel(day), count: proposals.length, proposals }))
 }
 
 function asProposal(p: CommittedProposal): Proposal {
