@@ -19,7 +19,7 @@ export function dayLabel(day: string): string {
   return labelFmt.format(new Date(`${day}T12:00:00Z`))
 }
 
-export type DiaryProposal = { id: string; title: string; status: string }
+export type DiaryProposal = { id: string; title: string; status: string; kind: string | null }
 export type DiaryDay = { day: string; label: string; count: number; proposals: DiaryProposal[] }
 
 /** Days with at least one committed proposal, newest first, each with its
@@ -30,7 +30,7 @@ export async function listDiaryDays(): Promise<DiaryDay[]> {
   const byDay = new Map<string, DiaryProposal[]>()
   for (const r of rows) {
     const list = byDay.get(r.day) ?? []
-    list.push({ id: r.id, title: r.title, status: r.status })
+    list.push({ id: r.id, title: r.title, status: r.status, kind: r.kind })
     byDay.set(r.day, list)
   }
   return [...byDay].map(([day, proposals]) => ({ day, label: dayLabel(day), count: proposals.length, proposals }))

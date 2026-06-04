@@ -4,6 +4,7 @@ import {
   AffectActionSchema,
   BLOCK_ID_RE,
   EdgeKindSchema,
+  InformeKindSchema,
   NOTE_ID_RE,
   NoteStateSchema,
   NoteTypeSlugSchema,
@@ -45,7 +46,10 @@ const DescriptiveBlockSchema = z.object({
 const NarrativeBlockSchema = z.object({
   temp_id: z.string().regex(TEMP_ID_RE),
   content: z.string().min(1),
-  raw_ids: z.array(z.string().regex(RAW_CAPTURE_ID_RE)).min(1)
+  raw_ids: z.array(z.string().regex(RAW_CAPTURE_ID_RE)).min(1),
+  // Set by the planning/review rituals so the dashboard can surface this informe
+  // as a first-class plan/review (Bitácora). Absent for a plain processing informe.
+  kind: InformeKindSchema.optional()
 })
 
 export const NoteCreateSchema = z.object({
@@ -126,7 +130,7 @@ export type StoredNoteCreate = {
   metadata?: Record<string, unknown>
   descriptive_blocks: { content: string }[]
 }
-export type StoredNarrativeBlock = { id: string; content: string; raw_ids: string[] }
+export type StoredNarrativeBlock = { id: string; content: string; raw_ids: string[]; kind?: string }
 export type StoredNoteUpdate = {
   id: string
   title?: string

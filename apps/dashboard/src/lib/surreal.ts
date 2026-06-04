@@ -73,7 +73,19 @@ export type ProposalSummary = {
 /** Collapse whitespace and clamp to a single short line. */
 function oneLine(text: string | undefined, max = 90): string {
   if (!text) return ''
-  const s = text.replace(/\s+/g, ' ').trim()
+  // Strip markdown so the nav clamp reads as clean text (no `##`, `**`, `` ` ``).
+  const s = text
+    .replace(/```[\s\S]*?```/g, ' ') // fenced code
+    .replace(/^#{1,6}\s+/gm, '') // headings
+    .replace(/^\s*[-*+]\s+/gm, '') // bullet markers
+    .replace(/^\s*\d+\.\s+/gm, '') // ordered markers
+    .replace(/\*\*([^*]+)\*\*/g, '$1') // bold
+    .replace(/__([^_]+)__/g, '$1') // bold (alt)
+    .replace(/(^|[^*])\*([^*]+)\*/g, '$1$2') // italic
+    .replace(/`([^`]+)`/g, '$1') // inline code
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1') // links → text
+    .replace(/\s+/g, ' ')
+    .trim()
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`
 }
 
@@ -180,19 +192,22 @@ export async function diaryDayCounts(): Promise<DiaryDayCount[]> {
   return rows ?? []
 }
 
-export type CommittedProposalRow = { id: string; day: string; status: string; title: string }
+export type CommittedProposalRow = { id: string; day: string; status: string; title: string; kind: string | null }
 
 /** Every committed proposal with its Madrid day + a light title (no payloads
  * cross the wire), newest first — for nesting proposals under their day in the
- * diary nav. Title = the informe-block (first narrative) or first created note. */
+ * diary nav. Title = the informe-block (first narrative) or first created note.
+ * `kind` is the planning/review tag (plan_day / review_day / …) when the informe
+ * is a ritual output, else null — drives the diary badge. */
 export async function listCommittedProposalRows(): Promise<CommittedProposalRow[]> {
   const db = await getDb()
   const [rows] = await db.query<
-    [Array<{ id: unknown; day: string; status: string; narrative?: string; first_note?: string }>]
+    [Array<{ id: unknown; day: string; status: string; narrative?: string; first_note?: string; kind?: string }>]
   >(
     `SELECT meta::id(id) AS id, ${MADRID_DAY} AS day, status, created_at,
             payload.narrative_blocks[0].content AS narrative,
-            payload.note_creates[0].title AS first_note
+            payload.note_creates[0].title AS first_note,
+            payload.narrative_blocks[WHERE kind IS NOT NONE][0].kind AS kind
      FROM proposal WHERE status = 'committed'
      ORDER BY day DESC, created_at DESC`
   )
@@ -200,9 +215,37 @@ export async function listCommittedProposalRows(): Promise<CommittedProposalRow[
     id: String(r.id),
     day: r.day,
     status: r.status,
+    kind: r.kind ?? null,
     // Generous single-line clamp: the nav truncates it visually with CSS, but the
     // full string rides on the link's `title` so a hover shows it complete.
     title: oneLine(r.narrative, 240) || oneLine(r.first_note, 240) || String(r.id)
+  }))
+}
+
+export type InformeRow = { id: string; day: string; kind: string; content: string; created_at: string }
+
+/** Planning/review informes (committed proposals whose narrative block carries a
+ * `kind` tag), newest first, with their Madrid day and full markdown content —
+ * the Bitácora feed. Read-only. */
+export async function listInformes(): Promise<InformeRow[]> {
+  const db = await getDb()
+  const [rows] = await db.query<
+    [Array<{ id: unknown; day: string; kind: string; content: string; created_at: unknown }>]
+  >(
+    `SELECT meta::id(id) AS id, ${MADRID_DAY} AS day,
+            payload.narrative_blocks[WHERE kind IS NOT NONE][0].kind    AS kind,
+            payload.narrative_blocks[WHERE kind IS NOT NONE][0].content AS content,
+            (result.committed_at ?? updated_at) AS created_at
+     FROM proposal
+     WHERE status = 'committed' AND count(payload.narrative_blocks[WHERE kind IS NOT NONE]) > 0
+     ORDER BY day DESC, created_at DESC`
+  )
+  return (rows ?? []).map(r => ({
+    id: String(r.id),
+    day: r.day,
+    kind: r.kind,
+    content: r.content,
+    created_at: String(r.created_at)
   }))
 }
 

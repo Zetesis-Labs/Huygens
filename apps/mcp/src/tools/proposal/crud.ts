@@ -39,7 +39,8 @@ export function realizePayload(input: ProposalPayload): StoredProposalPayload {
     narrative_blocks: input.narrative_blocks.map(b => ({
       id: map.get(b.temp_id) as string,
       content: b.content,
-      raw_ids: b.raw_ids
+      raw_ids: b.raw_ids,
+      ...(b.kind ? { kind: b.kind } : {})
     })),
     note_creates: input.note_creates.map(n => ({
       id: map.get(n.temp_id) as string,
