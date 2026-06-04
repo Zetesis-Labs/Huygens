@@ -1,6 +1,7 @@
 ---
 import ChangeGraph from '../components/ChangeGraph.tsx'
 import DateRangePicker from '../components/DateRangePicker.tsx'
+import { buildBitacora } from '../lib/bitacoraView'
 import { buildDayView, buildRangeView, listDiaryDays } from '../lib/diaryView'
 import { buildMitView } from '../lib/mitView'
 import { buildProposalView } from '../lib/proposalView'
@@ -14,11 +15,12 @@ import { listMits, listProposals } from '../lib/surreal'
 // ?day=<YYYY-MM-DD>) so the whole view is server-rendered and deep-linkable.
 const params = Astro.url.searchParams
 const mitsView = params.get('view') === 'mits'
-const selectedDay = mitsView ? null : params.get('day')
+const bitacoraView = params.get('view') === 'bitacora'
+const selectedDay = mitsView || bitacoraView ? null : params.get('day')
 const from = params.get('from')
 const to = params.get('to')
-const rangeMode = !mitsView && !selectedDay && Boolean(from && to)
-const selectedId = mitsView || selectedDay || rangeMode ? null : params.get('proposal')
+const rangeMode = !mitsView && !bitacoraView && !selectedDay && Boolean(from && to)
+const selectedId = mitsView || bitacoraView || selectedDay || rangeMode ? null : params.get('proposal')
 
 let proposals = [] as Awaited<ReturnType<typeof listProposals>>
 let listError: string | null = null
@@ -58,9 +60,11 @@ let proposalView: Awaited<ReturnType<typeof buildProposalView>> | null = null
 let dayView: Awaited<ReturnType<typeof buildDayView>> = null
 let rangeView: Awaited<ReturnType<typeof buildRangeView>> = null
 let mitView: Awaited<ReturnType<typeof buildMitView>> = null
+let bitacora: Awaited<ReturnType<typeof buildBitacora>> = []
 let viewError: string | null = null
 try {
-  if (mitsView) mitView = await buildMitView(todayMadrid)
+  if (bitacoraView) bitacora = await buildBitacora()
+  else if (mitsView) mitView = await buildMitView(todayMadrid)
   else if (selectedId) proposalView = await buildProposalView(selectedId)
   else if (selectedDay) dayView = await buildDayView(selectedDay)
   else if (rangeMode && from && to) rangeView = await buildRangeView(from, to)
@@ -73,6 +77,14 @@ const STATUS_COLOR: Record<string, string> = {
   committed: '#2e7d32',
   discarded: '#8a93a6',
   superseded: '#5b6b8c'
+}
+
+// Diary badge for planning/review informes (Bitácora kinds).
+const KIND_BADGE: Record<string, string> = {
+  plan_day: '🎯',
+  review_day: '🔄',
+  plan_week: '🗓️',
+  review_week: '🔁'
 }
 
 // Diary nav: which committed day a selected proposal belongs to (to auto-expand
@@ -141,6 +153,18 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
       .informe .head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
       .informe .head h1 { margin: 0; font-size: 13px; font-family: ui-monospace, monospace; word-break: break-all; }
       .narrative { font-size: 14px; line-height: 1.55; white-space: pre-wrap; margin: 0 0 16px; padding-bottom: 12px; border-bottom: 1px solid #f1f3f6; }
+
+      /* ---- Bitácora (lector cronológico de planes/reviews) ---- */
+      .bitacora { position: absolute; inset: 0; overflow: auto; padding: 24px 28px; }
+      .bitacora .bw { margin: 0 0 28px; }
+      .bitacora .bw-head { position: sticky; top: 0; z-index: 1; margin: 0 0 12px; padding: 6px 0; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #6b7280; background: #fafbfc; }
+      .bitacora .bd { margin: 0 0 16px; padding-left: 12px; border-left: 2px solid #eef0f2; }
+      .bitacora .bd-head { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: #2a3346; text-transform: capitalize; }
+      .bitacora .binforme { background: #fff; border: 1px solid #e6e8eb; border-radius: 10px; padding: 12px 14px; margin: 0 0 10px; max-width: 760px; }
+      .bitacora .bi-head { margin-bottom: 6px; }
+      .bitacora .bi-kind { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #2f54eb; }
+      .bitacora .bi-body { font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; color: #1f2530; }
+      .kind-chip { flex: 0 0 auto; font-size: 12px; line-height: 1; margin-right: 2px; }
       .narrative:last-of-type { border-bottom: none; }
       .counts { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid #eef0f2; padding-top: 14px; }
       .chip { font-size: 12px; background: #f4f4f6; border-radius: 999px; padding: 3px 10px; color: #3a4252; }
@@ -233,6 +257,11 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
           {todayMits.length > 0 && <span class="count">{todayMits.length}</span>}
         </a>
 
+        <!-- Bitácora: planes y revisiones (día/semana) leídos como hilo (/?view=bitacora) -->
+        <a class={`nav-item ${bitacoraView ? 'on' : ''}`} href="/?view=bitacora">
+          <span class="icon">📖</span><span>Bitácora</span>
+        </a>
+
         <!-- Diario: días, cada uno desplegable a sus proposals committed -->
         <button class={`nav-item ${diarioOpen ? 'on open' : ''}`} type="button" data-toggle="diario">
           <span class="icon">📓</span><span>Diario</span><span class="chev">▸</span>
@@ -265,7 +294,8 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
                       <div class="inner">
                         <div class="day-sub">
                           {d.proposals.map(p => (
-                            <a class={`item sub ${p.id === selectedId ? 'active' : ''}`} href={`/?proposal=${encodeURIComponent(p.id)}`} title={p.title}>
+                            <a class={`item sub ${p.id === selectedId ? 'active' : ''}`} href={`/?proposal=${encodeURIComponent(p.id)}`} title={p.kind ? `${p.kind} · ${p.title}` : p.title}>
+                              {p.kind && <span class="kind-chip" title={p.kind}>{KIND_BADGE[p.kind] ?? '📄'}</span>}
                               <span class="info"><span class="title">{p.title}</span></span>
                             </a>
                           ))}
@@ -311,7 +341,32 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
     <div class="main">
       <div class="canvas">
         {viewError && <div class="placeholder err">Error: {viewError}</div>}
-        {!viewError && !hasGraph && <div class="placeholder">Selecciona una proposal, un día del Diario o un rango (Date review).</div>}
+        {!viewError && !hasGraph && !bitacoraView && <div class="placeholder">Selecciona una proposal, un día del Diario o un rango (Date review).</div>}
+        {!viewError && bitacoraView && bitacora.length === 0 && (
+          <div class="placeholder">Bitácora vacía. Los planes y cierres (rituales <code>plan_day</code> / <code>review_day</code>) aparecerán aquí en cuanto el agente los registre.</div>
+        )}
+        {!viewError && bitacoraView && bitacora.length > 0 && (
+          <article class="bitacora">
+            {bitacora.map(w => (
+              <section class="bw">
+                <h2 class="bw-head">{w.label}</h2>
+                {w.days.map(d => (
+                  <div class="bd">
+                    <h3 class="bd-head">{d.label}</h3>
+                    {d.entries.map(e => (
+                      <div class="binforme">
+                        <div class="bi-head">
+                          <span class="bi-kind">{e.kindIcon} {e.kindLabel}</span>
+                        </div>
+                        <div class="bi-body">{e.content}</div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </section>
+            ))}
+          </article>
+        )}
         {!viewError && selectedId && !proposalView?.proposal && <div class="placeholder">Proposal no encontrada.</div>}
         {!viewError && selectedDay && !dayView && <div class="placeholder">Sin cambios ese día.</div>}
         {!viewError && rangeMode && !rangeView && <div class="placeholder">Sin cambios en ese rango.</div>}

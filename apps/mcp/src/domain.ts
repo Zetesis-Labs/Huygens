@@ -45,6 +45,15 @@ export const TraceEdgeKindSchema = z.enum(TRACE_EDGE_KINDS)
 /** Every edge (RELATION) table in the schema. The graph's full edge vocabulary. */
 export const ALL_EDGE_TABLES = [...EDGE_KINDS, ...TRACE_EDGE_KINDS] as const
 
+/** Planning/review informe-blocks. When a narrative block is the output of a
+ * planning or review ritual (plan_day / review_day / plan_week / review_week),
+ * it carries one of these as `kind` so the dashboard can surface it as a
+ * first-class plan/review (the Bitácora) rather than a generic informe. A plain
+ * processing informe (process_inbox) has no kind. */
+export const INFORME_KINDS = ['plan_day', 'review_day', 'plan_week', 'review_week'] as const
+export type InformeKind = (typeof INFORME_KINDS)[number]
+export const InformeKindSchema = z.enum(INFORME_KINDS)
+
 export const AFFECT_ACTIONS = ['created', 'updated', 'state_changed', 'linked', 'archived'] as const
 export type AffectAction = (typeof AFFECT_ACTIONS)[number]
 export const AffectActionSchema = z.enum(AFFECT_ACTIONS)

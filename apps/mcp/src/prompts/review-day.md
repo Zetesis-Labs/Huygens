@@ -33,7 +33,9 @@ el guion operativo, no la fuente de verdad.
    Es la evidencia literal del cierre.
 5. **Redacta el cierre como informe-block.** Un `block` narrativo
    (`block_kind='narrative'`) trazado a esa raw vía `derived_from` (`raw_ids`):
-   qué se hizo, qué se mueve y por qué, qué aprendizaje queda del día.
+   qué se hizo, qué se mueve y por qué, qué aprendizaje queda del día. Etiqueta el
+   narrative-block con **`kind: 'review_day'`** para que el dashboard lo reconozca
+   como revisión en la Bitácora.
 6. **Propón las mutaciones, visibles.** Una sola propuesta con `create_proposal`
    que reúna los `note_updates` (los `state` / `mit_for`) más el informe-block.
    Repasa el conjunto con `get_proposal`. **No mutes el grafo fuera de una

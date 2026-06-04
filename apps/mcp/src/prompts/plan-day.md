@@ -38,7 +38,8 @@ el guion operativo, no la fuente de verdad.
 6. **Redacta el plan como informe-block.** Un `block` narrativo
    (`block_kind='narrative'`) trazado a ese raw vía `derived_from` (`raw_ids`):
    qué MITs son hoy, por qué esas, cómo se ligan a objetivos/proyectos, qué se
-   deja fuera a propósito.
+   deja fuera a propósito. Etiqueta el narrative-block con **`kind: 'plan_day'`**
+   para que el dashboard lo reconozca como plan en la Bitácora.
 7. **Propón las mutaciones, visibles.** Una sola propuesta con `update_proposal`
    que ponga `mit_for: '<día>'` en las tareas elegidas (campo top-level, formato
    `YYYY-MM-DD`, **nunca dentro de `metadata`**) más el informe-block. Repasa el
