@@ -1,6 +1,7 @@
 ---
 import ChangeGraph from '../components/ChangeGraph.tsx'
 import DateRangePicker from '../components/DateRangePicker.tsx'
+import Markdown from '../components/Markdown.tsx'
 import { buildBitacora } from '../lib/bitacoraView'
 import { buildDayView, buildRangeView, listDiaryDays } from '../lib/diaryView'
 import { buildMitView } from '../lib/mitView'
@@ -152,7 +153,15 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
       .informe h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; }
       .informe .head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
       .informe .head h1 { margin: 0; font-size: 13px; font-family: ui-monospace, monospace; word-break: break-all; }
-      .narrative { font-size: 14px; line-height: 1.55; white-space: pre-wrap; margin: 0 0 16px; padding-bottom: 12px; border-bottom: 1px solid #f1f3f6; }
+      .narrative { font-size: 14px; line-height: 1.55; margin: 0 0 16px; padding-bottom: 12px; border-bottom: 1px solid #f1f3f6; }
+      .narrative > :first-child { margin-top: 0; }
+      .narrative > :last-child { margin-bottom: 0; }
+      .narrative h1, .narrative h2, .narrative h3 { font-size: 14px; font-weight: 700; margin: 12px 0 6px; color: #2a3346; }
+      .narrative p { margin: 0 0 8px; }
+      .narrative ul, .narrative ol { margin: 0 0 8px; padding-left: 20px; }
+      .narrative li { margin: 2px 0; }
+      .narrative code { background: #f1f3f6; padding: 1px 5px; border-radius: 4px; font-family: ui-monospace, monospace; font-size: 12px; }
+      .narrative a { color: #2f54eb; }
 
       /* ---- Bitácora (lector cronológico de planes/reviews) ---- */
       .bitacora { position: absolute; inset: 0; overflow: auto; padding: 24px 28px; }
@@ -163,7 +172,16 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
       .bitacora .binforme { background: #fff; border: 1px solid #e6e8eb; border-radius: 10px; padding: 12px 14px; margin: 0 0 10px; max-width: 760px; }
       .bitacora .bi-head { margin-bottom: 6px; }
       .bitacora .bi-kind { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #2f54eb; }
-      .bitacora .bi-body { font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; color: #1f2530; }
+      .bitacora .bi-body { font-size: 13.5px; line-height: 1.55; color: #1f2530; }
+      .bitacora .bi-body > :first-child { margin-top: 0; }
+      .bitacora .bi-body > :last-child { margin-bottom: 0; }
+      .bitacora .bi-body h1, .bitacora .bi-body h2, .bitacora .bi-body h3 { font-size: 14px; font-weight: 700; margin: 14px 0 6px; color: #2a3346; }
+      .bitacora .bi-body p { margin: 0 0 8px; }
+      .bitacora .bi-body ul, .bitacora .bi-body ol { margin: 0 0 8px; padding-left: 20px; }
+      .bitacora .bi-body li { margin: 2px 0; }
+      .bitacora .bi-body code { background: #f1f3f6; padding: 1px 5px; border-radius: 4px; font-family: ui-monospace, monospace; font-size: 12px; }
+      .bitacora .bi-body strong { font-weight: 700; }
+      .bitacora .bi-body a { color: #2f54eb; }
       .kind-chip { flex: 0 0 auto; font-size: 12px; line-height: 1; margin-right: 2px; }
       .narrative:last-of-type { border-bottom: none; }
       .counts { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid #eef0f2; padding-top: 14px; }
@@ -358,7 +376,7 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
                         <div class="bi-head">
                           <span class="bi-kind">{e.kindIcon} {e.kindLabel}</span>
                         </div>
-                        <div class="bi-body">{e.content}</div>
+                        <div class="bi-body"><Markdown content={e.content} /></div>
                       </div>
                     ))}
                   </div>
@@ -388,7 +406,7 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
             <h1>{proposalView.proposal.id}</h1>
           </div>
           <h2>Informe</h2>
-          {proposalView.narratives.map(n => <p class="narrative">{n}</p>)}
+          {proposalView.narratives.map(n => <div class="narrative"><Markdown content={n} /></div>)}
           {proposalView.counts && (
             <div class="counts">
               <span
@@ -418,7 +436,7 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
             <span class="count">{dayView.counts.proposals} proposals</span>
           </div>
           <h2>Cambios del día</h2>
-          {dayView.narratives.map(n => <p class="narrative">{n}</p>)}
+          {dayView.narratives.map(n => <div class="narrative"><Markdown content={n} /></div>)}
           <div class="counts">
             <span class="chip" title="relaciones pre-existentes hidratadas en vivo">⟳ contexto actual</span>
             <span class="chip">{dayView.counts.raws} raw</span>
@@ -437,7 +455,7 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
             <span class="count">{rangeView.counts.proposals} proposals</span>
           </div>
           <h2>Cambios del rango</h2>
-          {rangeView.narratives.map(n => <p class="narrative">{n}</p>)}
+          {rangeView.narratives.map(n => <div class="narrative"><Markdown content={n} /></div>)}
           <div class="counts">
             <span class="chip" title="relaciones pre-existentes hidratadas en vivo">⟳ contexto actual</span>
             <span class="chip">{rangeView.counts.raws} raw</span>
