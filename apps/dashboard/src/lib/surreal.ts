@@ -73,7 +73,19 @@ export type ProposalSummary = {
 /** Collapse whitespace and clamp to a single short line. */
 function oneLine(text: string | undefined, max = 90): string {
   if (!text) return ''
-  const s = text.replace(/\s+/g, ' ').trim()
+  // Strip markdown so the nav clamp reads as clean text (no `##`, `**`, `` ` ``).
+  const s = text
+    .replace(/```[\s\S]*?```/g, ' ') // fenced code
+    .replace(/^#{1,6}\s+/gm, '') // headings
+    .replace(/^\s*[-*+]\s+/gm, '') // bullet markers
+    .replace(/^\s*\d+\.\s+/gm, '') // ordered markers
+    .replace(/\*\*([^*]+)\*\*/g, '$1') // bold
+    .replace(/__([^_]+)__/g, '$1') // bold (alt)
+    .replace(/(^|[^*])\*([^*]+)\*/g, '$1$2') // italic
+    .replace(/`([^`]+)`/g, '$1') // inline code
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1') // links → text
+    .replace(/\s+/g, ' ')
+    .trim()
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`
 }
 
