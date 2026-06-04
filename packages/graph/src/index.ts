@@ -13,6 +13,17 @@ export type FlowNodeData = {
    * or 'raw' | 'block' | '?'. Drives the icon and colour. */
   type: string
   status: NodeStatus
+  /** ZTD note state (CLARIFIED|ACTIVE|WAITING|SOMEDAY|DONE|ARCHIVED). Drives the
+   * state filter and the DONE styling (dimmed like context, but solid border).
+   * Absent for raw/block nodes and notes whose state couldn't be resolved. */
+  state?: string
+  /** This node is a MIT (Most Important Task) in the MITs view: rendered as the
+   * focus — solid, full opacity, 🎯 badge — regardless of status. */
+  mit?: boolean
+  /** This MIT is overdue: dated before today and not DONE/ARCHIVED. Rendered with
+   * an amber "vencido" accent so an unfinished MIT doesn't silently vanish when
+   * the day rolls over — it stays on the board until done, moved, or dropped. */
+  overdue?: boolean
   lines: string[]
   /** Full content of the note's descriptive blocks (markdown), shown on click. */
   descriptives: string[]
@@ -24,8 +35,9 @@ export type FlowNode = { id: string; data: FlowNodeData }
 export type FlowEdge = { id: string; source: string; target: string; label: string; preexisting?: boolean }
 export type FlowGraph = { nodes: FlowNode[]; edges: FlowEdge[] }
 
-/** Human label + type of an existing record a proposal references. */
-export type RefInfo = { type: string; title: string }
+/** Human label + type (+ live ZTD state for notes) of an existing record a
+ * proposal references. */
+export type RefInfo = { type: string; title: string; state?: string }
 
 /** A relation that already exists in the KG between two records. */
 export type ExistingEdge = { source: string; target: string; kind: string }
@@ -102,6 +114,7 @@ export function proposalToFlow(payload: GraphPayload, labels: Record<string, Ref
         title: info?.title ?? id,
         type: info?.type ?? typeFromId(id),
         status: 'context',
+        state: info?.state,
         lines: [],
         descriptives: []
       }
@@ -120,6 +133,7 @@ export function proposalToFlow(payload: GraphPayload, labels: Record<string, Ref
         title: n.title,
         type: n.type_slug,
         status: 'created',
+        state: n.state,
         lines: createAttrLines(n),
         descriptives: n.descriptive_blocks.map(b => b.content)
       }
@@ -133,6 +147,7 @@ export function proposalToFlow(payload: GraphPayload, labels: Record<string, Ref
         title: info?.title ?? n.title ?? n.id,
         type: info?.type ?? '?',
         status: 'updated',
+        state: n.state ?? info?.state,
         lines: updateChangeLines(n),
         descriptives: n.descriptive_blocks_append.map(b => b.content)
       }

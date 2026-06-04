@@ -9,9 +9,12 @@ type GraphView = {
   hiddenTypes: ReadonlySet<string>
   /** Relation kinds currently toggled off. */
   hiddenKinds: ReadonlySet<string>
+  /** Note states currently filtered out. */
+  hiddenStates: ReadonlySet<string>
   toggleHydrated: () => void
   toggleType: (type: string) => void
   toggleKind: (kind: string) => void
+  toggleState: (state: string) => void
 }
 
 const GraphViewCtx = createContext<GraphView | null>(null)
@@ -27,17 +30,20 @@ export function GraphViewProvider({ children }: { children: ReactNode }) {
   const [showHydrated, setShowHydrated] = useState(true)
   const [hiddenTypes, setHiddenTypes] = useState<ReadonlySet<string>>(() => new Set())
   const [hiddenKinds, setHiddenKinds] = useState<ReadonlySet<string>>(() => new Set())
+  const [hiddenStates, setHiddenStates] = useState<ReadonlySet<string>>(() => new Set())
 
   const value = useMemo<GraphView>(
     () => ({
       showHydrated,
       hiddenTypes,
       hiddenKinds,
+      hiddenStates,
       toggleHydrated: () => setShowHydrated(v => !v),
       toggleType: type => setHiddenTypes(prev => toggled(prev, type)),
-      toggleKind: kind => setHiddenKinds(prev => toggled(prev, kind))
+      toggleKind: kind => setHiddenKinds(prev => toggled(prev, kind)),
+      toggleState: state => setHiddenStates(prev => toggled(prev, state))
     }),
-    [showHydrated, hiddenTypes, hiddenKinds]
+    [showHydrated, hiddenTypes, hiddenKinds, hiddenStates]
   )
 
   return <GraphViewCtx.Provider value={value}>{children}</GraphViewCtx.Provider>

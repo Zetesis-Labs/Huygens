@@ -36,6 +36,18 @@ const PROMPT_ENTRIES: PromptEntry[] = [
     description:
       'Guion para una sesión deliberada de procesamiento del inbox: de raw_capture a informe-block + mutaciones propuestas y aprobadas.',
     path: 'prompts/inbox-processing.md'
+  },
+  {
+    name: 'plan_day',
+    description:
+      'Ritual de planificación diaria: elegir 1-3 MITs (Most Important Tasks) del día como informe-block prospectivo + mutaciones mit_for propuestas y aprobadas.',
+    path: 'prompts/plan-day.md'
+  },
+  {
+    name: 'review_day',
+    description:
+      'Ritual de cierre del día: repasar los MITs de hoy y los vencidos y darles disposición (hecho / mover / soltar) como informe-block retrospectivo + mutaciones state/mit_for propuestas y aprobadas.',
+    path: 'prompts/review-day.md'
   }
 ]
 

@@ -61,3 +61,23 @@ export const KIND_LABEL: Record<string, string> = {
   blocked_by: 'Bloqueado por',
   mentions: 'Menciona'
 }
+
+/** Dot colour by ZTD note state, for the legend's state filter. */
+export const STATE_COLOR: Record<string, string> = {
+  CLARIFIED: '#5b6b8c',
+  ACTIVE: '#2e7d32',
+  WAITING: '#d97706',
+  SOMEDAY: '#8a93a6',
+  DONE: '#9aa3b2',
+  ARCHIVED: '#c3cbe0'
+}
+
+/** Human label by note state, for the legend. */
+export const STATE_LABEL: Record<string, string> = {
+  CLARIFIED: 'Clarificado',
+  ACTIVE: 'Activo',
+  WAITING: 'En espera',
+  SOMEDAY: 'Algún día',
+  DONE: 'Hecho',
+  ARCHIVED: 'Archivado'
+}

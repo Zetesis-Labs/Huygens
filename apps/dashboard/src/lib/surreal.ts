@@ -206,6 +206,81 @@ export async function listCommittedProposalRows(): Promise<CommittedProposalRow[
   }))
 }
 
+export type MitRow = { id: string; title: string; state: string; type: string; day: string; parent: string | null }
+
+/** Notes flagged as a MIT (`mit_for` set), newest MIT-day first, with their type
+ * and parent (project/area) title. `mit_for + 2h` → Madrid day, matching the
+ * diary's bucketing. Read-only. */
+export async function listMits(): Promise<MitRow[]> {
+  const db = await getDb()
+  const [rows] = await db.query<
+    [
+      Array<{
+        id: unknown
+        title: string
+        state: string
+        type?: string
+        mit_for: unknown
+        day: string
+        parent?: string | null
+      }>
+    ]
+  >(
+    `SELECT meta::id(id) AS id, title, state, type.slug AS type, mit_for,
+            time::format(mit_for + 2h, '%Y-%m-%d') AS day,
+            ->part_of->note[0].title AS parent
+     FROM note WHERE mit_for IS NOT NONE
+     ORDER BY mit_for DESC`
+  )
+  return (rows ?? []).map(r => ({
+    id: String(r.id),
+    title: r.title,
+    state: r.state,
+    type: r.type ?? '?',
+    day: r.day,
+    parent: r.parent ?? null
+  }))
+}
+
+export type NoteCard = { type: string; title: string; state?: string }
+
+/** Resolve full note record ids to graph cards (type/title/state). Used by the
+ * MITs view to label the MITs + their context nodes. Read-only. */
+export async function resolveNoteCards(fullIds: string[]): Promise<Record<string, NoteCard>> {
+  if (fullIds.length === 0) return {}
+  const db = await getDb()
+  const [rows] = await db.query<[Array<{ id: unknown; title?: string; type?: string; state?: string }>]>(
+    'SELECT id, title, type.slug AS type, state FROM note WHERE id IN $ids',
+    { ids: fullIds.map(s => new StringRecordId(s)) }
+  )
+  const out: Record<string, NoteCard> = {}
+  for (const r of rows ?? [])
+    out[String(r.id)] = { type: r.type ?? '?', title: r.title ?? String(r.id), state: r.state }
+  return out
+}
+
+/** The context around a set of MIT notes: their `part_of` ancestry (up to 4 hops:
+ * project → area → objetivo) and their OPEN blockers (`blocked_by` to notes not
+ * DONE/ARCHIVED). Returns full record ids (deduped). Read-only. */
+export async function relatedNoteIds(fullMitIds: string[]): Promise<string[]> {
+  if (fullMitIds.length === 0) return []
+  const db = await getDb()
+  const [rows] = await db.query<[Array<{ related: unknown[] }>]>(
+    `SELECT array::distinct(array::flatten([
+        ->part_of->note.id,
+        ->part_of->note->part_of->note.id,
+        ->part_of->note->part_of->note->part_of->note.id,
+        ->part_of->note->part_of->note->part_of->note->part_of->note.id,
+        ->blocked_by->note[WHERE state NOT IN ['DONE', 'ARCHIVED']].id
+      ])) AS related
+     FROM note WHERE id IN $ids`,
+    { ids: fullMitIds.map(s => new StringRecordId(s)) }
+  )
+  const out = new Set<string>()
+  for (const r of rows ?? []) for (const id of r.related ?? []) out.add(String(id))
+  return [...out]
+}
+
 /** The committed proposals that landed on a given Madrid day (`YYYY-MM-DD`),
  * with the bits the diary fuses over. Filtered in SurrealDB. Read-only. */
 export async function listCommittedProposalsForDay(day: string): Promise<CommittedProposal[]> {
@@ -297,7 +372,9 @@ function referencedRealIds(p: Proposal): string[] {
 
 /** Type + human title of the existing records a proposal references, so the
  * graph can icon/colour them by type and show real titles instead of bare ids. */
-export async function resolveLabels(p: Proposal): Promise<Record<string, { type: string; title: string }>> {
+export async function resolveLabels(
+  p: Proposal
+): Promise<Record<string, { type: string; title: string; state?: string }>> {
   const ids = referencedRealIds(p)
   if (ids.length === 0) return {}
   const db = await getDb()
@@ -307,21 +384,22 @@ export async function resolveLabels(p: Proposal): Promise<Record<string, { type:
   const params = { ids: ids.map(s => new StringRecordId(s)) }
   const [notes, raws, blocks] = await db.query<
     [
-      Array<{ id: unknown; title?: string; type?: unknown }>,
+      Array<{ id: unknown; title?: string; type?: unknown; state?: string }>,
       Array<{ id: unknown; content?: string }>,
       Array<{ id: unknown; content?: string }>
     ]
   >(
-    `SELECT id, title, type FROM note WHERE id IN $ids;
+    `SELECT id, title, type, state FROM note WHERE id IN $ids;
      SELECT id, content FROM raw_capture WHERE id IN $ids;
      SELECT id, content FROM block WHERE id IN $ids`,
     params
   )
-  const labels: Record<string, { type: string; title: string }> = {}
+  const labels: Record<string, { type: string; title: string; state?: string }> = {}
   for (const r of notes ?? [])
     labels[String(r.id)] = {
       type: String(r.type ?? '').replace(/^note_type:/, '') || '?',
-      title: r.title ?? String(r.id)
+      title: r.title ?? String(r.id),
+      state: r.state
     }
   for (const r of raws ?? []) labels[String(r.id)] = { type: 'raw', title: (r.content ?? '').slice(0, 60) }
   for (const r of blocks ?? []) labels[String(r.id)] = { type: 'block', title: (r.content ?? '').slice(0, 60) }

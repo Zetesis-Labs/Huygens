@@ -17,18 +17,20 @@ import { useGraphView } from './GraphViewContext'
  * opens the markdown modal. Must render inside a GraphViewProvider.
  */
 export default function GraphCanvas({ nodes, edges }: LaidOutGraph) {
-  const { hiddenTypes, hiddenKinds, showHydrated } = useGraphView()
+  const { hiddenTypes, hiddenKinds, hiddenStates, showHydrated } = useGraphView()
   const [modal, setModal] = useState<FlowNodeData | null>(null)
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState(nodes as unknown as Node[])
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState(toReactFlowEdges(edges))
 
-  // Ids of nodes hidden by a type toggle — also used to hide edges that would
-  // otherwise dangle into the gap left by a hidden endpoint.
+  // Ids of nodes hidden by a type or state filter — also used to hide edges that
+  // would otherwise dangle into the gap left by a hidden endpoint.
   const hiddenNodeIds = useMemo(() => {
     const ids = new Set<string>()
-    for (const n of nodes) if (hiddenTypes.has(n.data.type)) ids.add(n.id)
+    for (const n of nodes) {
+      if (hiddenTypes.has(n.data.type) || (n.data.state && hiddenStates.has(n.data.state))) ids.add(n.id)
+    }
     return ids
-  }, [nodes, hiddenTypes])
+  }, [nodes, hiddenTypes, hiddenStates])
 
   useEffect(() => {
     setRfNodes(ns => ns.map(n => ({ ...n, hidden: hiddenNodeIds.has(n.id) })))

@@ -2,8 +2,9 @@
 import ChangeGraph from '../components/ChangeGraph.tsx'
 import DateRangePicker from '../components/DateRangePicker.tsx'
 import { buildDayView, buildRangeView, listDiaryDays } from '../lib/diaryView'
+import { buildMitView } from '../lib/mitView'
 import { buildProposalView } from '../lib/proposalView'
-import { listProposals } from '../lib/surreal'
+import { listMits, listProposals } from '../lib/surreal'
 
 // Unified workspace: a single left panel with three nav sections (Inbox, Diario,
 // Proposals) and a main canvas. Inbox is a placeholder for now. Proposals lists
@@ -12,11 +13,12 @@ import { listProposals } from '../lib/surreal'
 // committed that day. The selection travels in the URL (?proposal=<id> or
 // ?day=<YYYY-MM-DD>) so the whole view is server-rendered and deep-linkable.
 const params = Astro.url.searchParams
-const selectedDay = params.get('day')
+const mitsView = params.get('view') === 'mits'
+const selectedDay = mitsView ? null : params.get('day')
 const from = params.get('from')
 const to = params.get('to')
-const rangeMode = !selectedDay && Boolean(from && to)
-const selectedId = selectedDay || rangeMode ? null : params.get('proposal')
+const rangeMode = !mitsView && !selectedDay && Boolean(from && to)
+const selectedId = mitsView || selectedDay || rangeMode ? null : params.get('proposal')
 
 let proposals = [] as Awaited<ReturnType<typeof listProposals>>
 let listError: string | null = null
@@ -33,12 +35,33 @@ try {
   /* best-effort diary list */
 }
 
+// MITs (Most Important Tasks): today's are the focus; the rest go under "otros días".
+// Madrid day = server clock + 2h, matching the diary's bucketing.
+let mits = [] as Awaited<ReturnType<typeof listMits>>
+try {
+  mits = await listMits()
+} catch {
+  /* best-effort MIT panel */
+}
+const todayMadrid = new Date(Date.now() + 2 * 3600 * 1000).toISOString().slice(0, 10)
+const todayMits = mits.filter(m => m.day === todayMadrid)
+const MIT_STATE_COLOR: Record<string, string> = {
+  ACTIVE: '#2e7d32',
+  CLARIFIED: '#5b6b8c',
+  WAITING: '#9a7d0a',
+  SOMEDAY: '#8a93a6',
+  DONE: '#9aa3b2',
+  ARCHIVED: '#c3cbe0'
+}
+
 let proposalView: Awaited<ReturnType<typeof buildProposalView>> | null = null
 let dayView: Awaited<ReturnType<typeof buildDayView>> = null
 let rangeView: Awaited<ReturnType<typeof buildRangeView>> = null
+let mitView: Awaited<ReturnType<typeof buildMitView>> = null
 let viewError: string | null = null
 try {
-  if (selectedId) proposalView = await buildProposalView(selectedId)
+  if (mitsView) mitView = await buildMitView(todayMadrid)
+  else if (selectedId) proposalView = await buildProposalView(selectedId)
   else if (selectedDay) dayView = await buildDayView(selectedDay)
   else if (rangeMode && from && to) rangeView = await buildRangeView(from, to)
 } catch (e) {
@@ -59,8 +82,8 @@ const diarioOpen = Boolean(selectedDay || selectedProposalDay)
 const drafts = proposals.filter(p => p.status === 'draft')
 const draftsOpen = Boolean(selectedId && !selectedProposalDay && drafts.some(p => p.id === selectedId))
 
-const laidOut = proposalView?.laidOut ?? dayView?.laidOut ?? rangeView?.laidOut ?? null
-const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView)
+const laidOut = proposalView?.laidOut ?? dayView?.laidOut ?? rangeView?.laidOut ?? mitView?.laidOut ?? null
+const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitView)
 ---
 
 <html lang="es">
@@ -139,6 +162,21 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView)
       .day-sub { padding-left: 16px; }
       .item.sub { padding: 6px 10px; }
       .item.sub .title { font-size: 12.5px; font-weight: 500; }
+
+      /* ---- MITs panel (foco del día, encima del Diario) ---- */
+      .mit-panel { padding: 4px 4px 8px; margin-bottom: 4px; border-bottom: 1px solid #eef0f2; }
+      .mit-head { display: flex; align-items: center; gap: 6px; padding: 4px 8px 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; }
+      .mit-empty { margin: 0; padding: 2px 10px 4px; font-size: 12px; color: #9aa3b2; }
+      .mit-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 10px; border-radius: 8px; }
+      .mit-item:hover { background: #f4f6fb; }
+      .mit-state { flex: 0 0 auto; margin-top: 1px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: 2px 6px; border-radius: 999px; color: #fff; }
+      .mit-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+      .mit-title { font-size: 13px; font-weight: 600; color: #2a3346; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mit-parent { font-size: 11px; color: #9aa3b2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mit-more { width: 100%; display: flex; align-items: center; gap: 6px; padding: 5px 10px; border: none; background: transparent; cursor: pointer; font: inherit; font-size: 11px; color: #6b7280; }
+      .mit-more:hover { color: #2f54eb; }
+      .mit-more .chev { font-size: 10px; transition: transform .2s ease; }
+      .mit-more.open .chev { transform: rotate(90deg); }
     </style>
 
     <style is:global>
@@ -188,6 +226,12 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView)
         <div class="nav-item disabled">
           <span class="icon">📥</span><span>Inbox</span><span class="soon">pronto</span>
         </div>
+
+        <!-- MITs: el foco del día → grafo en el canvas (/?view=mits) -->
+        <a class={`nav-item ${mitsView ? 'on' : ''}`} href="/?view=mits">
+          <span class="icon">🎯</span><span>MITs</span>
+          {todayMits.length > 0 && <span class="count">{todayMits.length}</span>}
+        </a>
 
         <!-- Diario: días, cada uno desplegable a sus proposals committed -->
         <button class={`nav-item ${diarioOpen ? 'on open' : ''}`} type="button" data-toggle="diario">
@@ -271,6 +315,9 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView)
         {!viewError && selectedId && !proposalView?.proposal && <div class="placeholder">Proposal no encontrada.</div>}
         {!viewError && selectedDay && !dayView && <div class="placeholder">Sin cambios ese día.</div>}
         {!viewError && rangeMode && !rangeView && <div class="placeholder">Sin cambios en ese rango.</div>}
+        {!viewError && mitsView && !mitView && (
+          <div class="placeholder">Sin MITs para hoy. Márcalos con el agente (vía proposal) y aparecerán aquí.</div>
+        )}
         {!viewError && proposalView?.legacy && (
           <div class="placeholder">Proposal aplanada en el génesis (formato legacy) — sin grafo. El informe está a la derecha.</div>
         )}
@@ -343,6 +390,35 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView)
             <span class="chip">{rangeView.counts.updates} updates</span>
             <span class="chip">{rangeView.counts.edges} edges</span>
           </div>
+        </aside>
+      )}
+
+      {!viewError && mitView && (
+        <aside class="informe">
+          <div class="head">
+            <span class="icon" style="font-size:18px">🎯</span>
+            <h1>MITs · hoy</h1>
+            <span class="count">{mitView.mits.length}</span>
+          </div>
+          <h2>Foco del día</h2>
+          {mitView.mits.map(m => (
+            <div class="mit-item" title={m.day !== mitView.date ? `${m.title} · vencido ${m.day}` : m.title}>
+              <span
+                class="mit-state"
+                style={`background:${m.day !== mitView.date ? '#d97706' : (MIT_STATE_COLOR[m.state] ?? '#5b6b8c')}`}
+              >
+                {m.day !== mitView.date ? '⏰ vencido' : m.state}
+              </span>
+              <span class="mit-info">
+                <span class="mit-title">{m.title}</span>
+                {m.day !== mitView.date ? (
+                  <span class="mit-parent">{m.day}{m.parent ? ` · ${m.parent}` : ''}</span>
+                ) : (
+                  m.parent && <span class="mit-parent">{m.parent}</span>
+                )}
+              </span>
+            </div>
+          ))}
         </aside>
       )}
     </div>

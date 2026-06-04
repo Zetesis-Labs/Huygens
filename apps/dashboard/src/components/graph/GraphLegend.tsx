@@ -2,7 +2,7 @@ import { Panel } from '@xyflow/react'
 import { type ReactNode, useState } from 'react'
 import type { LaidOutGraph } from '../../lib/layout'
 import { useGraphView } from './GraphViewContext'
-import { FALLBACK_EDGE, KIND_LABEL, KIND_STYLE, TYPE_LABEL, TYPE_STYLE } from './styles'
+import { FALLBACK_EDGE, KIND_LABEL, KIND_STYLE, STATE_COLOR, STATE_LABEL, TYPE_LABEL, TYPE_STYLE } from './styles'
 
 /** Distinct values in `items`, preserving first-seen order. */
 function distinct(items: string[]): string[] {
@@ -14,11 +14,14 @@ function distinct(items: string[]): string[] {
  * React Flow panel so it floats over the canvas; collapsible to stay out of the
  * way. State is shared through GraphViewContext. */
 export default function GraphLegend({ nodes, edges }: LaidOutGraph) {
-  const { hiddenTypes, hiddenKinds, showHydrated, toggleType, toggleKind, toggleHydrated } = useGraphView()
+  const { hiddenTypes, hiddenKinds, hiddenStates, showHydrated, toggleType, toggleKind, toggleState, toggleHydrated } =
+    useGraphView()
   const [collapsed, setCollapsed] = useState(false)
+  const [statesOpen, setStatesOpen] = useState(true)
 
   const types = distinct(nodes.map(n => n.data.type))
   const kinds = distinct(edges.map(e => e.label))
+  const states = distinct(nodes.map(n => n.data.state).filter((s): s is string => Boolean(s)))
   const hasHydrated = edges.some(e => e.preexisting)
 
   return (
@@ -85,6 +88,51 @@ export default function GraphLegend({ nodes, edges }: LaidOutGraph) {
               })}
             </Section>
 
+            {states.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setStatesOpen(o => !o)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    border: 'none',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    padding: 0,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '.04em',
+                    color: '#9aa1ad',
+                    marginBottom: 4
+                  }}
+                >
+                  <span>Estado</span>
+                  <span style={{ fontSize: 10 }}>{statesOpen ? '▾' : '▸'}</span>
+                </button>
+                {statesOpen && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {states.map(s => (
+                      <ToggleRow key={s} off={hiddenStates.has(s)} onClick={() => toggleState(s)}>
+                        <span
+                          style={{
+                            width: 12,
+                            height: 12,
+                            borderRadius: '50%',
+                            background: STATE_COLOR[s] ?? '#5b6b8c',
+                            flex: '0 0 auto'
+                          }}
+                        />
+                        {STATE_LABEL[s] ?? s}
+                      </ToggleRow>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <Section title="Relaciones">
               {kinds.map(k => {
                 const s = KIND_STYLE[k] ?? FALLBACK_EDGE
@@ -106,6 +154,7 @@ export default function GraphLegend({ nodes, edges }: LaidOutGraph) {
             <Section title="Trazo">
               <Hint swatch={<Swatch dashed={false} />}>creado / editado</Hint>
               <Hint swatch={<Swatch dashed />}>contexto · preexistente</Hint>
+              {states.includes('DONE') && <Hint swatch={<Swatch dashed={false} dim />}>hecho (atenuado)</Hint>}
               {hasHydrated && (
                 <ToggleRow off={!showHydrated} onClick={toggleHydrated}>
                   <span style={{ fontSize: 13, flex: '0 0 auto', width: 18, textAlign: 'center' }}>
@@ -169,7 +218,7 @@ function Hint({ swatch, children }: { swatch: ReactNode; children: ReactNode }) 
   )
 }
 
-function Swatch({ dashed }: { dashed: boolean }) {
+function Swatch({ dashed, dim }: { dashed: boolean; dim?: boolean }) {
   return (
     <span
       style={{
@@ -178,7 +227,7 @@ function Swatch({ dashed }: { dashed: boolean }) {
         borderRadius: 5,
         flex: '0 0 auto',
         border: `2px ${dashed ? 'dashed' : 'solid'} #5b6b8c`,
-        opacity: dashed ? 0.6 : 1
+        opacity: dashed || dim ? 0.6 : 1
       }}
     />
   )
