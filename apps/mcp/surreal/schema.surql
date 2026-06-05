@@ -260,6 +260,28 @@ DEFINE INDEX OVERWRITE agent_event_subject   ON agent_event FIELDS subject;
 DEFINE INDEX OVERWRITE agent_event_actor     ON agent_event FIELDS actor;
 
 -- ─────────────────────────────────────────────────────────────────────────
+-- mcp_tool_call: traza de uso del MCP (debugging). Una fila por invocación de
+-- tool, escrita en el único choke-point (`defineTool`). Es un LOG operativo, no
+-- topología de dominio: append-only, best-effort (un fallo al loguear nunca
+-- rompe la tool), y se vacía sin consecuencias. `args`/`result` van completos
+-- (FLEXIBLE) para máxima trazabilidad. Desactivable con MCP_TOOL_LOG_DB=0.
+-- ─────────────────────────────────────────────────────────────────────────
+
+DEFINE TABLE OVERWRITE mcp_tool_call SCHEMAFULL;
+DEFINE FIELD OVERWRITE tool        ON mcp_tool_call TYPE string;
+DEFINE FIELD OVERWRITE ok          ON mcp_tool_call TYPE bool;
+DEFINE FIELD OVERWRITE duration_ms ON mcp_tool_call TYPE int;
+DEFINE FIELD OVERWRITE args        ON mcp_tool_call TYPE option<object> FLEXIBLE;
+DEFINE FIELD OVERWRITE result      ON mcp_tool_call TYPE option<object> FLEXIBLE;
+DEFINE FIELD OVERWRITE error       ON mcp_tool_call TYPE option<string>;
+DEFINE FIELD OVERWRITE code        ON mcp_tool_call TYPE option<string>;
+DEFINE FIELD OVERWRITE created_at  ON mcp_tool_call TYPE datetime DEFAULT time::now() READONLY;
+
+DEFINE INDEX OVERWRITE mcp_tool_call_tool_time ON mcp_tool_call FIELDS tool, created_at;
+DEFINE INDEX OVERWRITE mcp_tool_call_ok_time   ON mcp_tool_call FIELDS ok, created_at;
+DEFINE INDEX OVERWRITE mcp_tool_call_created   ON mcp_tool_call FIELDS created_at;
+
+-- ─────────────────────────────────────────────────────────────────────────
 -- USERS: read-only user for the SurrealMCP proxy.
 -- The password is intentionally not versioned in this schema. Run
 -- `bun run db:define-reader` with SURREAL_READER_PASS or SURREALDB_PASS set.
@@ -287,6 +309,7 @@ DEFINE INDEX OVERWRITE agent_event_actor     ON agent_event FIELDS actor;
 -- Tablas SIN CHANGEFEED (deliberado):
 --   - note_type     (taxonomía editable, baja cardinalidad, sin valor histórico)
 --   - agent_event   (ya es el audit log — append-only por construcción)
+--   - mcp_tool_call (traza de debugging — log operativo append-only, descartable)
 --   - saved_query   (queries SurrealQL guardadas; config editable, sin histórico)
 --   - conversation  (hilos de chat del dashboard; estado de app, no dominio)
 -- ─────────────────────────────────────────────────────────────────────────
