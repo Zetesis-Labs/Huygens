@@ -171,12 +171,28 @@ function toIso(v: unknown): string {
   return v instanceof Date ? v.toISOString() : String(v)
 }
 
-// Commits are bucketed by the *local* Madrid day they landed. SurrealDB 3.0.5
-// has no IANA timezones, only fixed offsets, so we shift the instant by +2h
-// (CEST) before taking the date. Correct for the summer half-year; a winter
-// 00:00–01:00 UTC commit would bucket one day early. `committed_at` is absent on
+/** Europe/Madrid's current UTC offset in whole hours — +1 (CET, winter) or +2
+ * (CEST, summer), DST-correct, instead of a hardcoded +2h that's wrong all winter.
+ * SurrealDB 3.0.5 has no IANA timezones (only fixed offsets), so we resolve the
+ * offset host-side and bake it into the query. Computed per call so a long-lived
+ * server stays correct across the twice-a-year DST flip. */
+export function madridOffsetHours(at: Date = new Date()): number {
+  const utc = new Date(at.toLocaleString('en-US', { timeZone: 'UTC' }))
+  const mad = new Date(at.toLocaleString('en-US', { timeZone: 'Europe/Madrid' }))
+  return Math.round((mad.getTime() - utc.getTime()) / 3_600_000)
+}
+
+/** Today's date (YYYY-MM-DD) in Europe/Madrid, DST-correct. */
+export function todayMadridDay(): string {
+  return new Date(Date.now() + madridOffsetHours() * 3_600_000).toISOString().slice(0, 10)
+}
+
+// Commits are bucketed by the *local* Madrid day they landed. We shift the instant
+// by the live Madrid offset before taking the date. `committed_at` is absent on
 // pre-result commits, so we coalesce to `updated_at` (≈ the same instant).
-const MADRID_DAY = "time::format((result.committed_at ?? updated_at) + 2h, '%Y-%m-%d')"
+const madridDayExpr = (field = '(result.committed_at ?? updated_at)') =>
+  `time::format(${field} + ${madridOffsetHours()}h, '%Y-%m-%d')`
+const MADRID_DAY = madridDayExpr()
 
 export type DiaryDayCount = { day: string; count: number }
 
@@ -342,7 +358,7 @@ export async function listMits(): Promise<MitRow[]> {
     ]
   >(
     `SELECT meta::id(id) AS id, title, state, type.slug AS type, mit_for, due_at, defer_until,
-            time::format(mit_for + 2h, '%Y-%m-%d') AS day,
+            ${madridDayExpr('mit_for')} AS day,
             ->part_of->note[0].title AS parent
      FROM note WHERE mit_for IS NOT NONE
      ORDER BY mit_for DESC`
@@ -356,6 +372,24 @@ export async function listMits(): Promise<MitRow[]> {
     parent: r.parent ?? null,
     dueDay: madridDay(r.due_at),
     deferDay: madridDay(r.defer_until)
+  }))
+}
+
+export type InboxRow = { id: string; content: string; sourceKind: string; createdAt: string }
+
+/** Pending raw_captures — the live inbox, oldest first (FIFO, the order you'd
+ * process them). Read-only. */
+export async function listInbox(): Promise<InboxRow[]> {
+  const db = await getDb()
+  const [rows] = await db.query<[Array<{ id: unknown; content: string; source_kind?: string; created_at: unknown }>]>(
+    `SELECT meta::id(id) AS id, content, source_kind, created_at
+     FROM raw_capture WHERE status = 'pending' ORDER BY created_at ASC LIMIT 200`
+  )
+  return (rows ?? []).map(r => ({
+    id: String(r.id),
+    content: r.content,
+    sourceKind: r.source_kind ?? 'manual',
+    createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at)
   }))
 }
 

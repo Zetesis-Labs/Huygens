@@ -162,7 +162,7 @@ SELECT id, title FROM note WHERE type.slug='area' AND count(->part_of)=0;
 ```
 Accionables de un tipo (lo vivo, lo más reciente arriba):
 ```surql
-SELECT id, title, state, updated_at FROM note WHERE type.slug='task' AND state IN ['CLARIFIED','ACTIVE','WAITING'] ORDER BY updated_at DESC LIMIT 20;
+SELECT id, title, state, updated_at FROM note WHERE type.slug='task' AND state IN ['CLARIFIED','ACTIVE','WAITING'] AND (defer_until IS NONE OR defer_until <= time::now()) ORDER BY updated_at DESC LIMIT 20;
 ```
 Notas ordenadas por nº de hijos (vía subquery):
 ```surql
@@ -196,11 +196,11 @@ SELECT title, count(<-part_of<-note) AS kids, count(<-part_of<-note[WHERE state 
 
 Desatendido — vivo pero sin tocar en >2 semanas:
 ```surql
-SELECT id, title, state, updated_at FROM note WHERE state IN ['ACTIVE','WAITING'] AND updated_at < time::now()-2w ORDER BY updated_at ASC LIMIT 15;
+SELECT id, title, state, updated_at FROM note WHERE state IN ['ACTIVE','WAITING'] AND (defer_until IS NONE OR defer_until <= time::now()) AND updated_at < time::now()-2w ORDER BY updated_at ASC LIMIT 15;
 ```
 Cola de revisión — vivo y nunca/hace mucho revisado:
 ```surql
-SELECT id, title, updated_at FROM note WHERE state IN ['ACTIVE','WAITING'] AND (last_reviewed_at IS NONE OR last_reviewed_at < time::now()-4w) ORDER BY updated_at ASC;
+SELECT id, title, updated_at FROM note WHERE state IN ['ACTIVE','WAITING'] AND (defer_until IS NONE OR defer_until <= time::now()) AND (last_reviewed_at IS NONE OR last_reviewed_at < time::now()-4w) ORDER BY updated_at ASC;
 ```
 Proyectos "fantasma" — ACTIVE, pero su hijo vivo más fresco lleva días helado:
 ```surql
@@ -311,7 +311,7 @@ Queries **válidas (STATUS OK)** que hoy devuelven `[]` porque el campo aún no 
 - **Nunca revisado** (`last_reviewed_at` sin poblar → hoy matchea casi todo): `SELECT id, title FROM note WHERE last_reviewed_at IS NONE AND state NOT IN ['DONE','ARCHIVED'];`
 - **Evidencia inferida que cambió un estado** (riesgo de fidelidad; `transformation` hoy 100% 'summarized'): `SELECT title FROM note WHERE count(<-affects[WHERE action='state_changed']<-block->derived_from[WHERE transformation='inferred']->raw_capture)>0;`
 - **Bloqueos sin razón** (`reason` 100% vacío hoy): `SELECT in.title AS blocked, out.title AS blocker, since FROM blocked_by WHERE reason IS NONE;`
-- **Vencidas por deadline** (`due_at` campo real): `SELECT id, title, due_at FROM note WHERE due_at IS NOT NONE AND due_at < time::now() AND state NOT IN ['DONE','ARCHIVED'] ORDER BY due_at ASC;`
+- **Vencidas por deadline** (`due_at` campo real; vencida = día **estrictamente anterior** a hoy, no "hoy mismo a las 00:00" — `due_at` está a medianoche): `SELECT id, title, due_at FROM note WHERE due_at IS NOT NONE AND due_at < time::floor(time::now(), 1d) AND state NOT IN ['DONE','ARCHIVED'] ORDER BY due_at ASC;`
 - **Próximos vencimientos**: `SELECT id, title, due_at FROM note WHERE due_at IS NOT NONE AND state NOT IN ['DONE','ARCHIVED'] ORDER BY due_at ASC;`
 - **Aplazadas / dormidas** (tickler activo): `SELECT id, title, defer_until FROM note WHERE defer_until IS NOT NONE AND defer_until > time::now() ORDER BY defer_until ASC;`
 - **Radar activo** (vivas y NO dormidas — el patrón canónico del digest/dashboard): `SELECT id, title, state FROM note WHERE state IN ['ACTIVE','WAITING','CLARIFIED'] AND (defer_until IS NONE OR defer_until <= time::now());`

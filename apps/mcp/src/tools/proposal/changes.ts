@@ -9,7 +9,15 @@ export type ProposalChanges = {
   /** Where the delta comes from: the proposal payload (SSOT), not the changefeed. */
   source: 'payload'
   changes: {
-    notes_created: { id: string; type_slug: string; title: string; state: string }[]
+    notes_created: {
+      id: string
+      type_slug: string
+      title: string
+      state: string
+      mit_for?: string
+      due_at?: string
+      defer_until?: string
+    }[]
     notes_updated: { id: string; fields: string[]; descriptive_blocks_appended: number }[]
     narrative_blocks: { id: string; raw_ids: string[] }[]
     descriptive_blocks_created: number
@@ -38,7 +46,10 @@ function summarize(payload: StoredProposalPayload): ProposalChanges['changes'] {
       id: n.id,
       type_slug: n.type_slug,
       title: n.title,
-      state: n.state
+      state: n.state,
+      ...(n.mit_for !== undefined ? { mit_for: n.mit_for } : {}),
+      ...(n.due_at !== undefined ? { due_at: n.due_at } : {}),
+      ...(n.defer_until !== undefined ? { defer_until: n.defer_until } : {})
     })),
     notes_updated: payload.note_updates.map(u => ({
       id: u.id,

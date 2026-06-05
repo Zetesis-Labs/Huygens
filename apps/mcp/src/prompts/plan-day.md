@@ -18,8 +18,11 @@ todo: evidencia → interpretación → propuesta → commit.
 2. **Mira lo que ya hay**: MITs ya marcados para el día (`mit_for` en el rango del
    día). Si hay 1-3, repásalos.
 3. **Surfacea candidatas, no decidas.** Tareas `ACTIVE` sin MIT, **con su contexto**
-   (`->part_of->note.title`). Señala las que cuelgan de un `objetivo` (ZTD pide al
-   menos una MIT ligada a una meta) y los bloqueos abiertos (`blocked_by`).
+   (`->part_of->note.title`). **Excluye las dormidas** (`defer_until > hoy`): una
+   tarea aplazada a propósito no es candidata a MIT hoy, salvo que el usuario la
+   despierte explícitamente. Señala las que cuelgan de un `objetivo` (ZTD pide al
+   menos una MIT ligada a una meta), los bloqueos abiertos (`blocked_by`) y, si
+   alguna candidata tiene `due_at` cercano/vencido, destácalo (deadline ≠ MIT).
 4. **El usuario elige** (máx. 3).
 5. **Captura la intención**: pide su foco del día y el porqué en una frase, y
    guárdalo con `capture` (`source_kind:'chat'`).

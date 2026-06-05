@@ -29,16 +29,34 @@ const BlockRefSchema = z.string().refine(value => TEMP_ID_RE.test(value) || BLOC
 })
 
 /**
+ * Validate a day-granular date string: it must start with a REAL calendar day
+ * (YYYY-MM-DD) and parse. Rejects impossible dates like `2026-02-31` — `new Date`
+ * would silently roll those into the next month, so we round-trip the Y/M/D
+ * components and require they survive unchanged. The optional time/zone suffix
+ * only needs to parse (it's discarded on commit, which keeps just the day).
+ */
+function isValidDayDate(value: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
+  if (!m) return false
+  const [, y, mo, d] = m
+  const day = new Date(`${y}-${mo}-${d}T00:00:00.000Z`)
+  if (Number.isNaN(day.getTime())) return false
+  // round-trip: a rolled-over impossible date won't match its own components
+  if (day.getUTCFullYear() !== Number(y) || day.getUTCMonth() + 1 !== Number(mo) || day.getUTCDate() !== Number(d)) {
+    return false
+  }
+  return !Number.isNaN(new Date(value).getTime()) // the full value (with any time/zone) must parse too
+}
+
+/**
  * A day-granular date: a calendar day (YYYY-MM-DD) or a full ISO datetime. Used by
  * the three temporal axes — `mit_for` (priority), `due_at` (hard deadline) and
  * `defer_until` (tickler). On commit it is normalized to that day's UTC midnight
  * (see commit.ts `toDayUtcMidnight`), so date-range queries are consistent.
  */
-const DayDateSchema = z
-  .string()
-  .refine(value => /^\d{4}-\d{2}-\d{2}/.test(value) && !Number.isNaN(new Date(value).getTime()), {
-    message: 'must be a date (YYYY-MM-DD) or ISO datetime'
-  })
+const DayDateSchema = z.string().refine(isValidDayDate, {
+  message: 'must be a real calendar date (YYYY-MM-DD) or ISO datetime — e.g. 2026-02-31 is rejected'
+})
 
 const DescriptiveBlockSchema = z.object({
   content: z.string().min(1)

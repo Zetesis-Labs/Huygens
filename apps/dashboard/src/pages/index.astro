@@ -6,7 +6,7 @@ import { buildBitacora } from '../lib/bitacoraView'
 import { buildDayView, buildRangeView, listDiaryDays } from '../lib/diaryView'
 import { buildMitView } from '../lib/mitView'
 import { buildProposalView } from '../lib/proposalView'
-import { listMits, listProposals } from '../lib/surreal'
+import { listInbox, listMits, listProposals, todayMadridDay } from '../lib/surreal'
 
 // Unified workspace: a single left panel with three nav sections (Inbox, Diario,
 // Proposals) and a main canvas. Inbox is a placeholder for now. Proposals lists
@@ -17,11 +17,12 @@ import { listMits, listProposals } from '../lib/surreal'
 const params = Astro.url.searchParams
 const mitsView = params.get('view') === 'mits'
 const bitacoraView = params.get('view') === 'bitacora'
-const selectedDay = mitsView || bitacoraView ? null : params.get('day')
+const inboxView = params.get('view') === 'inbox'
+const selectedDay = mitsView || bitacoraView || inboxView ? null : params.get('day')
 const from = params.get('from')
 const to = params.get('to')
-const rangeMode = !mitsView && !bitacoraView && !selectedDay && Boolean(from && to)
-const selectedId = mitsView || bitacoraView || selectedDay || rangeMode ? null : params.get('proposal')
+const rangeMode = !mitsView && !bitacoraView && !inboxView && !selectedDay && Boolean(from && to)
+const selectedId = mitsView || bitacoraView || inboxView || selectedDay || rangeMode ? null : params.get('proposal')
 
 let proposals = [] as Awaited<ReturnType<typeof listProposals>>
 let listError: string | null = null
@@ -46,8 +47,18 @@ try {
 } catch {
   /* best-effort MIT panel */
 }
-const todayMadrid = new Date(Date.now() + 2 * 3600 * 1000).toISOString().slice(0, 10)
+const todayMadrid = todayMadridDay()
 const todayMits = mits.filter(m => m.day === todayMadrid)
+
+// Inbox: pending raw_captures, loaded only when the Inbox view is open.
+let inbox = [] as Awaited<ReturnType<typeof listInbox>>
+let inboxCount = 0
+try {
+  inbox = await listInbox()
+  inboxCount = inbox.length
+} catch {
+  /* best-effort inbox */
+}
 const MIT_STATE_COLOR: Record<string, string> = {
   ACTIVE: '#2e7d32',
   CLARIFIED: '#5b6b8c',
@@ -149,6 +160,11 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
       .canvas > astro-island { position: absolute; inset: 0; }
       .placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #9aa3b2; font-size: 14px; padding: 24px; text-align: center; }
       .placeholder.err { color: #b91c1c; font-family: ui-monospace, monospace; white-space: pre-wrap; }
+      .inbox { padding: 20px 24px; max-width: 760px; margin: 0 auto; width: 100%; overflow-y: auto; }
+      .inbox-head { font-size: 14px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; margin: 0 0 14px; }
+      .inbox-item { border: 1px solid #e7e9ee; border-left: 3px solid #5b6b8c; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; background: #fff; }
+      .inbox-meta { font-size: 11px; color: #9aa3b2; margin-bottom: 4px; }
+      .inbox-content { font-size: 14px; color: #2a3346; white-space: pre-wrap; word-break: break-word; }
       .informe { width: 360px; flex: 0 0 360px; border-left: 1px solid #e6e8eb; background: #fff; overflow: auto; padding: 18px 20px; }
       .informe h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; }
       .informe .head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
@@ -270,9 +286,11 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
     <nav class="side">
       <div class="brand">Huygens</div>
       <div class="nav">
-        <div class="nav-item disabled">
-          <span class="icon">📥</span><span>Inbox</span><span class="soon">pronto</span>
-        </div>
+        <!-- Inbox: raw_captures pendientes de procesar (/?view=inbox) -->
+        <a class={`nav-item ${inboxView ? 'on' : ''}`} href="/?view=inbox">
+          <span class="icon">📥</span><span>Inbox</span>
+          {inboxCount > 0 && <span class="count">{inboxCount}</span>}
+        </a>
 
         <!-- MITs: el foco del día → grafo en el canvas (/?view=mits) -->
         <a class={`nav-item ${mitsView ? 'on' : ''}`} href="/?view=mits">
@@ -364,7 +382,21 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
     <div class="main">
       <div class="canvas">
         {viewError && <div class="placeholder err">Error: {viewError}</div>}
-        {!viewError && !hasGraph && !bitacoraView && <div class="placeholder">Selecciona una proposal, un día del Diario o un rango (Date review).</div>}
+        {!viewError && !hasGraph && !bitacoraView && !inboxView && <div class="placeholder">Selecciona una proposal, un día del Diario o un rango (Date review).</div>}
+        {!viewError && inboxView && inbox.length === 0 && (
+          <div class="placeholder">Inbox vacío. Las capturas pendientes (raw_captures sin procesar) aparecerán aquí.</div>
+        )}
+        {!viewError && inboxView && inbox.length > 0 && (
+          <article class="inbox">
+            <h2 class="inbox-head">📥 Inbox · {inbox.length} pendiente{inbox.length > 1 ? 's' : ''}</h2>
+            {inbox.map(r => (
+              <div class="inbox-item">
+                <div class="inbox-meta">{r.sourceKind} · {r.createdAt.slice(0, 16).replace('T', ' ')}</div>
+                <div class="inbox-content">{r.content}</div>
+              </div>
+            ))}
+          </article>
+        )}
         {!viewError && bitacoraView && bitacora.length === 0 && (
           <div class="placeholder">Bitácora vacía. Los planes y cierres (rituales <code>plan_day</code> / <code>review_day</code>) aparecerán aquí en cuanto el agente los registre.</div>
         )}

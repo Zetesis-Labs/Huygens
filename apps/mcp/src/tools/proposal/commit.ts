@@ -73,6 +73,10 @@ class CommitTx {
   readonly params: Record<string, unknown> = {}
   readonly lines: string[] = ['BEGIN;']
   private pc = 0
+  /** True when this commit is a review_day ritual: its note_updates are the day's
+   * dispositions, so we stamp last_reviewed_at on them (closing the day = reviewing
+   * those notes). Set in build(); replay leaves it false. */
+  private reviewRitual = false
   /** Ids of descriptive blocks created in this tx (generated here; nothing refs them). */
   readonly descriptiveIds: string[] = []
 
@@ -120,6 +124,9 @@ class CommitTx {
       }
       if (note.metadata_merge != null)
         sets.push(`metadata = object::extend(metadata ?? {}, ${this.p(note.metadata_merge)})`)
+      // A review_day disposition reviews the note → stamp it (closes apuesta B,
+      // makes the "never reviewed" radar actually work).
+      if (this.reviewRitual) sets.push('last_reviewed_at = time::now()')
       if (sets.length > 0) this.lines.push(`UPDATE ${this.rid(note.id)} SET ${sets.join(', ')} RETURN NONE;`)
       this.appendBlocks(note.id, note.descriptive_blocks_append)
     }
@@ -197,6 +204,7 @@ class CommitTx {
   }
 
   build(payload: StoredProposalPayload, proposalId: RecordId): { query: string; params: Record<string, unknown> } {
+    this.reviewRitual = payload.narrative_blocks.some(b => b.kind === 'review_day')
     this.creates(payload)
     this.updates(payload)
     this.narratives(payload)
