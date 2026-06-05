@@ -285,7 +285,20 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
       /* The hamburger + backdrop exist only on small screens. */
       .menu-toggle { display: none; }
       .nav-backdrop { display: none; }
+      .view-toggle { display: none; }
       @media (max-width: 820px) {
+        /* Graph views: a segmented toggle to collapse to graph-only or informe-only. */
+        .view-toggle {
+          display: inline-flex; position: fixed; top: 10px; right: 10px; z-index: 1200;
+          background: #fff; border: 1px solid #e6e8eb; border-radius: 10px; overflow: hidden;
+          box-shadow: 0 1px 6px rgba(0,0,0,.14);
+        }
+        .vt-btn { border: none; background: transparent; padding: 8px 11px; font: inherit; font-size: 12px; font-weight: 600; color: #6b7280; cursor: pointer; }
+        .vt-btn + .vt-btn { border-left: 1px solid #eef0f2; }
+        .vt-btn.on { background: #2f54eb; color: #fff; }
+        body.m-only-graph .informe { display: none; }
+        body.m-only-informe .canvas { display: none; }
+        body.m-only-informe .informe { max-height: none; flex: 1 1 auto; border-top: none; }
         .menu-toggle {
           display: flex; position: fixed; top: 10px; left: 10px; z-index: 1200;
           width: 42px; height: 42px; align-items: center; justify-content: center;
@@ -319,6 +332,13 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
   <body>
     <button class="menu-toggle" type="button" aria-label="Abrir menú" data-nav-toggle>☰</button>
     <div class="nav-backdrop" data-nav-backdrop></div>
+    {hasGraph && (
+      <div class="view-toggle" role="group" aria-label="Vista">
+        <button type="button" class="vt-btn on" data-view="split">Dividir</button>
+        <button type="button" class="vt-btn" data-view="graph">Grafo</button>
+        <button type="button" class="vt-btn" data-view="informe">Informe</button>
+      </div>
+    )}
     <nav class="side">
       <div class="brand">Huygens</div>
       <div class="nav">
@@ -599,6 +619,21 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
       document.querySelector('[data-nav-backdrop]')?.addEventListener('click', () => {
         document.body.classList.remove('nav-open')
       })
+
+      // Mobile: collapse the graph/informe split to one pane.
+      const viewToggle = document.querySelector('.view-toggle')
+      if (viewToggle) {
+        const btns = viewToggle.querySelectorAll('[data-view]')
+        for (const b of btns) {
+          b.addEventListener('click', () => {
+            const mode = b.getAttribute('data-view')
+            document.body.classList.remove('m-only-graph', 'm-only-informe')
+            if (mode === 'graph') document.body.classList.add('m-only-graph')
+            if (mode === 'informe') document.body.classList.add('m-only-informe')
+            for (const x of btns) x.classList.toggle('on', x === b)
+          })
+        }
+      }
     </script>
   </body>
 </html>
