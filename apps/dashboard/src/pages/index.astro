@@ -280,9 +280,45 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
       .cal-btn:disabled { background: #c3cbe0; cursor: default; }
       .cal-btn.ghost { background: #f0f2f5; color: #3a4252; }
       .cal-btn.ghost:hover { background: #e6e9ef; }
+
+      /* ---- Responsive / mobile ---- */
+      /* The hamburger + backdrop exist only on small screens. */
+      .menu-toggle { display: none; }
+      .nav-backdrop { display: none; }
+      @media (max-width: 820px) {
+        .menu-toggle {
+          display: flex; position: fixed; top: 10px; left: 10px; z-index: 1200;
+          width: 42px; height: 42px; align-items: center; justify-content: center;
+          background: #fff; border: 1px solid #e6e8eb; border-radius: 10px;
+          box-shadow: 0 1px 6px rgba(0,0,0,.14); cursor: pointer; font-size: 20px; line-height: 1; color: #2a3346;
+        }
+        /* Nav becomes an off-canvas drawer slid in from the left. */
+        .side {
+          position: fixed; top: 0; left: 0; height: 100vh; z-index: 1100;
+          width: 86vw; max-width: 320px; flex-basis: auto;
+          transform: translateX(-100%); transition: transform .25s ease;
+          box-shadow: 2px 0 16px rgba(0,0,0,.18);
+        }
+        body.nav-open .side { transform: translateX(0); }
+        body.nav-open .nav-backdrop {
+          display: block; position: fixed; inset: 0; z-index: 1050; background: rgba(20,26,38,.32);
+        }
+        /* Canvas and informe stack vertically; each scrolls on its own. */
+        .main { flex-direction: column; }
+        .canvas { flex: 1 1 0; min-height: 0; }
+        .informe {
+          width: 100%; flex: 0 0 auto; max-height: 46vh;
+          border-left: none; border-top: 1px solid #e6e8eb;
+        }
+        /* keep headings clear of the floating hamburger */
+        .inbox, .bitacora { padding-top: 58px; }
+        .inbox { padding-left: 14px; padding-right: 14px; }
+      }
     </style>
   </head>
   <body>
+    <button class="menu-toggle" type="button" aria-label="Abrir menú" data-nav-toggle>☰</button>
+    <div class="nav-backdrop" data-nav-backdrop></div>
     <nav class="side">
       <div class="brand">Huygens</div>
       <div class="nav">
@@ -555,6 +591,14 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
           btn.classList.toggle('on')
         })
       }
+
+      // Mobile: hamburger toggles the off-canvas nav; backdrop tap closes it.
+      document.querySelector('[data-nav-toggle]')?.addEventListener('click', () => {
+        document.body.classList.toggle('nav-open')
+      })
+      document.querySelector('[data-nav-backdrop]')?.addEventListener('click', () => {
+        document.body.classList.remove('nav-open')
+      })
     </script>
   </body>
 </html>
