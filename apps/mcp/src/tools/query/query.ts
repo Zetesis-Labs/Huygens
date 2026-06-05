@@ -1,7 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { HuygensError, huygensErrorToToolResult, QueryError, toMcpError } from '../../errors'
+import { HuygensError, QueryError } from '../../errors'
 import { getReadOnlyDb } from '../../surreal'
+import { defineTool } from '../define-tool'
 import { stringifySurrealResult } from './serialize'
 
 export const queryQueryShape = {
@@ -22,13 +23,6 @@ export const queryQueryShape = {
 const queryQuerySchema = z.object(queryQueryShape)
 export type QueryQueryInput = z.infer<typeof queryQuerySchema>
 
-let invocationCounter = 0
-
-function nextQueryId(): string {
-  invocationCounter = (invocationCounter + 1) >>> 0
-  return `q${invocationCounter.toString(36)}`
-}
-
 export async function queryQueryImpl(input: QueryQueryInput): Promise<unknown[]> {
   const db = await getReadOnlyDb()
   try {
@@ -41,29 +35,18 @@ export async function queryQueryImpl(input: QueryQueryInput): Promise<unknown[]>
 }
 
 export function registerQueryQuery(server: McpServer): void {
-  server.tool(
+  // Goes through defineTool like every other tool, so the unified tool-call
+  // trace (stderr + mcp_tool_call) covers query_query too — timing, ok/error and
+  // the full query text in `args`. defineTool already maps HuygensError →
+  // structured tool error and anything else → McpError, so the handler just runs
+  // the query and returns the serialized result.
+  defineTool(
+    server,
     'query_query',
     'Run a read-only SurrealQL query against the Huygens graph and return the raw results as JSON. Executes as the `huygens_reader` user (VIEWER): writes are rejected by SurrealDB. Multi-statement queries return one result array per statement. Bind values via $name + `parameters`, never via string concatenation.',
     queryQueryShape,
-    async args => {
-      const queryId = nextQueryId()
-      const startedAt = performance.now()
-      try {
-        const results = await queryQueryImpl(args)
-        const durationMs = Math.round(performance.now() - startedAt)
-        console.error(`[huygens-mcp] query_query ${queryId} ok in ${durationMs}ms`)
-        return {
-          content: [{ type: 'text', text: stringifySurrealResult(results) }]
-        }
-      } catch (err) {
-        const durationMs = Math.round(performance.now() - startedAt)
-        if (err instanceof HuygensError) {
-          console.error(`[huygens-mcp] query_query ${queryId} ${err.code} in ${durationMs}ms: ${err.message}`)
-          return huygensErrorToToolResult(err)
-        }
-        console.error(`[huygens-mcp] query_query ${queryId} crash in ${durationMs}ms:`, err)
-        throw toMcpError(err)
-      }
-    }
+    async args => ({
+      content: [{ type: 'text', text: stringifySurrealResult(await queryQueryImpl(args)) }]
+    })
   )
 }
