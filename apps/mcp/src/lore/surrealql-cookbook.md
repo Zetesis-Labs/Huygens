@@ -43,7 +43,7 @@ filtrando en cada salto y **anidando subqueries**.
   (counts, `duration::days(...)`); sobre datetimes da `null` o ERROR.
 - **`time::group(x,'week')` está ROTO** (devuelve null) → usa `time::floor(x,1w)`.
 - **`object::*` revienta si el campo es NONE** → `WHERE metadata != NONE` primero.
-- **Fechas en `metadata` son strings** → castea `<datetime>metadata.deadline` para comparar/ordenar.
+- **Vencimiento/aplazamiento son campos top-level datetime** (`due_at`, `defer_until`), como `mit_for` — compara/ordena directo, **no** en `metadata`. (Una fecha suelta en `metadata` sería string y habría que castearla `<datetime>metadata.x`, pero no es el patrón.)
 - **Conjuntos**: `OUTSIDE` es de geometría (no "no contenido" → usa `NONEINSIDE`/`NOT IN`);
   `*=` sobre conjunto vacío es `true` (verdad vacua) → guárdalo con `array::len(…)>0`.
 - **Destinos polimórficos**: `->blocked_by->(note,block)`, `->mentions->(note,block)`. El
@@ -87,7 +87,8 @@ WHERE <filtros AND… / traversal-filtrado>
 - **tipo / estado** — `type.slug='task'` · `state NOT IN ['DONE','ARCHIVED']`.
 - **existencia de campo** — `mit_for IS NOT NONE`, `embedding IS NONE`.
 - **existencia de relación** — `count(->blocked_by->note)>0`; raíz `array::len(->part_of)=0`.
-- **metadata flexible** — `metadata.priority='high'` · `object::keys(metadata) CONTAINS 'deadline'` (con `metadata != NONE`).
+- **metadata flexible** — `metadata.priority='high'` · `object::keys(metadata) CONTAINS 'url'` (con `metadata != NONE`).
+- **ejes temporales** — `due_at`, `defer_until`, `mit_for` (todos datetime top-level indexados): `due_at < time::now()`, `defer_until > time::now()`, etc.
 - **pertenencia en arrays** — `block_order CONTAINS block:abc` · `CONTAINSALL/CONTAINSANY/NONEINSIDE [..]`.
 - **texto** — `string::contains(string::lowercase(content),'x')` · `string::matches(title,'(?i)(a|b)')`.
 - **rango de fecha** — `created_at IN d'2026-05-27'..d'2026-05-29'` (`..` excluye fin, `..=` lo incluye).
@@ -310,4 +311,8 @@ Queries **válidas (STATUS OK)** que hoy devuelven `[]` porque el campo aún no 
 - **Nunca revisado** (`last_reviewed_at` sin poblar → hoy matchea casi todo): `SELECT id, title FROM note WHERE last_reviewed_at IS NONE AND state NOT IN ['DONE','ARCHIVED'];`
 - **Evidencia inferida que cambió un estado** (riesgo de fidelidad; `transformation` hoy 100% 'summarized'): `SELECT title FROM note WHERE count(<-affects[WHERE action='state_changed']<-block->derived_from[WHERE transformation='inferred']->raw_capture)>0;`
 - **Bloqueos sin razón** (`reason` 100% vacío hoy): `SELECT in.title AS blocked, out.title AS blocker, since FROM blocked_by WHERE reason IS NONE;`
-- **Deadlines en metadata** (cast de string a datetime): `SELECT title, <datetime>metadata.deadline AS dl FROM note WHERE metadata.deadline != NONE ORDER BY dl ASC;`
+- **Vencidas por deadline** (`due_at` campo real): `SELECT id, title, due_at FROM note WHERE due_at IS NOT NONE AND due_at < time::now() AND state NOT IN ['DONE','ARCHIVED'] ORDER BY due_at ASC;`
+- **Próximos vencimientos**: `SELECT id, title, due_at FROM note WHERE due_at IS NOT NONE AND state NOT IN ['DONE','ARCHIVED'] ORDER BY due_at ASC;`
+- **Aplazadas / dormidas** (tickler activo): `SELECT id, title, defer_until FROM note WHERE defer_until IS NOT NONE AND defer_until > time::now() ORDER BY defer_until ASC;`
+- **Radar activo** (vivas y NO dormidas — el patrón canónico del digest/dashboard): `SELECT id, title, state FROM note WHERE state IN ['ACTIVE','WAITING','CLARIFIED'] AND (defer_until IS NONE OR defer_until <= time::now());`
+  (para "día Madrid" exacto, compara `time::format(defer_until + 2h, '%Y-%m-%d') <= '<día>'`, como el digest.)

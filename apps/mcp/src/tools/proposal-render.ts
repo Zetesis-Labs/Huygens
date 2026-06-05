@@ -48,6 +48,8 @@ function createSection(payload: StoredProposalPayload): string[] {
       extras.push(`+${note.descriptive_blocks.length} ${plural(note.descriptive_blocks.length, 'descriptive block')}`)
     }
     if (note.mit_for) extras.push(`MIT ${note.mit_for}`)
+    if (note.due_at) extras.push(`due ${note.due_at}`)
+    if (note.defer_until) extras.push(`defer ${note.defer_until}`)
     const metaKeys = note.metadata ? Object.keys(note.metadata) : []
     if (metaKeys.length > 0) extras.push(`metadata: ${metaKeys.join(', ')}`)
     const suffix = extras.length > 0 ? ` · ${extras.join(' · ')}` : ''
@@ -62,6 +64,10 @@ function updateChanges(note: StoredProposalPayload['note_updates'][number]): str
   if (note.state != null) changes.push(`state → ${note.state}`)
   if (note.mit_for === null) changes.push('MIT → cleared')
   else if (note.mit_for != null) changes.push(`MIT → ${note.mit_for}`)
+  if (note.due_at === null) changes.push('due → cleared')
+  else if (note.due_at != null) changes.push(`due → ${note.due_at}`)
+  if (note.defer_until === null) changes.push('defer → cleared')
+  else if (note.defer_until != null) changes.push(`defer → ${note.defer_until}`)
   const mergeKeys = note.metadata_merge ? Object.keys(note.metadata_merge) : []
   if (mergeKeys.length > 0) changes.push(`metadata: ${mergeKeys.join(', ')}`)
   if (note.descriptive_blocks_append.length > 0) {

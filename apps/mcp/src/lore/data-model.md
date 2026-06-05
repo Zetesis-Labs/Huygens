@@ -33,7 +33,9 @@ note {
   id, title,
   type → note_type,   slug: task|project|area|routine|idea|reference|person|objetivo
   state: CLARIFIED | ACTIVE | WAITING | SOMEDAY | DONE | ARCHIVED,
-  mit_for?: datetime,  ← top-level field (indexed); YYYY-MM-DD → UTC midnight
+  mit_for?: datetime,      ← PRIORITY axis (indexed); YYYY-MM-DD → UTC midnight
+  due_at?: datetime,       ← COMMITMENT axis: hard deadline (indexed)
+  defer_until?: datetime,  ← TICKLER axis: hidden from the active radar until this day (indexed)
   metadata?: object (flexible),
   block_order: [→block, ...],
   source_kind?, source_ref?,
@@ -59,9 +61,25 @@ block {
 
 Each block is the vectorizable unit. `index_block` writes `embedding`/`embedding_model`/`dimensions` and the HNSW index updates automatically.
 
-### mit_for
+### Three temporal axes (don't conflate them)
 
-`mit_for` is a **top-level datetime field on `note`** (indexed as `note_mit_for`). Set it as `YYYY-MM-DD` (interpreted as UTC midnight) or full ISO datetime. **Never put it inside `metadata`.** Query it with `mit_for >= start AND mit_for < end`.
+`note` has three day-granular datetime fields, all top-level, all indexed, all
+normalized to **UTC midnight of the date written** on commit (date-only or ISO
+both land on the day). **Never put any of them inside `metadata`.**
+
+| Field | Axis | Meaning | Drives |
+|---|---|---|---|
+| `mit_for` | priority | "the focus for *that* day" (1–3/day) | the MITs view |
+| `due_at` | commitment | hard deadline: "must be done by X" | overdue-by-deadline |
+| `defer_until` | tickler | "don't show me until X" | hidden from the active radar until the day, then resurfaces |
+
+Distinct: a task can be MIT today, due Friday, and have no defer — or be deferred
+to next week (invisible until then). Querying:
+- today's MITs: `mit_for >= d'<day>' AND mit_for < d'<day+1>'`
+- overdue by deadline: `due_at < <today> AND state NOT IN ['DONE','ARCHIVED']`
+- dormant (deferred): `defer_until > <today>`
+- **active radar** (the live surface) must now exclude dormant ones:
+  `(defer_until IS NONE OR defer_until <= <today>)`
 
 ## Cross-plane and graph edges
 
@@ -129,7 +147,9 @@ and raws processed. Visual rendering of the change graph lives in the dashboard
     type_slug: NoteTypeSlug,
     title: string,
     state?: NoteState,            // default CLARIFIED
-    mit_for?: string,             // YYYY-MM-DD or ISO datetime → top-level field
+    mit_for?: string,             // YYYY-MM-DD or ISO → top-level field (priority)
+    due_at?: string,              // YYYY-MM-DD or ISO → hard deadline
+    defer_until?: string,         // YYYY-MM-DD or ISO → tickler (hide until)
     metadata?: object,
     descriptive_blocks?: [{ content }]
   }],
@@ -137,6 +157,8 @@ and raws processed. Visual rendering of the change graph lives in the dashboard
     id: string,                   // real note record id
     title?, state?,
     mit_for?: string | null,      // null clears it; YYYY-MM-DD or ISO to set
+    due_at?: string | null,       // null clears the deadline
+    defer_until?: string | null,  // null clears the defer (resurfaces now)
     metadata_merge?: object,
     descriptive_blocks_append?: [{ content }]
   }],

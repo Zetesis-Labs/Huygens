@@ -29,14 +29,15 @@ const BlockRefSchema = z.string().refine(value => TEMP_ID_RE.test(value) || BLOC
 })
 
 /**
- * A MIT date: a calendar day (YYYY-MM-DD) or a full ISO datetime. Stored in the
- * note's top-level `mit_for` datetime field (a date-only value lands at that
- * day's UTC midnight), so a mit_for date-range query can find it.
+ * A day-granular date: a calendar day (YYYY-MM-DD) or a full ISO datetime. Used by
+ * the three temporal axes — `mit_for` (priority), `due_at` (hard deadline) and
+ * `defer_until` (tickler). On commit it is normalized to that day's UTC midnight
+ * (see commit.ts `toDayUtcMidnight`), so date-range queries are consistent.
  */
-const MitForSchema = z
+const DayDateSchema = z
   .string()
   .refine(value => /^\d{4}-\d{2}-\d{2}/.test(value) && !Number.isNaN(new Date(value).getTime()), {
-    message: 'mit_for must be a date (YYYY-MM-DD) or ISO datetime'
+    message: 'must be a date (YYYY-MM-DD) or ISO datetime'
   })
 
 const DescriptiveBlockSchema = z.object({
@@ -57,7 +58,9 @@ export const NoteCreateSchema = z.object({
   type_slug: NoteTypeSlugSchema,
   title: z.string().min(1),
   state: NoteStateSchema.default('CLARIFIED'),
-  mit_for: MitForSchema.optional(),
+  mit_for: DayDateSchema.optional(),
+  due_at: DayDateSchema.optional(),
+  defer_until: DayDateSchema.optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   descriptive_blocks: z.array(DescriptiveBlockSchema).default([])
 })
@@ -66,7 +69,9 @@ const NoteUpdateSchema = z.object({
   id: z.string().regex(NOTE_ID_RE),
   title: z.string().min(1).optional(),
   state: NoteStateSchema.optional(),
-  mit_for: MitForSchema.nullable().optional(),
+  mit_for: DayDateSchema.nullable().optional(),
+  due_at: DayDateSchema.nullable().optional(),
+  defer_until: DayDateSchema.nullable().optional(),
   metadata_merge: z.record(z.string(), z.unknown()).optional(),
   descriptive_blocks_append: z.array(DescriptiveBlockSchema).default([])
 })
@@ -127,6 +132,8 @@ export type StoredNoteCreate = {
   title: string
   state: string
   mit_for?: string
+  due_at?: string
+  defer_until?: string
   metadata?: Record<string, unknown>
   descriptive_blocks: { content: string }[]
 }
@@ -136,6 +143,8 @@ export type StoredNoteUpdate = {
   title?: string
   state?: string
   mit_for?: string | null
+  due_at?: string | null
+  defer_until?: string | null
   metadata_merge?: Record<string, unknown>
   descriptive_blocks_append: { content: string }[]
 }

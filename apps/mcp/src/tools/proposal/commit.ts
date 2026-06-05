@@ -8,13 +8,26 @@ import type { CommitProposalInput, CommitProposalResult, StoredNoteCreate, Store
 import { requireDraftProposal } from './store'
 import { assertProposalRefs, assertRawCapturesCommittable } from './validation'
 
+/**
+ * Normalize a day-granular field (mit_for / due_at / defer_until) to UTC midnight
+ * of the date AS WRITTEN. These are day concepts, so a date-only input and a
+ * TZ-laden datetime must land on the same instant — otherwise date-range queries
+ * (overdue, today's MITs, dormant) drift (the stray `…T09:00:00+02:00` mit_for the
+ * audit found). The YYYY-MM-DD prefix is validated upstream by DayDateSchema.
+ */
+function toDayUtcMidnight(value: string): Date {
+  return new Date(`${value.slice(0, 10)}T00:00:00.000Z`)
+}
+
 function buildNoteCreateData(note: StoredNoteCreate): Record<string, unknown> {
   const data: Record<string, unknown> = {
     title: note.title,
     type: new StringRecordId(`note_type:${note.type_slug}`),
     state: note.state
   }
-  if (note.mit_for) data.mit_for = new Date(note.mit_for)
+  if (note.mit_for) data.mit_for = toDayUtcMidnight(note.mit_for)
+  if (note.due_at) data.due_at = toDayUtcMidnight(note.due_at)
+  if (note.defer_until) data.defer_until = toDayUtcMidnight(note.defer_until)
   if (note.metadata) data.metadata = note.metadata
   return data
 }
@@ -99,8 +112,12 @@ class CommitTx {
       const sets: string[] = []
       if (note.title != null) sets.push(`title = ${this.p(note.title)}`)
       if (note.state != null) sets.push(`state = ${this.p(note.state)}`)
-      if (note.mit_for === null) sets.push('mit_for = NONE')
-      else if (note.mit_for != null) sets.push(`mit_for = ${this.p(new Date(note.mit_for))}`)
+      // Day-granular fields: null clears (SET NONE), a value sets UTC midnight.
+      for (const field of ['mit_for', 'due_at', 'defer_until'] as const) {
+        const v = note[field]
+        if (v === null) sets.push(`${field} = NONE`)
+        else if (v != null) sets.push(`${field} = ${this.p(toDayUtcMidnight(v))}`)
+      }
       if (note.metadata_merge != null)
         sets.push(`metadata = object::extend(metadata ?? {}, ${this.p(note.metadata_merge)})`)
       if (sets.length > 0) this.lines.push(`UPDATE ${this.rid(note.id)} SET ${sets.join(', ')} RETURN NONE;`)

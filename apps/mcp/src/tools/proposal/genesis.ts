@@ -31,11 +31,13 @@ export async function buildGenesisPayload(): Promise<StoredProposalPayload> {
         title: string
         state: string
         mit_for: unknown
+        due_at: unknown
+        defer_until: unknown
         metadata: unknown
         block_order: unknown[]
       }>
     ]
-  >('SELECT id, type.slug AS type_slug, title, state, mit_for, metadata, block_order FROM note')
+  >('SELECT id, type.slug AS type_slug, title, state, mit_for, due_at, defer_until, metadata, block_order FROM note')
 
   const [descs] = await db.query<[Array<{ id: unknown; content: string }>]>(
     "SELECT id, content FROM block WHERE block_kind = 'descriptive'"
@@ -52,6 +54,10 @@ export async function buildGenesisPayload(): Promise<StoredProposalPayload> {
       state: n.state,
       ...(n.mit_for != null
         ? { mit_for: n.mit_for instanceof Date ? n.mit_for.toISOString() : String(n.mit_for) }
+        : {}),
+      ...(n.due_at != null ? { due_at: n.due_at instanceof Date ? n.due_at.toISOString() : String(n.due_at) } : {}),
+      ...(n.defer_until != null
+        ? { defer_until: n.defer_until instanceof Date ? n.defer_until.toISOString() : String(n.defer_until) }
         : {}),
       ...(meta != null && Object.keys(meta).length > 0 ? { metadata: meta } : {}),
       descriptive_blocks: (n.block_order ?? [])

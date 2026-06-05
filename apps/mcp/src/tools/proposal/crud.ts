@@ -48,6 +48,8 @@ export function realizePayload(input: ProposalPayload): StoredProposalPayload {
       title: n.title,
       state: n.state,
       ...(n.mit_for !== undefined ? { mit_for: n.mit_for } : {}),
+      ...(n.due_at !== undefined ? { due_at: n.due_at } : {}),
+      ...(n.defer_until !== undefined ? { defer_until: n.defer_until } : {}),
       ...(n.metadata !== undefined ? { metadata: n.metadata } : {}),
       descriptive_blocks: n.descriptive_blocks
     })),
@@ -56,6 +58,8 @@ export function realizePayload(input: ProposalPayload): StoredProposalPayload {
       ...(u.title !== undefined ? { title: u.title } : {}),
       ...(u.state !== undefined ? { state: u.state } : {}),
       ...(u.mit_for !== undefined ? { mit_for: u.mit_for } : {}),
+      ...(u.due_at !== undefined ? { due_at: u.due_at } : {}),
+      ...(u.defer_until !== undefined ? { defer_until: u.defer_until } : {}),
       ...(u.metadata_merge !== undefined ? { metadata_merge: u.metadata_merge } : {}),
       descriptive_blocks_append: u.descriptive_blocks_append
     })),

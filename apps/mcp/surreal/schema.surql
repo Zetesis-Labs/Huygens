@@ -90,15 +90,25 @@ DEFINE FIELD OVERWRITE source_ref  ON note TYPE option<string>;
 DEFINE FIELD OVERWRITE created_at  ON note TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE updated_at  ON note TYPE datetime VALUE time::now();
 DEFINE FIELD OVERWRITE last_reviewed_at ON note TYPE option<datetime>;
--- mit_for: si está set, esta task es MIT (Most Important Task) para ese día.
--- Convención ZTD: 1-3 MITs por día, decididos por el usuario (ADR-0023).
-DEFINE FIELD OVERWRITE mit_for ON note TYPE option<datetime>;
+-- Tres ejes temporales DISTINTOS (no confundir), todos campos top-level día-granulares
+-- (fecha-sola → medianoche UTC; ver normalización en commit.ts):
+--   mit_for     — PRIORIDAD: esta task es MIT (Most Important Task) para ese día.
+--                 Convención ZTD: 1-3 MITs/día, decididos por el usuario (ADR-0023).
+--   due_at      — COMPROMISO: vencimiento duro ("tiene que estar para X"). due_at < hoy
+--                 y no DONE/ARCHIVED ⇒ vencida por deadline.
+--   defer_until — APLAZAMIENTO (tickler): "no enseñar hasta X". defer_until > hoy ⇒
+--                 oculta del radar activo; al llegar la fecha resurge. NO cambia el estado.
+DEFINE FIELD OVERWRITE mit_for     ON note TYPE option<datetime>;
+DEFINE FIELD OVERWRITE due_at      ON note TYPE option<datetime>;
+DEFINE FIELD OVERWRITE defer_until ON note TYPE option<datetime>;
 
 DEFINE INDEX OVERWRITE note_state    ON note FIELDS state;
 DEFINE INDEX OVERWRITE note_type_idx ON note FIELDS type;
 DEFINE INDEX OVERWRITE note_updated  ON note FIELDS updated_at;
 DEFINE INDEX OVERWRITE note_reviewed ON note FIELDS last_reviewed_at;
-DEFINE INDEX OVERWRITE note_mit_for  ON note FIELDS mit_for;
+DEFINE INDEX OVERWRITE note_mit_for     ON note FIELDS mit_for;
+DEFINE INDEX OVERWRITE note_due_at      ON note FIELDS due_at;
+DEFINE INDEX OVERWRITE note_defer_until ON note FIELDS defer_until;
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- Block: unidad direccionable y vectorizable. Markdown auto-contenido.

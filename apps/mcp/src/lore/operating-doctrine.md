@@ -132,8 +132,27 @@ hoy. Si lo hay y es una corrección, retracta el anterior; no acumules cierres.
 
 > **Decisión de producto pendiente:** soltar (`mit_for: null`) borra el rastro de
 > que la tarea *fue* MIT ese día. Si se quiere preservar histórico de MITs, hace
-> falta decidir el modelo (ver due/defer dates). Hasta entonces, `null` = "ya no
-> es MIT", asumiendo pérdida del rastro.
+> falta decidir el modelo. Hasta entonces, `null` = "ya no es MIT", asumiendo
+> pérdida del rastro.
+
+## Tres ejes temporales (no los confundas)
+
+`note` tiene tres campos fecha top-level, indexados, día-granulares (fecha-sola →
+medianoche UTC). Son **ortogonales** — no los metas en `metadata`:
+
+| Campo | Eje | Significado |
+|---|---|---|
+| `mit_for` | prioridad | "el foco de *este* día" (1-3/día) |
+| `due_at` | compromiso | **vencimiento duro**: "tiene que estar para X" → genera *vencida* |
+| `defer_until` | tickler | **aplazamiento**: "no me lo enseñes hasta X" → se oculta del radar activo y resurge ese día |
+
+- Que algo sea MIT hoy ≠ que venza hoy ≠ que no quieras verlo hasta hoy.
+- **`defer_until` es un snooze de visibilidad**, no un estado: la tarea sigue ACTIVE,
+  solo desaparece del radar hasta su fecha (el digest la anuncia al resurgir). Es
+  ortogonal a WAITING (bloqueo externo) / SOMEDAY (algún día, sin fecha).
+- Se ponen/limpian vía propuesta aprobada (`null` limpia). El agente puede **sugerir**
+  un `due_at`/`defer_until` ("¿lo aplazamos a...?", "¿le pongo fecha límite?") pero
+  **no lo decide por iniciativa** — como los MITs.
 
 ## Field vs edge (cuándo cada uno)
 

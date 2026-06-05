@@ -26,6 +26,8 @@ function updatedFields(u: StoredProposalPayload['note_updates'][number]): string
   if (u.title != null) f.push('title')
   if (u.state != null) f.push('state')
   if (u.mit_for !== undefined) f.push('mit_for')
+  if (u.due_at !== undefined) f.push('due_at')
+  if (u.defer_until !== undefined) f.push('defer_until')
   if (u.metadata_merge != null) f.push('metadata')
   return f
 }
