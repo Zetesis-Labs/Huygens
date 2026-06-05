@@ -11,12 +11,17 @@ describe('buildInstructions', () => {
     await ctx.cleanup()
   })
 
-  test('leads with the SurrealQL cookbook', async () => {
+  test('leads with the operating doctrine, then the cookbook', async () => {
     const text = await buildInstructions()
+    // the doctrine (how to behave) is pushed in full, first, with its banner
+    expect(text).toContain('LEE ESTO PRIMERO')
+    expect(text).toContain('La frontera de aprobación')
+    // the cookbook (how to read) follows
     expect(text).toContain('SurrealQL cookbook')
-    // a verified recipe and the part_of direction rule must be present
     expect(text).toContain('<-part_of<-note')
     expect(text).toContain('READ-ONLY')
+    // doctrine before cookbook
+    expect(text.indexOf('LEE ESTO PRIMERO')).toBeLessThan(text.indexOf('SurrealQL cookbook'))
   })
 
   test('appends the live schema after the cookbook', async () => {

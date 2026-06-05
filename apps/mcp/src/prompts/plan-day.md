@@ -27,7 +27,9 @@ todo: evidencia → interpretación → propuesta → commit.
    `kind: 'plan_day'`** (esto, y solo en este ritual).
 7. **Propón** (una sola propuesta) con `mit_for: '<día>'` en las elegidas (campo
    top-level, **nunca en `metadata`**) + el informe-block; repasa con `get_proposal`.
-8. **Commit solo con aprobación explícita**; audita con `get_proposal_changes`.
+8. **Commit solo con aprobación explícita** (`commit_proposal` con **`approved:
+   true`** — obligatorio para rituales; el server lo exige y rechaza un 2º plan_day
+   hoy); audita con `get_proposal_changes`.
 
 ## Guardarraíles (no negociables)
 

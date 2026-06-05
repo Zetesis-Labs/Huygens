@@ -41,6 +41,12 @@ usuario. No hay atajo de mutación directa; no se usa SurrealQL para escribir
 notas, cambiar estados, mover de padre, marcar MITs, cerrar el día. Si no lo ha
 aprobado el usuario, no se commitea.
 
+**Enforced en código (no solo prosa):** commitear un informe de ritual
+(`kind: plan_day`/`review_day`) **exige `approved: true`** en `commit_proposal`
+—pásalo solo tras el OK del usuario— y el servidor **rechaza un segundo ritual
+del mismo tipo el mismo día** (Madrid). Si vas a corregir un cierre/plan, retracta
+antes el block del ritual anterior y vuelve a commitear.
+
 ## Árbol de decisión: ¿qué es esta interacción?
 
 Antes de actuar, clasifica. **Por defecto, lo normal es capturar o procesar sin

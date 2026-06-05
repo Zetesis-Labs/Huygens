@@ -31,7 +31,9 @@ registro. Habla en español. Es el espejo retrospectivo de `plan_day`.
    `kind: 'review_day'`** (esto, y solo en este ritual).
 6. **Propón** (una sola propuesta) los `note_updates` + el informe-block; repasa con
    `get_proposal`.
-7. **Commit solo con aprobación explícita**; audita con `get_proposal_changes`.
+7. **Commit solo con aprobación explícita** (`commit_proposal` con **`approved:
+   true`** — obligatorio para rituales; el server lo exige y rechaza un 2º review_day
+   hoy); audita con `get_proposal_changes`.
 
 ## Guardarraíles (no negociables)
 

@@ -101,7 +101,7 @@ export function registerProposalTools(server: McpServer): void {
   defineTool(
     server,
     'commit_proposal',
-    "Commit an approved proposal: create narrative blocks, apply minimal note/edge mutations, link provenance, and mark raws processed. The mutation boundary — only call it with the user's EXPLICIT approval. Never commit a plan_day/review_day (a daily ritual) the user did not ask for. See huygens://lore/operating-doctrine.",
+    "Commit an approved proposal: create narrative blocks, apply minimal note/edge mutations, link provenance, and mark raws processed. The mutation boundary — only call it with the user's EXPLICIT approval. A daily ritual (a plan_day/review_day informe) requires approved: true and is rejected if one already exists for today, so never commit one the user did not ask for. See huygens://lore/operating-doctrine.",
     commitProposalShape,
     async args => {
       const result = await commitProposalImpl(args)

@@ -14,7 +14,8 @@
     "db:smoke": "bun run scripts/smoke.ts",
     "db:reindex": "bun run scripts/reindex.ts",
     "db:rebuild": "bun run scripts/rebuild-graph.ts",
-    "db:genesis": "bun run scripts/genesis.ts"
+    "db:genesis": "bun run scripts/genesis.ts",
+    "db:backfill-kind": "bun run scripts/backfill-block-kind.ts"
   },
   "dependencies": {
     "@huygens/graph": "workspace:*",

@@ -1,5 +1,6 @@
 import { type RecordId, StringRecordId } from 'surrealdb'
 import { uuidv7 } from 'uuidv7'
+import { QueryError } from '../../errors'
 import { emitEvent, newSessionId } from '../../events'
 import { getDb } from '../../surreal'
 import { indexBlockImpl } from '../index-block'
@@ -109,8 +110,12 @@ class CommitTx {
 
   private narratives(payload: StoredProposalPayload): void {
     for (const block of payload.narrative_blocks) {
+      // Materialize the ritual `kind` on the block itself (plan_day/review_day…),
+      // so the block is self-describing and replay/genesis preserve it. Absent for
+      // a normal process informe.
+      const kindSet = block.kind ? `, kind = ${this.p(block.kind)}` : ''
       this.lines.push(
-        `CREATE ${this.rid(block.id)} SET block_kind = 'narrative', content = ${this.p(block.content)}, topologized_at = time::now() RETURN NONE;`
+        `CREATE ${this.rid(block.id)} SET block_kind = 'narrative', content = ${this.p(block.content)}, topologized_at = time::now()${kindSet} RETURN NONE;`
       )
       for (const rawId of block.raw_ids) {
         this.lines.push(
@@ -216,12 +221,59 @@ export function buildReplayTx(payload: StoredProposalPayload): { query: string; 
   return new CommitTx().buildReplay(payload)
 }
 
+/**
+ * Hard gate for daily-ritual commits (plan_day / review_day informes). The
+ * doctrine says a plan/close must be (1) explicitly approved by the user and
+ * (2) unique per Madrid-day. Plain process commits (no kind) are untouched.
+ *
+ * The uniqueness check counts only **live** ritual blocks: a kind lives in the
+ * immutable proposal payload, so after a retract (block deleted) the payload
+ * still carries it — we must cross-check the `block` table so a correction
+ * (retract the wrong close, then re-commit) is allowed, while a genuine second
+ * close of the day is rejected.
+ */
+async function assertRitualCommitAllowed(payload: StoredProposalPayload, input: CommitProposalInput): Promise<void> {
+  const ritualKinds = [...new Set(payload.narrative_blocks.map(b => b.kind).filter((k): k is string => Boolean(k)))]
+  if (ritualKinds.length === 0) return // not a ritual commit — no gate
+
+  // (1) explicit approval
+  if (input.approved !== true) {
+    throw new QueryError(
+      `commit_proposal of a daily ritual (${ritualKinds.join(', ')}) requires the user's explicit approval: pass approved: true only after the user OK'd it. A plan/close must never be committed unasked (see huygens://lore/operating-doctrine).`
+    )
+  }
+
+  // (2) one ritual of each kind per Madrid-day, counting only live blocks
+  const db = await getDb()
+  const [rows] = await db.query<[Array<{ kinded: Array<{ id: unknown; kind: string }> }>]>(
+    `SELECT payload.narrative_blocks[WHERE kind IS NOT NONE].{ id, kind } AS kinded
+     FROM proposal
+     WHERE status = 'committed'
+       AND time::format(created_at + 2h, '%Y-%m-%d') = time::format(time::now() + 2h, '%Y-%m-%d')
+       AND count(payload.narrative_blocks[WHERE kind IS NOT NONE]) > 0`
+  )
+  const candidates = (rows ?? []).flatMap(r => r.kinded ?? [])
+  if (candidates.length > 0) {
+    const ids = candidates.map(c => new StringRecordId(String(c.id)))
+    const [liveRows] = await db.query<[unknown[]]>('SELECT VALUE id FROM block WHERE id IN $ids', { ids })
+    const live = new Set((liveRows ?? []).map(String))
+    const liveKindsToday = new Set(candidates.filter(c => live.has(String(c.id))).map(c => c.kind))
+    const dup = ritualKinds.find(k => liveKindsToday.has(k))
+    if (dup) {
+      throw new QueryError(
+        `a ${dup} informe already exists for today (Madrid) — only one per day. If you are correcting it, retract the previous ritual block first, then commit.`
+      )
+    }
+  }
+}
+
 export async function commitProposalImpl(input: CommitProposalInput): Promise<CommitProposalResult> {
   const db = await getDb()
   const proposal = await requireDraftProposal(input.proposal_id)
   const payload = proposal.payload // stored: real ids everywhere
   await assertRawCapturesCommittable(payload.raw_ids)
   await assertProposalRefs(payload)
+  await assertRitualCommitAllowed(payload, input)
 
   // DB-clock datetime before the commit → anchor for recovering the versionstamp.
   const [before] = await db.query<[string]>('RETURN <string> time::now();')

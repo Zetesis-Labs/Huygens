@@ -113,6 +113,12 @@ DEFINE FIELD OVERWRITE note            ON block TYPE option<record<note>>;
 DEFINE FIELD OVERWRITE block_kind      ON block TYPE string
   DEFAULT 'descriptive'
   ASSERT $value INSIDE ['descriptive', 'narrative'];
+-- Ritual tag for narrative informe-blocks (plan_day/review_day/…): materialized
+-- on the block itself so the block is self-describing and a rebuild/genesis
+-- preserves it. Written at commit (commit.ts narratives) and carried through
+-- replay/genesis. NONE for a normal process informe and for descriptive blocks.
+DEFINE FIELD OVERWRITE kind            ON block TYPE option<string>
+  ASSERT $value IS NONE OR $value INSIDE ['plan_day', 'review_day', 'plan_week', 'review_week'];
 DEFINE FIELD OVERWRITE content         ON block TYPE string;
 -- Pilares Estratégicos dropeados al adoptar ZTD (ADR-0021). Limpieza del campo legacy.
 REMOVE FIELD IF EXISTS pillars ON TABLE block;

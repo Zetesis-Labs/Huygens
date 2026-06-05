@@ -61,13 +61,16 @@ export async function buildGenesisPayload(): Promise<StoredProposalPayload> {
     }
   })
 
-  const [nblocks] = await db.query<[Array<{ id: unknown; content: string; raws: unknown[] }>]>(
-    "SELECT id, content, ->derived_from->raw_capture AS raws FROM block WHERE block_kind = 'narrative'"
+  const [nblocks] = await db.query<[Array<{ id: unknown; content: string; kind: string | null; raws: unknown[] }>]>(
+    "SELECT id, content, kind, ->derived_from->raw_capture AS raws FROM block WHERE block_kind = 'narrative'"
   )
   const narrative_blocks: StoredNarrativeBlock[] = (nblocks ?? []).map(b => ({
     id: String(b.id),
     content: b.content,
-    raw_ids: (b.raws ?? []).map(r => String(r))
+    raw_ids: (b.raws ?? []).map(r => String(r)),
+    // Carry the ritual kind through the genesis snapshot so a replay preserves the
+    // Bitácora (plan_day/review_day). Without this a rebuild would silently drop it.
+    ...(b.kind != null ? { kind: b.kind } : {})
   }))
 
   const [about] = await db.query<[Array<{ blk: unknown; nte: unknown }>]>('SELECT in AS blk, out AS nte FROM about')
