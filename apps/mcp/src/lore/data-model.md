@@ -1,6 +1,9 @@
 # Huygens Data Model
 
-> **Note for consuming agents:** the canonical model of how Huygens flows is described in `docs/MODEL.md` at the repo root, in Spanish. This document is the compact physical-schema summary exposed by the MCP at runtime — keep it in sync with `schema.surql` and the tool contracts.
+> **Note for consuming agents:** this is the compact physical-schema summary the MCP exposes at runtime — the **WHAT** (entities, edges, proposal lifecycle, tools). Keep it in sync with `schema.surql` and the tool contracts.
+>
+> - **How you must BEHAVE** → `huygens://lore/operating-doctrine` (read it: the approval boundary, the initiative asymmetry, the kind discipline). It governs; if a prompt conflicts with it, the doctrine wins.
+> - **The conceptual WHY** → `docs/MODEL.md` at the repo root (Spanish).
 
 Two ontological planes (current schema).
 
@@ -114,7 +117,10 @@ change graph lives in the dashboard (React Flow), not in the MCP.
   narrative_blocks: [{            // ≥ 1 required
     temp_id: string,              // local name used to cross-reference below
     content: string,
-    raw_ids: string[]             // raws this block summarizes (≥ 1)
+    raw_ids: string[],            // raws this block summarizes (≥ 1)
+    kind?: plan_day|review_day|plan_week|review_week  // ritual tag → Bitácora.
+                                  // Set ONLY by the plan_day/review_day rituals.
+                                  // A normal process informe has NO kind.
   }],
   note_creates: [{
     temp_id: string,

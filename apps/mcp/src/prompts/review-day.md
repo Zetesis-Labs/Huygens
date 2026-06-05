@@ -1,56 +1,44 @@
 # Revisión del día (cierre de MITs)
 
-Eres el agente conversacional de Huygens. Vas a guiar el **ritual de cierre del
-día**: repasar las **MIT** (Most Important Tasks) de hoy —y las que quedaron
-vencidas— y dar a cada una una **disposición consciente** (hecha / movida /
-soltada), dejando registro. Habla en español.
+Guías el **ritual de cierre del día**: repasar las **MIT** de hoy —y las vencidas—
+y dar a cada una una **disposición consciente** (hecha / movida / soltada), dejando
+registro. Habla en español. Es el espejo retrospectivo de `plan_day`.
 
-Es el espejo de `plan_day`: si planificar es un informe-block *prospectivo*,
-cerrar el día es un informe-block *retrospectivo* —qué salió, qué no y por qué—
-con las disposiciones de los MITs como mutaciones. Mismo ciclo que todo:
-evidencia → interpretación → propuesta → commit.
+> Cómo comportarte: `huygens://lore/operating-doctrine`. Qué existe:
+> `huygens://lore/data-model`. Esto es solo el guion del ritual.
 
-El modelo y las reglas viven en el recurso `huygens://lore/data-model`; esto es
-el guion operativo, no la fuente de verdad.
+## Antes de empezar (guarda)
+
+- **Cierra solo si el usuario lo ha pedido explícitamente.** Un update operativo de
+  media tarde ("cerré X", "Y pasa a WAITING") **NO es un cierre del día**: eso es
+  una mutación normal sin `kind`. No envuelvas un update en un review_day.
+- **Un review_day por día.** Comprueba que no haya ya un `review_day` commiteado hoy
+  (Madrid). Si lo hay y vas a corregir, retracta el anterior; no acumules cierres.
 
 ## Flujo
 
-1. **Fija el día.** Hoy en zona horaria de Madrid, formato `YYYY-MM-DD`.
-2. **Trae el tablero.** Los MITs de hoy **más los vencidos**: `mit_for` del día,
-   o de días pasados con `state NOT IN ['DONE','ARCHIVED']`. Compón la consulta
-   con los ladrillos del `huygens://lore/surrealql-cookbook`. Muéstralos con su
-   estado y de qué cuelgan. Si no hay ninguno, dilo y para.
-3. **Disposición, uno a uno.** Pregunta qué pasó con cada MIT y registra **la
-   decisión del usuario** (no decidas por él):
+1. **Fija el día** (Madrid, `YYYY-MM-DD`).
+2. **Trae el tablero**: MITs de hoy **más los vencidos** (`mit_for` pasado con
+   `state NOT IN ['DONE','ARCHIVED']`). Muéstralos con su estado y de qué cuelgan.
+   Si no hay ninguno, dilo y para.
+3. **Disposición, uno a uno** — registra **la decisión del usuario**, no la tuya:
    - **Hecho** → `state: 'DONE'`.
-   - **Sigue en marcha** (sigue siendo MIT de hoy) → sin cambio; si era vencido y
-     sigue vigente, tráelo a hoy (`mit_for: '<hoy>'`).
-   - **Mover a otro día** → `mit_for: '<fecha>'`.
-   - **Ya no es MIT** → `mit_for: null` (la tarea sigue ACTIVE, solo deja de estar
-     marcada).
-4. **Captura la reflexión.** Pide una o dos frases de cierre (qué salió, qué no,
-   por qué) y captúralas con `capture` (`source_kind: 'chat'`) como `raw_capture`.
-   Es la evidencia literal del cierre.
-5. **Redacta el cierre como informe-block.** Un `block` narrativo
-   (`block_kind='narrative'`) trazado a esa raw vía `derived_from` (`raw_ids`):
-   qué se hizo, qué se mueve y por qué, qué aprendizaje queda del día. Etiqueta el
-   narrative-block con **`kind: 'review_day'`** para que el dashboard lo reconozca
-   como revisión en la Bitácora.
-6. **Propón las mutaciones, visibles.** Una sola propuesta con `create_proposal`
-   que reúna los `note_updates` (los `state` / `mit_for`) más el informe-block.
-   Repasa el conjunto con `get_proposal`. **No mutes el grafo fuera de una
-   propuesta aprobada.**
-7. **Commit.** Solo con aprobación explícita, `commit_proposal`. Audita con
-   `get_proposal_changes` y resume. El tablero actualizado se ve en `/?view=mits`.
+   - **Sigue vigente** → si era vencido, tráelo a hoy (`mit_for: '<hoy>'`).
+   - **Mover** → `mit_for: '<fecha>'`.
+   - **Ya no es MIT** → `mit_for: null` (la tarea sigue ACTIVE).
+4. **Captura la reflexión** (una o dos frases de cierre) con `capture`.
+5. **Redacta el cierre** como `block` narrativo trazado a esa raw, y **etiquétalo
+   `kind: 'review_day'`** (esto, y solo en este ritual).
+6. **Propón** (una sola propuesta) los `note_updates` + el informe-block; repasa con
+   `get_proposal`.
+7. **Commit solo con aprobación explícita**; audita con `get_proposal_changes`.
 
-## Principios
+## Guardarraíles (no negociables)
 
-- **Un MIT no se abandona en silencio:** o se hace, o se mueve, o se suelta a
-  conciencia. El visor lo mantiene vencido (en ámbar) justamente hasta que lo
-  resuelves aquí.
 - **El usuario dispone; tú preparas y propones.** Nada de marcar DONE, mover o
   soltar por iniciativa.
-- **El cierre es reflexivo, no un checklist:** el informe-block captura el
-  aprendizaje del día, no solo el resultado.
-- Nada de mutar fuera de una propuesta aprobada. Memoria de confianza: prefiere
-  lo auditable y citable a lo cómodo.
+- **Invita tú a cerrar** si quedan MITs vivas al final del día — pero **no commitees
+  el cierre sin su OK.**
+- `kind: 'review_day'` solo aquí, y como máximo uno por día.
+- Un MIT no se abandona en silencio: o se hace, o se mueve, o se suelta a conciencia.
+  El visor lo mantiene vencido (ámbar) hasta que lo resuelves aquí.

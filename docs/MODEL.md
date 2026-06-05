@@ -1,8 +1,18 @@
 # Huygens — Modelo v2.1-lite
 
-> Documento canónico. Si otro documento conceptual contradice este, este gana
-> hasta que el otro se actualice. El flujo v2.1-lite ya existe en schema/tools;
-> el repo conserva piezas legacy por compatibilidad. Ver **Legacy actual**.
+> **Documento canónico del *porqué* conceptual** (la epistemología de dos planos
+> y la tesis del informe-block). Si otro documento conceptual lo contradice, este
+> gana hasta que el otro se actualice.
+>
+> Reparto de fuentes de verdad (para no duplicar ni driftar):
+> - **Cómo debe comportarse el agente** → `apps/mcp/src/lore/operating-doctrine.md`
+>   (recurso `huygens://lore/operating-doctrine`). Es el SSOT del comportamiento.
+> - **Contrato físico vivo** (entidades, edges, ciclo de proposal, tools) →
+>   `apps/mcp/src/lore/data-model.md` + `schema.surql`.
+> - **Este documento** → el modelo mental y el rationale; ilustra con ejemplos.
+>
+> El flujo v2.1-lite ya existe en schema/tools; el repo conserva piezas legacy por
+> compatibilidad.
 
 ## En una frase
 
@@ -140,8 +150,14 @@ Se mantiene el slug real `objetivo` durante esta migracion. No renombrarlo a
 
 `mit_for` es campo top-level indexado (no `metadata`). Convención ZTD: 1-3 MITs
 por día decididos por el usuario; el agente no los marca autonomamente. Un valor
-fecha-solo (`YYYY-MM-DD`) se persiste a medianoche UTC del día. El campo queda
-como rastro histórico: "fue MIT el día X".
+fecha-solo (`YYYY-MM-DD`) se persiste a medianoche UTC del día. **No se borra
+automáticamente** al pasar el día: una MIT vencida y no resuelta sigue visible
+(en ámbar) hasta que el usuario la dispone en el cierre (`review_day`).
+
+> Tensión abierta: el cierre permite *soltar* una MIT con `mit_for: null`, lo que
+> borra el rastro de que *fue* MIT ese día. Si se quiere preservar histórico de
+> MITs, es una decisión de producto pendiente (ligada a due/defer dates). Reglas
+> de comportamiento vivas en `operating-doctrine`.
 
 ### `block`
 
@@ -206,18 +222,24 @@ habitual; pero el schema permite bloqueo por un bloque narrativo concreto.
 
 Estas piezas quedan aparcadas aunque sean compatibles con el modelo grande:
 
-- Worker autonomo que topologiza sin revision.
+- Worker autonomo que topologiza sin revision (el commit sigue siendo humano).
 - `based_on` entre blocks narrativos.
 - `supports` y `refutes`.
 - `authored_by`.
 - Reports como entidad persistida (`note(type=report)`).
 - `compose_report` sofisticado.
 - Routines con RRULE engine.
-- Dashboard.
 - Migraciones de slug `objetivo` -> `objective`.
 
 El criterio es conservador: v2.1-lite mantiene el informe-block, pero reduce
 automatismo y vocabulario.
+
+**Ya enviado (antes fuera de scope):** el **dashboard** (Astro+React, read-only)
+existe y visualiza grafo, MITs (con vencidos en ámbar) y la **Bitácora**. Y los
+**rituales diarios** `plan_day` / `review_day`: un plan/cierre es un informe-block
+(prospectivo/retrospectivo) etiquetado con `kind`, que reusa el mismo flujo
+captura→propuesta→commit. Las reglas de cuándo y cómo invocarlos viven en
+`operating-doctrine` (no las repitas aquí).
 
 ## Ejemplos
 

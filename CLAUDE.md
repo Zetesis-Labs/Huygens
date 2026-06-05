@@ -2,11 +2,12 @@
 
 > Lectura obligatoria al inicio de sesión:
 >
-> 1. [`docs/MODEL.md`](./docs/MODEL.md) — modelo canónico v2.1-lite.
-> 2. [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md) — reglas operativas para agentes.
+> 1. [`docs/MODEL.md`](./docs/MODEL.md) — el *porqué* conceptual (modelo v2.1-lite).
+> 2. [`apps/mcp/src/lore/operating-doctrine.md`](./apps/mcp/src/lore/operating-doctrine.md) — **cómo debe comportarse el agente** (SSOT del comportamiento; recurso `huygens://lore/operating-doctrine`).
+> 3. [`apps/mcp/src/lore/data-model.md`](./apps/mcp/src/lore/data-model.md) — el contrato físico (entidades, edges, ciclo de proposal, tools).
 >
-> Este fichero contiene convenciones del repo y comandos. El modelo de dominio
-> vive en `docs/MODEL.md`.
+> Este fichero contiene convenciones del repo y comandos. (`docs/CONVENTIONS.md`
+> quedó como stub: sus reglas se consolidaron en la doctrina operativa.)
 
 ## Proyecto
 
@@ -55,7 +56,7 @@ query_query
 - No cambies schema, tipos, edges ni flujo de topologización por iniciativa
   propia.
 - Usa `docs/MODEL.md` como fuente de verdad conceptual.
-- Usa `docs/CONVENTIONS.md` para decidir cuándo capturar, proponer o mutar.
+- Usa `apps/mcp/src/lore/operating-doctrine.md` para decidir cuándo capturar, proponer o mutar.
 - No reintroduzcas el flujo antiguo `raw -> clarify -> notes`.
 
 ## Limpieza legacy
@@ -67,7 +68,6 @@ commit_clarify   eliminado
 generate_report  eliminado
 note_type:report eliminado del seed
 note_type:note   eliminado del seed
-huygens-worker   shell MCP; sin Agno/OpenAI, sin polling del inbox
 processed_at     compatibilidad; raw_capture.status es la fuente de verdad
 ```
 
@@ -80,7 +80,7 @@ reintroducir esas piezas sin decisión explícita del usuario.
 - **TypeScript estricto** y ESM.
 - **Biome** para lint/format.
 - **SurrealDB** como BBDD multi-modelo: documento + grafo + vector.
-- **Python** solo para futuros workers especializados que usen MCP.
+- **Python** para el worker (agente Agno del dashboard) y futuros workers que usen MCP.
 - **Devcontainer obligatorio** para comandos.
 
 ## Devcontainer
@@ -93,7 +93,7 @@ Servicios principales:
 | `surrealdb` | BBDD principal |
 | `surrealdb-init` | one-shot para preparar volumen |
 | `huygens-mcp` | MCP server TS en `:3030` |
-| `huygens-worker` | shell Python MCP para futuros workers, excluido por defecto con profile `worker` |
+| `huygens-worker` | agente conversacional del dashboard (Agno + OpenAI, AG-UI en `:7777`); arranca por defecto (`WORKER_ENABLED:-true`). **Excluye `commit_proposal`**: el commit es siempre humano. Ojo: Agno descarta el `instructions` del MCP, así que su doctrina vive en su system-prompt (`agent.py`), no en `instructions` |
 
 Los nombres de contenedor dependen del project name de Docker Compose. En esta
 máquina pueden ser `huygens_devcontainer-app-1`; en otros entornos pueden ser

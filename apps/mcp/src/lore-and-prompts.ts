@@ -15,10 +15,17 @@ type PromptEntry = { name: string; description: string; path: string }
 
 const LORE_ENTRIES: LoreEntry[] = [
   {
+    uri: 'huygens://lore/operating-doctrine',
+    name: 'operating-doctrine',
+    description:
+      'READ FIRST — governs HOW you must behave: the approval boundary (nothing mutates without an approved proposal), the decision tree (capture vs process vs ritual), the kind discipline, the initiative asymmetry (invite rituals proactively, NEVER commit one unasked), MIT rules and prohibitions. If a ritual prompt and this doctrine conflict, the doctrine wins.',
+    path: 'lore/operating-doctrine.md'
+  },
+  {
     uri: 'huygens://lore/data-model',
     name: 'data-model',
     description:
-      'The two-plane data model (raw_capture as evidence vs note+block+edges as interpretation) and the audit layer.',
+      'The two-plane data model (raw_capture as evidence vs note+block+edges as interpretation), the proposal lifecycle, the tools surface and the audit layer. The WHAT; the HOW-to-behave is operating-doctrine.',
     path: 'lore/data-model.md'
   },
   {
