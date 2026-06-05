@@ -41,12 +41,11 @@ decisión, qué se descartó, y qué queda **realmente pendiente** (priorizado).
 
 ## 🔴🟡 Pendiente de verdad
 
-### Hardening due/defer — capa operacional a medio migrar (revisión 2026-06-05, verificado)
+### ✅ Hardening due/defer — HECHO (commit `ab7fcb3`, 2026-06-05)
 
-El núcleo (schema/doctrina/data-model/commit) habla `due_at`/`defer_until`, pero la
-capa operacional aún arrastra semántica vieja. Verificado contra código y grafo.
-**Nada miente todavía porque hay 0 notas usando los campos — pero lo hará en cuanto
-haya deadlines/ticklers reales.** Por prioridad:
+Los 7 puntos de abajo se cerraron y verificaron (256 tests; saved queries migradas
+y verificadas ejecutando vía driver; Inbox/DST/`last_reviewed_at` desplegados). Se
+deja el detalle como registro de qué se tocó:
 
 1. **Migrar las 3 saved queries pineadas** (tabla `saved_query`) — el mayor miss, ni
    estaba en este informe. Usan `metadata.deadline`/`metadata.due` y NO excluyen dormidas:
@@ -85,17 +84,18 @@ haya deadlines/ticklers reales.** Por prioridad:
    vacío → "memoria desaparecida". Declarar `name:` y limpiar los muertos.
 
 ### Dashboard / visibilidad (MEDIO-8 + apuesta D)
-3. **Activar la vista de Inbox.** Hoy es placeholder "pronto" (`apps/dashboard/src/pages/index.astro`)
-   pese a haber raws reales y `list_inbox` ya expuesto.
-4. **Bug latente DST.** Offset `+2h` fijo (`apps/dashboard/src/lib/surreal.ts` `MADRID_DAY`);
-   se romperá en horario de invierno (debería ser +1h/CET). Calcular el offset real o usar TZ.
+3. ✅ ~~**Activar la vista de Inbox.**~~ HECHO (`ab7fcb3`): vista `/?view=inbox` con
+   conteo en el nav, lista los raw_captures pendientes.
+4. ✅ ~~**Bug latente DST.**~~ HECHO (`ab7fcb3`): offset dinámico (+1 CET / +2 CEST)
+   vía `madridOffsetHours` / `todayMadridDay`. *(El cron de Hermes aún usa `+2h` en
+   sus comparaciones de día — pendiente migrarlo igual.)*
 5. **Vista de Objetivos / MITs huérfanas / panel de coaching de ritual** (apuesta D).
    Solapa con los Objetivos del ciclo semanal — mejor abordarlo cuando existan objetivos.
 
 ### Rituales (apuesta B, a medias)
-6. **`review_day` no estampa `last_reviewed_at`.** Cerrar el día no marca las notas como
-   revisadas, así que el radar de "nunca revisado" (`last_reviewed_at IS NONE`) no funciona.
-   (Sembrar objetivos era la otra mitad de la apuesta B, ya aparcado.)
+6. ✅ ~~**`review_day` no estampa `last_reviewed_at`.**~~ HECHO (`ab7fcb3`): el commit de
+   un `review_day` estampa `last_reviewed_at` en las notas dispuestas → el radar de "nunca
+   revisado" ya funciona. (Sembrar objetivos era la otra mitad de la apuesta B, ya aparcado.)
 
 ### Deuda fina (BAJO-9)
 7. **`domain.ts` `PROPOSAL_STATUSES` sin `superseded`.** Solo `['draft','committed','discarded']`,
