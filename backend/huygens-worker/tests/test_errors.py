@@ -62,8 +62,6 @@ def test_malformed_error_payload_returns_none() -> None:
 
 
 def test_details_default_to_empty_when_absent() -> None:
-    err = huygens_error_from_structured(
-        {"error": {"code": "RAW_NOT_FOUND", "message": "x"}}
-    )
+    err = huygens_error_from_structured({"error": {"code": "RAW_NOT_FOUND", "message": "x"}})
     assert isinstance(err, RawNotFoundError)
     assert err.details == {}

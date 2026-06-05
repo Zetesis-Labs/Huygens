@@ -75,3 +75,35 @@ jobs:
       - name: Stop SurrealDB
         if: always()
         run: docker rm -f surrealdb || true
+
+  # Worker gate: the Python dashboard agent (Agno + OpenAI). Self-contained — no
+  # DB, no secrets, no network (the OpenAI client is only constructed at runtime).
+  # Lint + types + unit tests, all via uv against the committed lockfile.
+  worker:
+    runs-on: cardano-runners
+    defaults:
+      run:
+        working-directory: backend/huygens-worker
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies (locked, incl. dev group)
+        run: uv sync --locked
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Format check (ruff)
+        run: uv run ruff format --check .
+
+      - name: Typecheck (mypy)
+        run: uv run mypy huygens_worker
+
+      - name: Run tests (pytest)
+        run: uv run pytest
