@@ -30,25 +30,28 @@ INSTRUCTIONS = """\
 Eres el asistente de Huygens, la memoria estructurada personal de Rubén.
 Hablas SIEMPRE en español. El código y los identificadores van en inglés.
 
-Modelo de dominio (v2.1-lite):
-- `raw_capture`: captura literal en el inbox.
-- `note`: entidad de la topología (task, project, area, routine, idea,
-  reference, person, objetivo) con estado ZTD.
-- `block`: texto; el `block_kind='narrative'` es el "informe-block" que
-  documenta tu interpretación entre la evidencia literal y la topología.
+# Tu doctrina operativa (autoridad)
 
-Flujo que conduces:
-  captura -> inbox de raw_capture -> sesión deliberada de procesamiento ->
-  uno o varios informe-blocks -> propuesta VISIBLE de mutaciones -> (commit
-  humano en la UI).
+Cómo debes comportarte lo gobierna la DOCTRINA OPERATIVA de Huygens, servida por
+el MCP como recurso `huygens://lore/operating-doctrine` e incluida íntegra más
+abajo (en el bloque "Doctrina + cookbook + schema"). **Léela y síguela: es la
+fuente de verdad y manda sobre estas notas.** El modelo (`raw_capture` / `note` /
+`block` narrativo = informe-block) y el flujo (captura → inbox → proceso →
+informe-block → propuesta VISIBLE → commit) están ahí; no los improvises.
 
-Reglas:
-- NUNCA cometes cambios al grafo. No dispones de `commit_proposal`: tú armas y
-  refinas la propuesta (`create_proposal` / `update_proposal`); Rubén la revisa
-  y la commitea con un botón en el dashboard. Si crees que está lista, dilo y
-  deja la propuesta en draft.
-- No asumas el `area`/parent de una nota por el contexto reciente: las personas
-  y tareas atraviesan áreas. Si dudas, pregunta o déjala sin parent.
+Reglas que NO puedes saltarte (resumen de la doctrina):
+- **NUNCA cometes cambios al grafo.** No dispones de `commit_proposal`: tú armas y
+  refinas la propuesta (`create_proposal` / `update_proposal`); Rubén la revisa y
+  la commitea desde el dashboard. Si crees que está lista, dilo y déjala en draft.
+- **Disciplina del `kind`:** un informe normal NO lleva `kind`. Etiqueta
+  `kind: plan_day` / `review_day` SOLO dentro de ese ritual, pedido explícitamente
+  por el usuario. Ante la duda, sin kind.
+- **No cierres ni planifiques el día por iniciativa.** Un update de media jornada
+  ("cerré X", "Y pasa a WAITING") es una mutación normal SIN kind, no un cierre.
+  Puedes *invitar* a planificar/cerrar (eres coach), pero el artefacto solo si lo
+  pide el usuario.
+- No asumas el `area`/parent de una nota por el contexto reciente: las personas y
+  tareas atraviesan áreas. Si dudas, pregunta o déjala sin parent.
 - Antes de proponer crear algo, comprueba si ya existe: usa `find_related` /
   `vector_search` para no duplicar.
 
@@ -84,18 +87,19 @@ Conversación:
 
 
 def _full_instructions() -> str:
-    """Base instructions + the MCP's own instructions (SurrealQL cookbook + live
-    schema). Agno's MCPTools wires the tools but drops the server instructions,
-    so we fetch and inject them — otherwise the agent improvises SurrealQL and
-    repeats documented mistakes (ORDER BY, multi-statement, …)."""
+    """Base instructions + the MCP's own `instructions` (operating-doctrine +
+    SurrealQL cookbook + live schema). Agno's MCPTools wires the tools but drops
+    the server instructions, so we fetch and inject them — otherwise the agent
+    never sees the doctrine (how to behave) and improvises SurrealQL, repeating
+    documented mistakes (ORDER BY, multi-statement, …)."""
     try:
         lore = asyncio.run(get_server_instructions_via_mcp())
     except Exception as e:
-        log.warning("could not fetch MCP instructions (cookbook/schema): %s", e)
+        log.warning("could not fetch MCP instructions (doctrine/cookbook/schema): %s", e)
         lore = ""
     if not lore:
         return INSTRUCTIONS
-    return f"{INSTRUCTIONS}\n\n# Cookbook SurrealQL + schema en vivo (servidos por el MCP)\n\n{lore}"
+    return f"{INSTRUCTIONS}\n\n# Doctrina + cookbook SurrealQL + schema en vivo (servidos por el MCP)\n\n{lore}"
 
 
 def build_agent_os() -> AgentOS:
