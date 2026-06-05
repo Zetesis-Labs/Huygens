@@ -194,59 +194,109 @@ export async function diaryDayCounts(): Promise<DiaryDayCount[]> {
 
 export type CommittedProposalRow = { id: string; day: string; status: string; title: string; kind: string | null }
 
+type ExistingKindedBlock = { blockId: string; kind?: string | null; content?: string }
+
+async function existingBlockIds(db: Surreal, fullIds: string[]): Promise<Set<string>> {
+  if (fullIds.length === 0) return new Set()
+  const [rows] = await db.query<[Array<{ id: unknown }>]>('SELECT id FROM block WHERE id IN $ids', {
+    ids: fullIds.map(s => new StringRecordId(s))
+  })
+  return new Set((rows ?? []).map(r => String(r.id)))
+}
+
+function firstExistingKindedBlock(
+  blocks: ExistingKindedBlock[] | undefined,
+  existing: Set<string>
+): ExistingKindedBlock | null {
+  return blocks?.find(b => b.kind && existing.has(String(b.blockId))) ?? null
+}
+
 /** Every committed proposal with its Madrid day + a light title (no payloads
  * cross the wire), newest first — for nesting proposals under their day in the
  * diary nav. Title = the informe-block (first narrative) or first created note.
  * `kind` is the planning/review tag (plan_day / review_day / …) when the informe
- * is a ritual output, else null — drives the diary badge. */
+ * is a ritual output, else null — drives the diary badge.
+ *
+ * Important: proposals keep an immutable payload snapshot. Retractions delete the
+ * materialized block record, not the historical proposal payload, so only treat a
+ * kinded narrative as live if its payload block id still exists in `block`. */
 export async function listCommittedProposalRows(): Promise<CommittedProposalRow[]> {
   const db = await getDb()
   const [rows] = await db.query<
-    [Array<{ id: unknown; day: string; status: string; narrative?: string; first_note?: string; kind?: string }>]
+    [
+      Array<{
+        id: unknown
+        day: string
+        status: string
+        narrative?: string
+        first_note?: string
+        kinded?: ExistingKindedBlock[]
+      }>
+    ]
   >(
     `SELECT meta::id(id) AS id, ${MADRID_DAY} AS day, status, created_at,
             payload.narrative_blocks[0].content AS narrative,
             payload.note_creates[0].title AS first_note,
-            payload.narrative_blocks[WHERE kind IS NOT NONE][0].kind AS kind
+            payload.narrative_blocks[WHERE kind IS NOT NONE].{ blockId: id, kind, content } AS kinded
      FROM proposal WHERE status = 'committed'
      ORDER BY day DESC, created_at DESC`
   )
-  return (rows ?? []).map(r => ({
-    id: String(r.id),
-    day: r.day,
-    status: r.status,
-    kind: r.kind ?? null,
-    // Generous single-line clamp: the nav truncates it visually with CSS, but the
-    // full string rides on the link's `title` so a hover shows it complete.
-    title: oneLine(r.narrative, 240) || oneLine(r.first_note, 240) || String(r.id)
-  }))
+  const existing = await existingBlockIds(
+    db,
+    (rows ?? []).flatMap(r => (r.kinded ?? []).map(b => String(b.blockId)).filter(Boolean))
+  )
+  return (rows ?? []).map(r => {
+    const kinded = firstExistingKindedBlock(r.kinded, existing)
+    return {
+      id: String(r.id),
+      day: r.day,
+      status: r.status,
+      kind: kinded?.kind ?? null,
+      // Generous single-line clamp: the nav truncates it visually with CSS, but the
+      // full string rides on the link's `title` so a hover shows it complete.
+      title: oneLine(r.narrative, 240) || oneLine(r.first_note, 240) || String(r.id)
+    }
+  })
 }
 
 export type InformeRow = { id: string; day: string; kind: string; content: string; created_at: string }
 
 /** Planning/review informes (committed proposals whose narrative block carries a
  * `kind` tag), newest first, with their Madrid day and full markdown content —
- * the Bitácora feed. Read-only. */
+ * the Bitácora feed. Read-only.
+ *
+ * Like the proposal nav, this filters out kinded payload blocks whose materialized
+ * `block` record was retracted; otherwise a reverted `review_day` can keep
+ * appearing as “Cierre del día” from the immutable proposal payload. */
 export async function listInformes(): Promise<InformeRow[]> {
   const db = await getDb()
   const [rows] = await db.query<
-    [Array<{ id: unknown; day: string; kind: string; content: string; created_at: unknown }>]
+    [Array<{ id: unknown; day: string; kinded?: ExistingKindedBlock[]; created_at: unknown }>]
   >(
     `SELECT meta::id(id) AS id, ${MADRID_DAY} AS day,
-            payload.narrative_blocks[WHERE kind IS NOT NONE][0].kind    AS kind,
-            payload.narrative_blocks[WHERE kind IS NOT NONE][0].content AS content,
+            payload.narrative_blocks[WHERE kind IS NOT NONE].{ blockId: id, kind, content } AS kinded,
             (result.committed_at ?? updated_at) AS created_at
      FROM proposal
      WHERE status = 'committed' AND count(payload.narrative_blocks[WHERE kind IS NOT NONE]) > 0
      ORDER BY day DESC, created_at DESC`
   )
-  return (rows ?? []).map(r => ({
-    id: String(r.id),
-    day: r.day,
-    kind: r.kind,
-    content: r.content,
-    created_at: String(r.created_at)
-  }))
+  const existing = await existingBlockIds(
+    db,
+    (rows ?? []).flatMap(r => (r.kinded ?? []).map(b => String(b.blockId)).filter(Boolean))
+  )
+  return (rows ?? []).flatMap(r => {
+    const kinded = firstExistingKindedBlock(r.kinded, existing)
+    if (!kinded?.kind || !kinded.content) return []
+    return [
+      {
+        id: String(r.id),
+        day: r.day,
+        kind: kinded.kind,
+        content: kinded.content,
+        created_at: String(r.created_at)
+      }
+    ]
+  })
 }
 
 export type MitRow = { id: string; title: string; state: string; type: string; day: string; parent: string | null }
