@@ -6,6 +6,15 @@ import { TYPE_STYLE } from './styles'
 /** Amber accent for an overdue MIT (border + badge). */
 const OVERDUE_COLOR = '#d97706'
 
+/** The corner badge label. MIT/overdue state takes precedence over the
+ * create/update provenance; plain context notes get no badge. */
+function badgeLabel(status: string, isMit: boolean, overdue: boolean): string | null {
+  if (isMit) return overdue ? '⏰ vencido' : '🎯 MIT'
+  if (status === 'created') return 'nuevo'
+  if (status === 'updated') return 'editado'
+  return null
+}
+
 /** A note/context card: type icon (corner chip), provenance badge + border,
  * change lines, and a footer hinting at descriptive blocks when present. */
 function CardNode({ data }: NodeProps) {
@@ -25,7 +34,7 @@ function CardNode({ data }: NodeProps) {
   // Overdue MITs swap the type colour for amber on the border + badge so an
   // unfinished MIT from a past day reads as "vencido" at a glance.
   const accent = overdue ? OVERDUE_COLOR : t.color
-  const badge = isMit ? (overdue ? '⏰ vencido' : '🎯 MIT') : d.status === 'created' ? 'nuevo' : d.status === 'updated' ? 'editado' : null
+  const badge = badgeLabel(d.status, isMit, overdue)
   return (
     <div
       style={{

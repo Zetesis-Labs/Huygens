@@ -112,7 +112,6 @@ export default function DateRangePicker({ daysWith, from, to }: Props) {
           onClick={() => setOpen(false)}
           onKeyDown={e => e.key === 'Escape' && setOpen(false)}
         >
-          {/* biome-ignore lint/a11y/noStaticElementInteractions: backdrop click-to-close */}
           <div className="cal-pop" onClick={e => e.stopPropagation()}>
             <div className="cal-head">
               <button className="cal-arrow" type="button" onClick={() => shiftMonth(-1)} aria-label="Mes anterior">
