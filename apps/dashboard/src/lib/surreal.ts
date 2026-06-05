@@ -299,11 +299,31 @@ export async function listInformes(): Promise<InformeRow[]> {
   })
 }
 
-export type MitRow = { id: string; title: string; state: string; type: string; day: string; parent: string | null }
+export type MitRow = {
+  id: string
+  title: string
+  state: string
+  type: string
+  day: string
+  parent: string | null
+  /** Madrid-day (YYYY-MM-DD) of the hard deadline, if any. */
+  dueDay: string | null
+  /** Madrid-day a deferred task resurfaces, if any. */
+  deferDay: string | null
+}
 
-/** Notes flagged as a MIT (`mit_for` set), newest MIT-day first, with their type
- * and parent (project/area) title. `mit_for + 2h` → Madrid day, matching the
- * diary's bucketing. Read-only. */
+/** Madrid day of a day-granular datetime. The field is stored at UTC midnight of
+ * its day, so the UTC date IS the Madrid day. Null-safe. */
+function madridDay(v: unknown): string | null {
+  if (v == null) return null
+  const d = v instanceof Date ? v : new Date(String(v))
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10)
+}
+
+/** Notes flagged as a MIT (`mit_for` set), newest MIT-day first, with their type,
+ * parent (project/area) title, and their other temporal axes (due_at / defer_until)
+ * so the panel can flag a deadline or a deferred MIT. `mit_for + 2h` → Madrid day,
+ * matching the diary's bucketing. Read-only. */
 export async function listMits(): Promise<MitRow[]> {
   const db = await getDb()
   const [rows] = await db.query<
@@ -315,11 +335,13 @@ export async function listMits(): Promise<MitRow[]> {
         type?: string
         mit_for: unknown
         day: string
+        due_at: unknown
+        defer_until: unknown
         parent?: string | null
       }>
     ]
   >(
-    `SELECT meta::id(id) AS id, title, state, type.slug AS type, mit_for,
+    `SELECT meta::id(id) AS id, title, state, type.slug AS type, mit_for, due_at, defer_until,
             time::format(mit_for + 2h, '%Y-%m-%d') AS day,
             ->part_of->note[0].title AS parent
      FROM note WHERE mit_for IS NOT NONE
@@ -331,7 +353,9 @@ export async function listMits(): Promise<MitRow[]> {
     state: r.state,
     type: r.type ?? '?',
     day: r.day,
-    parent: r.parent ?? null
+    parent: r.parent ?? null,
+    dueDay: madridDay(r.due_at),
+    deferDay: madridDay(r.defer_until)
   }))
 }
 
