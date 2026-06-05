@@ -7,8 +7,10 @@ como Claude Code, Codex o Hermes.
 ## Modelo
 
 El modelo conceptual canónico vive en [`docs/MODEL.md`](./docs/MODEL.md).
-La guía operativa para agentes vive en
-[`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md).
+La guía operativa para agentes vive en la **doctrina operativa**, servida por el
+MCP como recurso `huygens://lore/operating-doctrine`
+([`apps/mcp/src/lore/operating-doctrine.md`](./apps/mcp/src/lore/operating-doctrine.md)).
+(`docs/CONVENTIONS.md` quedó como stub que redirige ahí.)
 
 Dirección objetivo v2.1-lite:
 
@@ -33,18 +35,19 @@ El flujo v2.1-lite ya existe en schema/tools:
 - `block.block_kind`: `descriptive | narrative`.
 - `note.mit_for`: campo de primera clase (datetime indexado); una fecha
   `YYYY-MM-DD` cae a medianoche UTC.
-- `proposal`: drafts visibles antes del commit. Tras el commit almacena el
-  `result` materializado: record ids reales creados, `temp_ids` map, `versionstamp` y `committed_at`.
-- `commit_proposal`: operación atómica (`BEGIN…COMMIT`); cualquier fallo
-  revierte la transacción completa. Devuelve los ids reales y el mapa
-  `temp_ids: { notes: {temp_id→note:id}, blocks: {temp_id→block:id} }`.
-- `get_proposal`: muestra un preview determinista y legible de lo que el
-  commit creará/cambiará, seguido del JSON crudo. Para proposals ya
-  commiteadas incluye además el resultado materializado.
-- `get_proposal_changes`: recupera los cambios exactos que produjo un commit.
-  JSON con dos vistas: `materialized` (record ids resueltos a registros) y
-  `changefeed` (delta de la transacción). La visualización gráfica del cambio
-  vive en el dashboard (React Flow), no en el MCP.
+- `proposal`: drafts visibles antes del commit. El payload almacenado ya habla en
+  ids reales (notas/blocks se asignan al crear la proposal), así que es el SSOT de
+  las mutaciones; tras el commit el `result` guarda solo el ancla (`versionstamp` +
+  `committed_at`). La historia vive en el changefeed.
+- `commit_proposal`: operación atómica (`BEGIN…COMMIT`); cualquier fallo revierte
+  la transacción completa. Un informe de ritual (kind plan_day/review_day) exige
+  `approved: true` y se rechaza si ya hay uno hoy.
+- `get_proposal`: preview determinista y legible de lo que el commit
+  creará/cambiará, seguido del JSON crudo.
+- `get_proposal_changes`: el delta exacto de un commit, leído del `payload` de la
+  proposal (SSOT, ids reales) — `source: 'payload'`, sin dependencia del
+  changefeed. La visualización gráfica del cambio vive en el dashboard (React
+  Flow), no en el MCP.
 
 El flujo legacy `raw -> clarify -> notes` fue retirado. No hay
 `commit_clarify`, no hay `generate_report` persistente y el seed ya no crea
@@ -59,7 +62,7 @@ set_raw_status      mark raws ignored/deferred/processed
 create_proposal     persist a visible draft (no graph mutation)
 update_proposal     update a draft proposal
 get_proposal        human-readable preview + raw JSON; result if committed
-get_proposal_changes changes produced by a committed proposal (JSON: materialized + changefeed)
+get_proposal_changes changes produced by a committed proposal (JSON, read from the proposal payload — SSOT)
 discard_proposal    discard a draft
 commit_proposal     atomic graph commit (BEGIN…COMMIT)
 find_related        existing notes related to a concept (vector, deduped)

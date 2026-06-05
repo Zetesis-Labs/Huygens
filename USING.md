@@ -1,8 +1,10 @@
 # Using Huygens
 
 Huygens is a personal memory MCP. The conceptual model lives in
-[`docs/MODEL.md`](./docs/MODEL.md); agent operating rules live in
-[`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md).
+[`docs/MODEL.md`](./docs/MODEL.md); agent operating rules live in the **operating
+doctrine**, served by the MCP as the `huygens://lore/operating-doctrine` resource
+([`apps/mcp/src/lore/operating-doctrine.md`](./apps/mcp/src/lore/operating-doctrine.md)).
+(`docs/CONVENTIONS.md` is now a stub redirecting there.)
 
 Target direction:
 
@@ -160,14 +162,14 @@ fails the whole commit is rolled back. On success it:
 - Creates the narrative block(s), note creates/updates, `derived_from`,
   `about`, `affects`, and minimal semantic edges.
 - Marks the raws as `processed`.
-- Stores the materialized `result` on the proposal: the real record ids
-  created (notes/blocks/edges), a `temp_ids` map
-  `{ notes: {temp_id→note:id}, blocks: {temp_id→block:id} }`,
-  `versionstamp`, and `committed_at`.
+- Stores just the anchor on the proposal `result`: `versionstamp` and
+  `committed_at`. The stored payload already speaks real ids (assigned at
+  create_proposal), so it IS the set of mutations — no `temp_ids` map, no
+  materialized id-lists. The changefeed is the history.
 
-After commit, call `get_proposal` to see the materialized result with real
-ids, or `get_proposal_changes` to see the full delta (JSON: materialized +
-changefeed). Graphical visualization of the change lives in the dashboard.
+After commit, call `get_proposal_changes` to see the full delta, read straight
+from the proposal payload (`source: 'payload'`, no changefeed dependency).
+Graphical visualization of the change lives in the dashboard.
 
 Raws that should not become topology can be handled with `set_raw_status`:
 
@@ -196,10 +198,10 @@ list_inbox           list raws by status, default pending
 set_raw_status       mark raws ignored/deferred/processed without topology
 create_proposal      persist a visible draft without graph mutation
 update_proposal      update a draft proposal
-get_proposal         human-readable preview of the commit + raw JSON; for committed proposals also shows the materialized result (real ids)
-get_proposal_changes exact changes a committed proposal produced: JSON (materialized + changefeed views); graphical view lives in the dashboard
+get_proposal         human-readable preview of the commit + raw JSON
+get_proposal_changes exact changes a committed proposal produced: JSON read from the proposal payload (SSOT, source:'payload', no changefeed); graphical view in the dashboard
 discard_proposal     discard a draft proposal
-commit_proposal      atomic approved graph commit (BEGIN…COMMIT, all-or-nothing); returns real record ids + temp_ids map
+commit_proposal      atomic graph commit (BEGIN…COMMIT, all-or-nothing); returns real ids + counts. Ritual informes (kind plan_day/review_day) require approved:true and reject a 2nd of the day
 find_related         find existing notes related to a concept (vector, deduped by note)
 vector_search        search indexed blocks via HNSW (BGE-M3, cosine)
 lexical_search       BM25 full-text over block content (exact terms, names, IDs, acronyms)

@@ -8,8 +8,8 @@ Memoria estructurada personal para Rubén — un MCP server basado en SurrealDB 
 
 ## Lectura obligatoria
 
-1. **[`docs/MODEL.md`](./docs/MODEL.md)** — modelo canónico v2.1-lite. Léelo al inicio de cada sesión nueva.
-2. **[`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md)** — reglas operativas para agentes conectados al MCP.
+1. **[`docs/MODEL.md`](./docs/MODEL.md)** — modelo conceptual canónico (el porqué). Léelo al inicio de cada sesión nueva.
+2. **[`apps/mcp/src/lore/operating-doctrine.md`](./apps/mcp/src/lore/operating-doctrine.md)** — doctrina operativa (cómo comportarte); servida por el MCP como recurso `huygens://lore/operating-doctrine`. SSOT del comportamiento. (`docs/CONVENTIONS.md` es ahora un stub que redirige aquí.)
 
 El objetivo actual es conservar el **informe-block** (`block_kind='narrative'`)
 pero en una versión mínima, manual y trazable. El código todavía contiene piezas
@@ -70,9 +70,10 @@ update_proposal      reemplaza payload de un draft
 get_proposal         diff legible + JSON
 discard_proposal     descarta draft sin mutar el grafo
 commit_proposal      tx atómica: crea blocks/notes/edges, marca raws processed;
-                       devuelve temp_ids {notes, blocks} → ids reales creados
-get_proposal_changes cambios exactos de una proposal commiteada:
-                       materialized (ids reales resueltos) + changefeed (delta);
+                       devuelve counts + ids reales. Un ritual (kind plan_day/
+                       review_day) exige approved:true y rechaza un 2º del día
+get_proposal_changes cambios exactos de una proposal commiteada, leídos del
+                       payload (SSOT, ids reales; source:'payload', sin changefeed);
                        la visualización gráfica vive en el dashboard (React Flow)
 
 find_related         búsqueda semántica de notes similares (antes de crear duplicados)

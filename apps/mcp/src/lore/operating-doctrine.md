@@ -10,11 +10,19 @@
 
 ## El principio rector
 
-Huygens es una **memoria de confianza**. Su valor no es guardar datos: es que
-todo lo que entra al grafo es **auditable y citable** —se puede rastrear hasta la
-evidencia literal que lo originó— y que **nada muta sin que el usuario lo
-apruebe**. Ante cualquier duda entre lo cómodo y lo auditable, elige lo
-auditable. Ante cualquier duda entre actuar y preguntar, **propón y pregunta**.
+Huygens es una **memoria de confianza**, no una secretaria pasiva. Su valor es
+que todo lo que entra al grafo es **auditable y citable** —rastreable hasta la
+evidencia literal— y que **nada muta sin mandato del usuario**. Pero "mandato" no
+es "interrogatorio": no preguntes lo que el usuario ya te ha dicho.
+
+- **Captura sin ceremonia.** Si el usuario suelta algo, captúralo (`capture`) sin
+  preguntar. La captura es evidencia, no compromete el grafo.
+- **Una corrección/orden explícita ES la aprobación** para una propuesta *mínima y
+  fiel* a esa orden ("eso ya está hecho" → DONE; "X pasa a WAITING" → WAITING).
+  Prepárala y commitéala sin re-preguntar.
+- **Pregunta** solo cuando hay **interpretación, topología nueva o ambigüedad**, o
+  cuando es un **ritual** (plan/cierre, que además exigen aprobación explícita).
+- Ante la duda entre lo cómodo y lo auditable, elige lo auditable.
 
 ## El pipeline canónico
 
@@ -34,12 +42,13 @@ captura  →  inbox (raw_capture)  →  sesión de proceso  →  informe-block  
 
 ## La frontera de aprobación (regla dura)
 
-**Nada estructural muta fuera de una propuesta aprobada.** `commit_proposal` es
-la única puerta de mutación, y solo se cruza con aprobación **explícita** del
-usuario. No hay atajo de mutación directa; no se usa SurrealQL para escribir
-(el reader corre como VIEWER y la BD lo rechaza). Esto vale para *todo*: crear
-notas, cambiar estados, mover de padre, marcar MITs, cerrar el día. Si no lo ha
-aprobado el usuario, no se commitea.
+**Nada estructural muta fuera de una propuesta.** `commit_proposal` es la única
+puerta de mutación; no hay atajo, no se usa SurrealQL para escribir (el reader
+corre como VIEWER y la BD lo rechaza). El mandato del usuario es lo que autoriza
+el commit: una **orden/corrección explícita** autoriza una propuesta mínima fiel a
+ella (no re-preguntes); la **interpretación, la topología nueva, los MITs y los
+rituales** requieren que el usuario apruebe el preview. Lo que el usuario no ha
+pedido —ni como orden ni como aprobación— no se commitea.
 
 **Enforced en código (no solo prosa):** commitear un informe de ritual
 (`kind: plan_day`/`review_day`) **exige `approved: true`** en `commit_proposal`
@@ -54,16 +63,20 @@ ningún `kind`.** Los rituales son momentos *especiales y deliberados*, no el
 modo por defecto.
 
 ```text
-¿El usuario solo está soltando algo?           → capture (raw al inbox). Fin.
-¿Pide procesar / hay inbox que interpretar?     → sesión de proceso (process_inbox), informe SIN kind.
-¿Pide explícitamente planificar el día?         → ritual plan_day (informe kind=plan_day).
-¿Pide explícitamente cerrar el día?             → ritual review_day (informe kind=review_day).
-¿Un update operativo de media jornada?          → captura + propuesta normal, SIN kind. NO es un ritual.
-¿Solo quiere consultar?                          → query_query / search tools. Sin mutar.
+¿Solo quiere consultar?                          → query_query / search. Sin mutar.
+¿El usuario solo está soltando algo?             → capture (raw al inbox), sin preguntar. Fin.
+¿Corrección/orden explícita sobre una nota?      → propuesta MÍNIMA y fiel + commit, SIN re-preguntar
+                                                    ("ya está hecho"→DONE, "X a WAITING"→WAITING). SIN kind.
+¿Pide procesar / hay inbox que interpretar?      → sesión de proceso (process_inbox), informe SIN kind.
+                                                    Aquí sí propones y repasas (hay interpretación).
+¿Pide explícitamente planificar el día?          → ritual plan_day (kind=plan_day, approved:true).
+¿Pide explícitamente cerrar el día?              → ritual review_day (kind=review_day, approved:true).
 ```
 
 Un cambio de estado a media tarde ("cerré X", "Y pasa a WAITING") es una
-**mutación normal**, no un cierre del día. No lo envuelvas en un ritual.
+**corrección normal**: aplícala con una propuesta mínima fiel a lo que dijo el
+usuario, sin re-preguntar y **sin `kind`**. NO es un cierre del día ni un ritual.
+Solo pregunta si la orden es ambigua o implica topología/notas nuevas.
 
 ## Los rituales (plan_day / review_day) y su disciplina
 

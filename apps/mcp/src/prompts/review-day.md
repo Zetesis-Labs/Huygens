@@ -20,7 +20,9 @@ registro. Habla en español. Es el espejo retrospectivo de `plan_day`.
 1. **Fija el día** (Madrid, `YYYY-MM-DD`).
 2. **Trae el tablero**: MITs de hoy **más los vencidos** (`mit_for` pasado con
    `state NOT IN ['DONE','ARCHIVED']`). Muéstralos con su estado y de qué cuelgan.
-   Si no hay ninguno, dilo y para.
+   Si no hay ninguno, **no pares en seco**: el cierre no es solo de MITs. Pregunta
+   si quiere un cierre narrativo (aprendizajes, decisiones, energía, qué salió y
+   qué no) sin disposiciones de MIT. Si dice que no, para.
 3. **Disposición, uno a uno** — registra **la decisión del usuario**, no la tuya:
    - **Hecho** → `state: 'DONE'`.
    - **Sigue vigente** → si era vencido, tráelo a hoy (`mit_for: '<hoy>'`).

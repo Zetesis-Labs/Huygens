@@ -104,10 +104,12 @@ create_proposal (status=draft)
 ```
 Use `temp_ids` to act on a just-created record without re-querying.
 
-**`get_proposal_changes`** (read-only, committed proposals only): JSON with two
-views — `materialized` (real record ids resolved to records) and `changefeed`
-(the transaction delta at the commit versionstamp). Visual rendering of the
-change graph lives in the dashboard (React Flow), not in the MCP.
+**`get_proposal_changes`** (read-only, committed proposals only): the delta read
+straight from the proposal's stored `payload` (the SSOT, real ids) — `source:
+'payload'`, **no changefeed dependency**, so it's durable. Lists notes
+created/updated, narrative/descriptive blocks, edges added/removed, about/affects
+and raws processed. Visual rendering of the change graph lives in the dashboard
+(React Flow), not in the MCP.
 
 ## Proposal payload schema
 
