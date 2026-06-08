@@ -94,10 +94,14 @@ All edges are schemafull with CHANGEFEED 10y. Each pair (in, out) is UNIQUE.
 | `blocked_by` | `note` | `note\|block` | `reason?`, `since` |
 | `mentions` | `note\|block` | `note\|block` | — |
 
-Every edge also carries **`via_proposal`** (`option<record<proposal>>`): the proposal whose
-commit materialized it — written at commit and re-stamped on replay/genesis, so any topology
-edge is auditable back to its approving proposal (not just a bare `(in, out)`). `NONE` for
-edges created before provenance was added. `created_at` / `since` are the edge timestamps.
+Every edge has a **`via_proposal`** field (`option<record<proposal>>`) **intended** to trace it
+to the proposal whose commit materialized it. **Current reality — this is a goal, not yet an
+invariant:** only edges created after the field was added carry it; the bulk of the live graph
+predates it (`via_proposal = NONE`). And because the genesis snapshot carries only `in`/`out`
+(not per-edge provenance), a graph **rebuild re-stamps replayed edges with the genesis proposal**,
+flattening real provenance. So **do not rely on per-edge auditability** until the rebuild path is
+made provenance-preserving and legacy edges are backfilled with an explicit marker (tracked
+work). `created_at` / `since` are the edge timestamps.
 
 In the proposal payload, `edges` covers `part_of`, `blocked_by`, `mentions`. `about` and `affects` have their own dedicated arrays.
 
