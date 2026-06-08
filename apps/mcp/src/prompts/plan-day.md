@@ -17,13 +17,17 @@ todo: evidencia → interpretación → propuesta → commit.
    ambigüedad (madrugada, planificar para mañana).
 2. **Mira lo que ya hay**: MITs ya marcados para el día (`mit_for` en el rango del
    día). Si hay 1-3, repásalos.
-3. **Surfacea candidatas, no decidas.** Tareas `ACTIVE` sin MIT, **con su contexto**
-   (`->part_of->note.title`). **Excluye las dormidas** (`defer_until > hoy`): una
-   tarea aplazada a propósito no es candidata a MIT hoy, salvo que el usuario la
-   despierte explícitamente. Señala las que cuelgan de un `objetivo` (ZTD pide al
-   menos una MIT ligada a una meta), los bloqueos abiertos (`blocked_by`) y, si
-   alguna candidata tiene `due_at` cercano/vencido, destácalo (deadline ≠ MIT).
-4. **El usuario elige** (máx. 3).
+3. **Surfacea candidatas, no decidas.** Tareas `ACTIVE` sin MIT (usa `get_hierarchy`
+   o `daily_radar`), **con su contexto**. **Excluye las dormidas** (`defer_until >
+   hoy`). Señala las que cuelgan de un `objetivo`, los bloqueos abiertos
+   (`blocked_by`) y, si alguna tiene `due_at` cercano/vencido, destácalo (deadline ≠
+   MIT). **Si NO hay tareas accionables** (solo proyectos), no fuerces: el problema es
+   que faltan próximas acciones → ofrece **`decompose_project`** primero ("antes de
+   elegir foco, aterricemos un proyecto en una acción concreta").
+4. **El usuario elige.** **Enseña el porqué en una frase** (la 1ª vez): *"elijo contigo
+   pocas — 1-3 — porque si todo es prioritario, nada lo es; ¿cuál es el imprescindible?"*.
+   Si aún **no tiene hábito de planificar** (sin racha de `plan_day`), guíalo a **UNO
+   solo** — sube a 2-3 cuando se sostenga. Andamia, no elijas por él.
 5. **Captura la intención**: pide su foco del día y el porqué en una frase, y
    guárdalo con `capture` (`source_kind:'chat'`).
 6. **Redacta el plan** como `block` narrativo trazado a esa raw, y **etiquétalo

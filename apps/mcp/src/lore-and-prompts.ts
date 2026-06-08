@@ -55,6 +55,12 @@ const PROMPT_ENTRIES: PromptEntry[] = [
     description:
       'Ritual de cierre del día: repasar los MITs de hoy y los vencidos y darles disposición (hecho / mover / soltar) como informe-block retrospectivo + mutaciones state/mit_for propuestas y aprobadas.',
     path: 'prompts/review-day.md'
+  },
+  {
+    name: 'decompose_project',
+    description:
+      'Coaching: convertir un proyecto vivo sin tareas accionables en su próxima acción física concreta (una task ACTIVE colgada del proyecto). Desbloquea plan_day, que muere sin candidatas. Enseña a descomponer; no descompone por el usuario.',
+    path: 'prompts/decompose-project.md'
   }
 ]
 

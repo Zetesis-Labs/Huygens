@@ -33,7 +33,11 @@ registro. Habla en español. Es el espejo retrospectivo de `plan_day`.
    - **Sigue vigente** → si era vencido, tráelo a hoy (`mit_for: '<hoy>'`).
    - **Mover** → `mit_for: '<fecha>'`.
    - **Ya no es MIT** → `mit_for: null` (la tarea sigue ACTIVE).
-4. **Captura la reflexión** (una o dos frases de cierre) con `capture`.
+4. **Captura la reflexión** (una o dos frases de cierre) con `capture`. **Enseña a
+   reflexionar**, no solo a marcar: lanza **UNA** pregunta de aprendizaje según el día
+   — *"¿qué te frenó?"*, *"¿el MIT era el correcto?"*, *"¿qué repetirías mañana?"*. Y la
+   1ª vez, externaliza el porqué del cierre: *"un MIT no se abandona en silencio — o se
+   hace, o se mueve, o se suelta a conciencia; eso es lo que construye el hábito."*
 5. **Redacta el cierre** como `block` narrativo trazado a esa raw, y **etiquétalo
    `kind: 'review_day'`** (esto, y solo en este ritual).
 6. **Propón** (una sola propuesta) los `note_updates` + el informe-block; repasa con
