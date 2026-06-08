@@ -153,7 +153,7 @@ export type StoredNoteCreate = {
   due_at?: string
   defer_until?: string
   metadata?: Record<string, unknown>
-  descriptive_blocks: { content: string }[]
+  descriptive_blocks: { id: string; content: string }[]
 }
 export type StoredNarrativeBlock = { id: string; content: string; raw_ids: string[]; kind?: string }
 export type StoredNoteUpdate = {
@@ -164,7 +164,7 @@ export type StoredNoteUpdate = {
   due_at?: string | null
   defer_until?: string | null
   metadata_merge?: Record<string, unknown>
-  descriptive_blocks_append: { content: string }[]
+  descriptive_blocks_append: { id: string; content: string }[]
 }
 export type StoredEdge = { kind: string; from: string; to: string; reason?: string }
 export type StoredEdgeRemove = { kind: string; from: string; to: string }

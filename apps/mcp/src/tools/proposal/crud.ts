@@ -51,7 +51,10 @@ export function realizePayload(input: ProposalPayload): StoredProposalPayload {
       ...(n.due_at !== undefined ? { due_at: n.due_at } : {}),
       ...(n.defer_until !== undefined ? { defer_until: n.defer_until } : {}),
       ...(n.metadata !== undefined ? { metadata: n.metadata } : {}),
-      descriptive_blocks: n.descriptive_blocks
+      // Pre-assign a stable real id to every descriptive block (like notes and
+      // narrative blocks) so replay/rebuild reproduces them id-identical instead
+      // of regenerating fresh ids each time.
+      descriptive_blocks: n.descriptive_blocks.map(b => ({ id: newId('block'), content: b.content }))
     })),
     note_updates: input.note_updates.map(u => ({
       id: u.id,
@@ -61,7 +64,7 @@ export function realizePayload(input: ProposalPayload): StoredProposalPayload {
       ...(u.due_at !== undefined ? { due_at: u.due_at } : {}),
       ...(u.defer_until !== undefined ? { defer_until: u.defer_until } : {}),
       ...(u.metadata_merge !== undefined ? { metadata_merge: u.metadata_merge } : {}),
-      descriptive_blocks_append: u.descriptive_blocks_append
+      descriptive_blocks_append: u.descriptive_blocks_append.map(b => ({ id: newId('block'), content: b.content }))
     })),
     edges: input.edges.map(e => ({
       kind: e.kind,

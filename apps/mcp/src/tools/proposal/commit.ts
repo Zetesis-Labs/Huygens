@@ -99,11 +99,14 @@ class CommitTx {
     return this.p({ ...extra, via_proposal: new StringRecordId(this.proposalId) })
   }
 
-  private appendBlocks(noteId: string, blocks: { content: string }[]): void {
+  private appendBlocks(noteId: string, blocks: { id?: string; content: string }[]): void {
     if (blocks.length === 0) return
     const ids: string[] = []
     for (const block of blocks) {
-      const bid = `block:${uuidv7().replace(/-/g, '')}`
+      // Use the id pre-assigned at create_proposal (stable across replay). Fall
+      // back to a fresh id only for legacy payloads committed before descriptive
+      // ids were stored (those still drift on replay; backfilled separately).
+      const bid = block.id ?? `block:${uuidv7().replace(/-/g, '')}`
       this.lines.push(
         `CREATE ${this.rid(bid)} SET note = ${this.rid(noteId)}, block_kind = 'descriptive', content = ${this.p(block.content)} RETURN NONE;`
       )

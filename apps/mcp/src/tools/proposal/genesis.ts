@@ -61,9 +61,8 @@ export async function buildGenesisPayload(): Promise<StoredProposalPayload> {
         : {}),
       ...(meta != null && Object.keys(meta).length > 0 ? { metadata: meta } : {}),
       descriptive_blocks: (n.block_order ?? [])
-        .map(b => descContent.get(String(b)))
-        .filter((c): c is string => c != null)
-        .map(content => ({ content }))
+        .map(b => ({ id: String(b), content: descContent.get(String(b)) }))
+        .filter((d): d is { id: string; content: string } => d.content != null)
     }
   })
 
