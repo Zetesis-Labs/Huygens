@@ -79,6 +79,10 @@ class CommitTx {
   private reviewRitual = false
   /** Ids of descriptive blocks created in this tx (generated here; nothing refs them). */
   readonly descriptiveIds: string[] = []
+  /** The proposal whose commit/replay this tx materializes — stamped as
+   * `via_proposal` on every edge it creates, so topology is auditable back to its
+   * approved proposal. Set in build()/buildReplay(). */
+  private proposalId = ''
 
   private p(value: unknown): string {
     const name = `v${this.pc++}`
@@ -88,6 +92,11 @@ class CommitTx {
   /** Param holding a real record id. */
   private rid(id: string): string {
     return this.p(new StringRecordId(id))
+  }
+  /** A CONTENT object param that always carries edge provenance (`via_proposal`),
+   * merged with any edge-specific fields (reason, action, transformation, …). */
+  private edgeContent(extra: Record<string, unknown> = {}): string {
+    return this.p({ ...extra, via_proposal: new StringRecordId(this.proposalId) })
   }
 
   private appendBlocks(noteId: string, blocks: { content: string }[]): void {
@@ -143,7 +152,7 @@ class CommitTx {
       )
       for (const rawId of block.raw_ids) {
         this.lines.push(
-          `RELATE ${this.rid(block.id)}->derived_from->${this.rid(rawId)} CONTENT { transformation: 'summarized' } RETURN NONE;`
+          `RELATE ${this.rid(block.id)}->derived_from->${this.rid(rawId)} CONTENT ${this.edgeContent({ transformation: 'summarized' })} RETURN NONE;`
         )
       }
     }
@@ -151,13 +160,15 @@ class CommitTx {
 
   private topology(payload: StoredProposalPayload): void {
     for (const link of payload.about) {
-      this.lines.push(`RELATE ${this.rid(link.block_id)}->about->${this.rid(link.note_id)} RETURN NONE;`)
+      this.lines.push(
+        `RELATE ${this.rid(link.block_id)}->about->${this.rid(link.note_id)} CONTENT ${this.edgeContent()} RETURN NONE;`
+      )
     }
     for (const affect of payload.affects) {
       const content: Record<string, unknown> = { action: affect.action }
       if (affect.summary != null) content.summary = affect.summary
       this.lines.push(
-        `RELATE ${this.rid(affect.block_id)}->affects->${this.rid(affect.note_id)} CONTENT ${this.p(content)} RETURN NONE;`
+        `RELATE ${this.rid(affect.block_id)}->affects->${this.rid(affect.note_id)} CONTENT ${this.edgeContent(content)} RETURN NONE;`
       )
     }
   }
@@ -182,13 +193,11 @@ class CommitTx {
       if (edge.kind === 'part_of') {
         this.lines.push(`DELETE part_of WHERE in = ${from} AND out != ${to} RETURN NONE;`)
       }
-      // blocked_by carries an optional `reason` (a schema field) — persist it at
-      // commit instead of dropping it. Other edge kinds have no reason field.
-      if (edge.kind === 'blocked_by' && edge.reason != null) {
-        this.lines.push(`RELATE ${from}->blocked_by->${to} CONTENT { reason: ${this.p(edge.reason)} } RETURN NONE;`)
-      } else {
-        this.lines.push(`RELATE ${from}->${edge.kind}->${to} RETURN NONE;`)
-      }
+      // Every edge carries `via_proposal` provenance; blocked_by additionally
+      // carries an optional `reason` (a schema field) — persist it at commit
+      // instead of dropping it. Other edge kinds have no reason field.
+      const content = edge.kind === 'blocked_by' && edge.reason != null ? { reason: edge.reason } : {}
+      this.lines.push(`RELATE ${from}->${edge.kind}->${to} CONTENT ${this.edgeContent(content)} RETURN NONE;`)
     }
   }
 
@@ -204,6 +213,7 @@ class CommitTx {
   }
 
   build(payload: StoredProposalPayload, proposalId: RecordId): { query: string; params: Record<string, unknown> } {
+    this.proposalId = String(proposalId)
     this.reviewRitual = payload.narrative_blocks.some(b => b.kind === 'review_day')
     this.creates(payload)
     this.updates(payload)
@@ -219,7 +229,8 @@ class CommitTx {
   // rebuildGraph() to re-derive the projection from the log without touching the
   // log itself (the proposal's `result`/status and the raw_capture statuses stay
   // exactly as committed). The graph is a projection of the committed proposals.
-  buildReplay(payload: StoredProposalPayload): { query: string; params: Record<string, unknown> } {
+  buildReplay(payload: StoredProposalPayload, proposalId: string): { query: string; params: Record<string, unknown> } {
+    this.proposalId = proposalId
     this.creates(payload)
     this.updates(payload)
     this.narratives(payload)
@@ -242,8 +253,11 @@ export function buildCommitTx(
 
 /** Graph-mutations-only transaction for replay (rebuildGraph). No finalize: the
  * log (proposal.result/status, raw statuses) is left untouched. */
-export function buildReplayTx(payload: StoredProposalPayload): { query: string; params: Record<string, unknown> } {
-  return new CommitTx().buildReplay(payload)
+export function buildReplayTx(
+  payload: StoredProposalPayload,
+  proposalId: string
+): { query: string; params: Record<string, unknown> } {
+  return new CommitTx().buildReplay(payload, proposalId)
 }
 
 /**

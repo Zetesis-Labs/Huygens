@@ -41,8 +41,13 @@ function updatedFields(u: StoredProposalPayload['note_updates'][number]): string
 }
 
 function summarize(payload: StoredProposalPayload): ProposalChanges['changes'] {
+  // Defensive: legacy / genesis-era payloads predate some of these arrays (notably
+  // `edges_remove`), so the keys may be absent. Default every array to [] — a
+  // missing key must yield "no changes of that kind", never a `.map of undefined`
+  // crash. This is what made the tool unusable for the bulk of the history (the
+  // superseded proposals whose payloads have no `edges_remove`).
   return {
-    notes_created: payload.note_creates.map(n => ({
+    notes_created: (payload.note_creates ?? []).map(n => ({
       id: n.id,
       type_slug: n.type_slug,
       title: n.title,
@@ -51,18 +56,21 @@ function summarize(payload: StoredProposalPayload): ProposalChanges['changes'] {
       ...(n.due_at !== undefined ? { due_at: n.due_at } : {}),
       ...(n.defer_until !== undefined ? { defer_until: n.defer_until } : {})
     })),
-    notes_updated: payload.note_updates.map(u => ({
+    notes_updated: (payload.note_updates ?? []).map(u => ({
       id: u.id,
       fields: updatedFields(u),
-      descriptive_blocks_appended: u.descriptive_blocks_append.length
+      descriptive_blocks_appended: u.descriptive_blocks_append?.length ?? 0
     })),
-    narrative_blocks: payload.narrative_blocks.map(b => ({ id: b.id, raw_ids: b.raw_ids })),
-    descriptive_blocks_created: payload.note_creates.reduce((n, c) => n + c.descriptive_blocks.length, 0),
-    edges_added: payload.edges.map(e => ({ kind: e.kind, from: e.from, to: e.to })),
-    edges_removed: payload.edges_remove.map(e => ({ kind: e.kind, from: e.from, to: e.to })),
-    about: payload.about.map(a => ({ block_id: a.block_id, note_id: a.note_id })),
-    affects: payload.affects.map(a => ({ block_id: a.block_id, note_id: a.note_id, action: a.action })),
-    raws_processed: payload.raw_ids
+    narrative_blocks: (payload.narrative_blocks ?? []).map(b => ({ id: b.id, raw_ids: b.raw_ids ?? [] })),
+    descriptive_blocks_created: (payload.note_creates ?? []).reduce(
+      (n, c) => n + (c.descriptive_blocks?.length ?? 0),
+      0
+    ),
+    edges_added: (payload.edges ?? []).map(e => ({ kind: e.kind, from: e.from, to: e.to })),
+    edges_removed: (payload.edges_remove ?? []).map(e => ({ kind: e.kind, from: e.from, to: e.to })),
+    about: (payload.about ?? []).map(a => ({ block_id: a.block_id, note_id: a.note_id })),
+    affects: (payload.affects ?? []).map(a => ({ block_id: a.block_id, note_id: a.note_id, action: a.action })),
+    raws_processed: payload.raw_ids ?? []
   }
 }
 

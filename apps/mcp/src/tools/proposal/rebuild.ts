@@ -38,7 +38,7 @@ export async function rebuildGraphImpl(): Promise<RebuildResult> {
   const committed = rows ?? []
   for (const table of PROJECTION_TABLES) await db.query(`DELETE ${table}`)
   for (const p of committed) {
-    const { query, params } = buildReplayTx(p.payload)
+    const { query, params } = buildReplayTx(p.payload, String(p.id))
     await db.query(query, params)
   }
   return { replayed: committed.length, tablesWiped: PROJECTION_TABLES }

@@ -151,10 +151,55 @@ export async function assertProposalRefs(payload: StoredProposalPayload): Promis
   await assertExistingRecordRefs(needNotes, needBlocks)
 }
 
+/**
+ * The three temporal axes — mit_for (priority), due_at (hard deadline) and
+ * defer_until (tickler) — are top-level, INDEXED note fields: they drive the
+ * overdue radar, the MITs view and the tickler. A date stashed in the FLEXIBLE
+ * `metadata` object (the audit found `metadata.deadline` / `metadata.due_before`)
+ * is invisible to those queries — silently breaking the radar. Reject the leak at
+ * the input boundary and point the agent at the right field so it can't recur.
+ */
+const TEMPORAL_LEAK_KEYS = new Set([
+  'due',
+  'dueat',
+  'duedate',
+  'duebefore',
+  'duedates',
+  'deadline',
+  'deadlines',
+  'fechalimite',
+  'vencimiento',
+  'mitfor',
+  'deferuntil'
+])
+
+function assertNoTemporalLeakInMetadata(payload: ProposalPayload): void {
+  const offenders: string[] = []
+  const scan = (meta: Record<string, unknown> | undefined, where: string): void => {
+    if (!meta) return
+    for (const key of Object.keys(meta)) {
+      if (TEMPORAL_LEAK_KEYS.has(key.toLowerCase().replace(/[^a-z0-9]/g, ''))) {
+        offenders.push(`${where}.metadata.${key}`)
+      }
+    }
+  }
+  for (const note of payload.note_creates) scan(note.metadata, note.temp_id)
+  for (const note of payload.note_updates) scan(note.metadata_merge, note.id)
+  if (offenders.length > 0) {
+    throw new Error(
+      `deadline/date fields must not live in metadata (${offenders.join(', ')}): use the top-level due_at ` +
+        `(hard deadline), mit_for (the day's priority) or defer_until (tickler). Those are indexed and drive ` +
+        `the overdue radar / MITs / tickler — a date in metadata is invisible to them. See ` +
+        `huygens://lore/operating-doctrine.`
+    )
+  }
+}
+
 /** Input-level validation (temp_id space), run on create/update before realizing. */
 export function validatePayload(rawIds: string[], payload: ProposalPayload): ProposalPayload {
   assertRawIdsMatch(rawIds, payload.raw_ids)
   assertUniqueTempIds(payload)
   assertNarrativeRawIdsAreDeclared(payload)
+  assertNoTemporalLeakInMetadata(payload)
   return payload
 }

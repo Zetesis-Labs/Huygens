@@ -179,6 +179,10 @@ DEFINE INDEX OVERWRITE block_content_fts ON block
 -- padre → part_of es un bosque/árbol jerárquico (sin multi-padre), no un DAG.
 DEFINE TABLE OVERWRITE part_of TYPE RELATION FROM note TO note SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE created_at ON part_of TYPE datetime DEFAULT time::now() READONLY;
+-- Provenance: which proposal's commit materialized this edge. Written at commit
+-- (and re-stamped on replay/genesis), so a topology edge is auditable back to its
+-- approved proposal — not just a bare (in,out). NONE for pre-provenance edges.
+DEFINE FIELD OVERWRITE via_proposal ON part_of TYPE option<record<proposal>>;
 DEFINE INDEX OVERWRITE part_of_unique ON part_of FIELDS in, out UNIQUE;
 DEFINE INDEX OVERWRITE part_of_single_parent ON part_of FIELDS in UNIQUE;
 
@@ -186,11 +190,13 @@ DEFINE INDEX OVERWRITE part_of_single_parent ON part_of FIELDS in UNIQUE;
 DEFINE TABLE OVERWRITE blocked_by TYPE RELATION FROM note TO note | block SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE since  ON blocked_by TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE reason ON blocked_by TYPE option<string>;
+DEFINE FIELD OVERWRITE via_proposal ON blocked_by TYPE option<record<proposal>>;
 DEFINE INDEX OVERWRITE blocked_by_unique ON blocked_by FIELDS in, out UNIQUE;
 
 -- mentions: referencia narrativa cualquier-a-cualquier.
 DEFINE TABLE OVERWRITE mentions TYPE RELATION FROM note | block TO note | block SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE created_at ON mentions TYPE datetime DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE via_proposal ON mentions TYPE option<record<proposal>>;
 DEFINE INDEX OVERWRITE mentions_unique ON mentions FIELDS in, out UNIQUE;
 
 -- Limpieza de edges legacy que no forman parte de v2.1-lite.
@@ -201,6 +207,7 @@ REMOVE TABLE IF EXISTS authored_by;
 -- about: un block narrativo habla sobre una note.
 DEFINE TABLE OVERWRITE about TYPE RELATION FROM block TO note SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE created_at ON about TYPE datetime DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE via_proposal ON about TYPE option<record<proposal>>;
 DEFINE INDEX OVERWRITE about_unique ON about FIELDS in, out UNIQUE;
 
 -- affects: un bloque narrativo aprobado declara qué note queda afectada y cómo.
@@ -209,6 +216,7 @@ DEFINE FIELD OVERWRITE action ON affects TYPE string
   ASSERT $value INSIDE ['created', 'updated', 'state_changed', 'linked', 'archived'];
 DEFINE FIELD OVERWRITE summary ON affects TYPE option<string>;
 DEFINE FIELD OVERWRITE created_at ON affects TYPE datetime DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE via_proposal ON affects TYPE option<record<proposal>>;
 DEFINE INDEX OVERWRITE affects_unique ON affects FIELDS in, out UNIQUE;
 
 -- derived_from: procedencia desde raw_capture. La auditabilidad cruda → estructurado.
@@ -218,6 +226,7 @@ DEFINE TABLE OVERWRITE derived_from TYPE RELATION FROM block TO raw_capture SCHE
 DEFINE FIELD OVERWRITE created_at     ON derived_from TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE transformation ON derived_from TYPE option<string>
   ASSERT $value IS NONE OR $value INSIDE ['verbatim', 'extracted', 'summarized', 'inferred'];
+DEFINE FIELD OVERWRITE via_proposal ON derived_from TYPE option<record<proposal>>;
 DEFINE INDEX OVERWRITE derived_from_unique ON derived_from FIELDS in, out UNIQUE;
 
 -- ─────────────────────────────────────────────────────────────────────────
