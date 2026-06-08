@@ -21,8 +21,9 @@ filtrando en cada salto y **anidando subqueries**.
   jamás `!= NULL`.
 - **`->edge` pelado devuelve ids del edge**, no del nodo. Resuelve a nodo y campo:
   `->part_of->note.title`.
-- **`count(->about)` MIENTE** (la tabla `about` tiene edges colgantes). Cuenta/resuelve
-  siempre `->about->note`. `affects`/`derived_from`/`blocked_by` sí fiables pelados.
+- **`count(->about)` cuenta ARISTAS, no notas distintas** — resuelve `->about->note`
+  (y `array::distinct(...)` en multi-edge) para contar/listar las notas reales.
+  `affects`/`derived_from`/`blocked_by` sí fiables pelados.
 - **`ORDER BY` solo por campo del SELECT o por alias**; `count()`/expresión inline falla
   con "Missing order idiom" → proyecta `… AS x` y ordena por `x`.
 - **`block` no tiene `title`**; su texto es `content`. No proyectes el block entero (lleva
@@ -33,6 +34,8 @@ filtrando en cada salto y **anidando subqueries**.
 - **Recursión de grafo**: la sintaxis-rango `.{1..n}` / `.{..}` **MIENTE** (devuelve solo el
   nodo más profundo, sin error). Usa los algoritmos `.{..+collect}` / `.{..+path}` /
   `.{..+shortest=…}` (ver Composición). La profundidad exacta `.{N}` sí es correcta.
+  **Proyecta el campo FUERA de la puerta de recursión**: `@.{..+collect}<-part_of<-note.title`
+  da ERROR (`Expected a record ID`) — colecta nodos/ids y resuelve `.title` en un paso posterior.
 - **Texto**: `CONTAINS` es case-SENSITIVE y por substring; `~`/`!~`/`?~`/`*~` NO existen →
   `string::contains(string::lowercase(campo),'minúsculas')` o `string::matches(campo,'(?i)…')`.
   `@@`/`@1@` (full-text) YA tiene analyzer (`huygens_text` sobre `block.content`,
@@ -41,8 +44,12 @@ filtrando en cada salto y **anidando subqueries**.
   `hybrid_search` (BM25 + denso fusionados con RRF), que ya lo encapsulan.
 - **Datetimes**: máx/mín con `time::max`/`time::min`. `math::*` es solo para **números**
   (counts, `duration::days(...)`); sobre datetimes da `null` o ERROR.
-- **`time::group(x,'week')` está ROTO** (devuelve null) → usa `time::floor(x,1w)`.
+- **`time::group(x,'week')` no agrupa por semana** (suelto da ERROR; bajo `GROUP BY` colapsa
+  todo en una fila sin emitir la clave) → usa `time::floor(x,1w)`.
 - **`object::*` revienta si el campo es NONE** → `WHERE metadata != NONE` primero.
+- **Proyectar un campo sobre un array `$ids` enlazado falla** (`SELECT content FROM $ids` →
+  *"Specify a database to use"*) → usa `SELECT * FROM block WHERE id IN $ids`,
+  `SELECT VALUE content FROM $ids`, o envuelve el campo en función (`string::slice(content,0,80)`).
 - **Vencimiento/aplazamiento son campos top-level datetime** (`due_at`, `defer_until`), como `mit_for` — compara/ordena directo, **no** en `metadata`. (Una fecha suelta en `metadata` sería string y habría que castearla `<datetime>metadata.x`, pero no es el patrón.)
 - **Conjuntos**: `OUTSIDE` es de geometría (no "no contenido" → usa `NONEINSIDE`/`NOT IN`);
   `*=` sobre conjunto vacío es `true` (verdad vacua) → guárdalo con `array::len(…)>0`.
@@ -175,9 +182,9 @@ Padres e hijos directos:
 ```surql
 SELECT title, ->part_of->note.title AS parent, <-part_of<-note.title AS children FROM ONLY note:abc;
 ```
-Subárbol completo (cierre transitivo, todos los niveles):
+Subárbol completo (cierre transitivo, todos los niveles) — devuelve los nodos descendientes; para títulos resuelve FUERA de la puerta (no `.title` dentro del gate):
 ```surql
-SELECT VALUE @.{..+collect}<-part_of<-note.title FROM note:abc;
+SELECT VALUE @.{..+collect}<-part_of<-note FROM note:abc;
 ```
 Árbol anidado, podando ramas cerradas:
 ```surql

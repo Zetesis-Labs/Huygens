@@ -94,6 +94,11 @@ All edges are schemafull with CHANGEFEED 10y. Each pair (in, out) is UNIQUE.
 | `blocked_by` | `note` | `note\|block` | `reason?`, `since` |
 | `mentions` | `note\|block` | `note\|block` | — |
 
+Every edge also carries **`via_proposal`** (`option<record<proposal>>`): the proposal whose
+commit materialized it — written at commit and re-stamped on replay/genesis, so any topology
+edge is auditable back to its approving proposal (not just a bare `(in, out)`). `NONE` for
+edges created before provenance was added. `created_at` / `since` are the edge timestamps.
+
 In the proposal payload, `edges` covers `part_of`, `blocked_by`, `mentions`. `about` and `affects` have their own dedicated arrays.
 
 Structural mutation must go through persisted proposals. `commit_proposal` is the approval boundary.
@@ -108,6 +113,13 @@ create_proposal (status=draft)
   → commit_proposal (atomic tx: status=committed; creates blocks, notes, edges; marks raws processed)
   → get_proposal_changes (reads proposal.result + changefeed delta)
 ```
+
+`status` also has a fourth value, **`superseded`**: a legacy proposal flattened into the
+**genesis** commit (see `genesis.ts`). Superseded proposals fall outside the fold/rebuild
+window (which only replays `committed`); their payloads are kept for audit but are not part of
+the live projection. It is currently the most common status by count (a one-off migration
+artifact), so a reader of the lifecycle should expect it even though no tool transitions *into*
+it at runtime.
 
 **`commit_proposal`** returns `CommitProposalResult`:
 ```
