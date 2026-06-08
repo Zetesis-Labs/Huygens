@@ -98,7 +98,11 @@ const ProposalEdgeSchema = z.object({
   kind: EdgeKindSchema,
   from: NodeRefSchema,
   to: NodeRefSchema,
-  reason: z.string().optional()
+  reason: z.string().optional(),
+  // part_of REQUIRES this: assert the user explicitly stated this parent. The
+  // server can't read the conversation, so a `part_of` without anchored:true is
+  // rejected — never assume the parent from recent context (single-parent rule).
+  anchored: z.boolean().optional()
 })
 
 // Retirada explícita de un edge semántico (part_of / blocked_by / mentions): el
@@ -166,7 +170,7 @@ export type StoredNoteUpdate = {
   metadata_merge?: Record<string, unknown>
   descriptive_blocks_append: { id: string; content: string }[]
 }
-export type StoredEdge = { kind: string; from: string; to: string; reason?: string }
+export type StoredEdge = { kind: string; from: string; to: string; reason?: string; anchored?: boolean }
 export type StoredEdgeRemove = { kind: string; from: string; to: string }
 export type StoredAbout = { block_id: string; note_id: string }
 export type StoredAffect = { block_id: string; note_id: string; action: string; summary?: string }

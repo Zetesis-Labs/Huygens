@@ -39,7 +39,7 @@ describe('buildCommitTx — máximo-limpio', () => {
 
   test('a part_of edge emits a parent-replace DELETE before the RELATE', () => {
     const { query } = buildCommitTx(
-      payload({ edges: [{ kind: 'part_of', from: 'note:child', to: 'note:parent' }] }),
+      payload({ edges: [{ kind: 'part_of', from: 'note:child', to: 'note:parent', anchored: true }] }),
       PROPOSAL
     )
     const del = query.indexOf('DELETE part_of WHERE in =')

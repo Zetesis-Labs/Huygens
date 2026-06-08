@@ -96,6 +96,13 @@ class CommitTx {
   /** A CONTENT object param that always carries edge provenance (`via_proposal`),
    * merged with any edge-specific fields (reason, action, transformation, …). */
   private edgeContent(extra: Record<string, unknown> = {}): string {
+    // M2a invariant lock: no edge may be created without provenance. edgeContent
+    // is the single choke-point for every RELATE, so this guarantees via_proposal
+    // is always stamped — a future code path that forgets to set proposalId fails
+    // loudly here instead of silently writing a NONE-provenance edge.
+    if (!this.proposalId) {
+      throw new Error('commit invariant violated: every edge must carry via_proposal, but proposalId was not set')
+    }
     return this.p({ ...extra, via_proposal: new StringRecordId(this.proposalId) })
   }
 

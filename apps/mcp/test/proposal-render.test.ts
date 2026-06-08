@@ -45,7 +45,7 @@ function fullPayload(): StoredProposalPayload {
       }
     ],
     edges: [
-      { kind: 'part_of', from: 'note:task1', to: 'note:project1' },
+      { kind: 'part_of', from: 'note:task1', to: 'note:project1', anchored: true },
       { kind: 'mentions', from: 'block:narr1', to: 'note:existing' }
     ],
     edges_remove: [],
@@ -138,7 +138,7 @@ describe('renderProposalDiff', () => {
 
   test('annotates a part_of onto a pre-existing note as a parent replace', () => {
     const payload = minimalPayload()
-    payload.edges = [{ kind: 'part_of', from: 'note:child', to: 'note:parent' }]
+    payload.edges = [{ kind: 'part_of', from: 'note:child', to: 'note:parent', anchored: true }]
     expect(renderProposalDiff(detail(payload))).toContain(
       'note:child —part_of→ note:parent  (reemplaza padre anterior)'
     )

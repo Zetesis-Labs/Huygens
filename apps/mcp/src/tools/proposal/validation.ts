@@ -195,11 +195,33 @@ function assertNoTemporalLeakInMetadata(payload: ProposalPayload): void {
   }
 }
 
+/**
+ * `part_of` is single-parent and the most-violated doctrine rule ("never assume
+ * the parent from recent conversation context"). The server can't see the
+ * conversation, so it can't verify the user anchored a parent — but it can force a
+ * deliberate, audited assertion: a `part_of` edge MUST carry `anchored: true`. The
+ * agent sets it ONLY when the user explicitly stated the parent; otherwise it
+ * leaves the note parentless or asks. This turns the rule from prose into a
+ * deterministic rejection (the same pattern as approved:true for rituals).
+ */
+function assertPartOfAnchored(payload: ProposalPayload): void {
+  const offenders = payload.edges.filter(e => e.kind === 'part_of' && e.anchored !== true)
+  if (offenders.length > 0) {
+    throw new Error(
+      `part_of requires { anchored: true } — set it ONLY when the user explicitly stated this parent. ` +
+        `Never assume the parent from recent conversation context (part_of is single-parent). If the user ` +
+        `did not anchor it, leave the note parentless or ask. Offending: ${offenders.map(e => `${e.from}->${e.to}`).join(', ')}. ` +
+        `See huygens://lore/operating-doctrine.`
+    )
+  }
+}
+
 /** Input-level validation (temp_id space), run on create/update before realizing. */
 export function validatePayload(rawIds: string[], payload: ProposalPayload): ProposalPayload {
   assertRawIdsMatch(rawIds, payload.raw_ids)
   assertUniqueTempIds(payload)
   assertNarrativeRawIdsAreDeclared(payload)
   assertNoTemporalLeakInMetadata(payload)
+  assertPartOfAnchored(payload)
   return payload
 }

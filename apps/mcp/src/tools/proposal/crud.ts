@@ -70,7 +70,8 @@ export function realizePayload(input: ProposalPayload): StoredProposalPayload {
       kind: e.kind,
       from: real(e.from),
       to: real(e.to),
-      ...(e.reason !== undefined ? { reason: e.reason } : {})
+      ...(e.reason !== undefined ? { reason: e.reason } : {}),
+      ...(e.anchored !== undefined ? { anchored: e.anchored } : {})
     })),
     edges_remove: input.edges_remove.map(e => ({ kind: e.kind, from: real(e.from), to: real(e.to) })),
     about: input.about.map(a => ({ block_id: real(a.block_temp_id), note_id: real(a.note_ref) })),

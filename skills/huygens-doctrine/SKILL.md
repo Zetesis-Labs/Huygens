@@ -242,9 +242,11 @@ graph state.
 
 ### Topology rules (from the doctrine)
 
-- **`part_of` is single-parent.** **Never assume the parent from recent
-  conversation context** — people and tasks cross areas. Invite the user to anchor
-  it, or leave it without a parent; do **not** auto-create the edge.
+- **`part_of` is single-parent, and ENFORCED.** A `part_of` edge in a proposal
+  **requires `anchored: true`** — set it ONLY when the user explicitly stated the
+  parent. **Never assume the parent from recent conversation context** (people and
+  tasks cross areas); if the user didn't anchor it, leave the note parentless or
+  ask. A `part_of` without `anchored:true` is **rejected** by the server.
 - When you spot an **orphan** and *infer* a parent: **invite or capture** the
   signal — never mutate on your own initiative. *(Evidence: conv:z7w9hwsiljdrof5hkqi2
   — agent self-declared a relation, did nothing, user created the edge by hand 3

@@ -43,7 +43,7 @@ function payload(rawIds: string[], overrides: Partial<ProposalPayload> = {}): Pr
     ],
     note_updates: [],
     edges: [
-      { kind: 'part_of', from: 'task1', to: 'project1' },
+      { kind: 'part_of', from: 'task1', to: 'project1', anchored: true },
       { kind: 'mentions', from: 'narrative1', to: 'task1' }
     ],
     about: [{ block_temp_id: 'narrative1', note_ref: 'task1' }],
@@ -183,7 +183,7 @@ describe('assertProposalRefs (at commit, after a draft is stored)', () => {
         about: [],
         affects: [],
         // real note as `from`, ghost note as `to`
-        edges: [{ kind: 'part_of', from: real.note_id, to: 'note:ghost' }]
+        edges: [{ kind: 'part_of', from: real.note_id, to: 'note:ghost', anchored: true }]
       })
     })
     await expect(commitProposalImpl({ proposal_id: created.id })).rejects.toThrow('note not found: note:ghost')
@@ -305,8 +305,8 @@ describe('part_of single-parent enforcement at commit', () => {
           { temp_id: 'project2', type_slug: 'project', title: 'Parent B', state: 'ACTIVE', descriptive_blocks: [] }
         ],
         edges: [
-          { kind: 'part_of', from: 'task1', to: 'project1' },
-          { kind: 'part_of', from: 'task1', to: 'project2' }
+          { kind: 'part_of', from: 'task1', to: 'project1', anchored: true },
+          { kind: 'part_of', from: 'task1', to: 'project2', anchored: true }
         ],
         about: [{ block_temp_id: 'narrative1', note_ref: 'task1' }],
         affects: []
@@ -342,7 +342,7 @@ describe('part_of single-parent enforcement at commit', () => {
         ],
         // child already has a parent; part_of is single-parent, so the commit
         // drops the old edge and reparents (máximo-limpio replace), not fails.
-        edges: [{ kind: 'part_of', from: child.note_id, to: 'project1' }],
+        edges: [{ kind: 'part_of', from: child.note_id, to: 'project1', anchored: true }],
         about: [{ block_temp_id: 'narrative1', note_ref: child.note_id }],
         affects: []
       })
@@ -365,7 +365,7 @@ describe('part_of single-parent enforcement at commit', () => {
       raw_ids: rawIds,
       payload: payload(rawIds, {
         edges: [
-          { kind: 'part_of', from: 'task1', to: 'project1' },
+          { kind: 'part_of', from: 'task1', to: 'project1', anchored: true },
           { kind: 'blocked_by', from: 'task1', to: 'project1', reason: 'esperando aprobación de presupuesto' }
         ]
       })

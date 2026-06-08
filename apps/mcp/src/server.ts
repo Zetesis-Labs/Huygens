@@ -21,6 +21,7 @@ import { registerSavedQuery } from './tools/saved-query'
 import { registerSetRawStatus } from './tools/set-raw-status'
 import { registerTraceProvenance } from './tools/trace-provenance'
 import { registerVectorSearch } from './tools/vector-search'
+import { registerViews } from './tools/views'
 
 export function createServer(instructions?: string): McpServer {
   const server = new McpServer(
@@ -51,6 +52,7 @@ export function createServer(instructions?: string): McpServer {
   registerSavedQuery(server)
   registerRetract(server)
   registerCollectionStats(server)
+  registerViews(server)
   registerConversation(server)
 
   registerLoreAndPrompts(server)

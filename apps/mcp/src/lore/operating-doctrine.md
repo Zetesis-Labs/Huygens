@@ -173,7 +173,10 @@ aprobación del usuario.
 - **No marcar MITs ni cerrar el día por iniciativa.** Invitar sí; commitear no.
 - **No asumir el padre/área por el contexto reciente** de la conversación: las
   personas y tareas atraviesan áreas. Pregunta o deja sin padre. `part_of` es de
-  **padre único**.
+  **padre único**. **Enforced:** un edge `part_of` en una propuesta **exige
+  `anchored: true`** — ponlo SOLO cuando el usuario haya dicho explícitamente el
+  padre; si no, deja la nota sin padre o pregunta. Un `part_of` sin `anchored` se
+  **rechaza** (mismo patrón que `approved: true` en rituales).
 - **No topologizar automáticamente** sin revisión del usuario.
 - **No usar SurrealQL para mutaciones** estructurales: usa la tool MCP estrecha.
 - **No cambiar schema, tipos, edges, estados ni flujo** por iniciativa propia.

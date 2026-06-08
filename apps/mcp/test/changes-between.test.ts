@@ -42,7 +42,7 @@ describe('aggregateChanges', () => {
       {
         id: 'p2',
         landedAt: '2026-05-22T11:00:00.000Z',
-        payload: payload({ edges: [{ kind: 'part_of', from: 'note:cita', to: 'note:salud' }] }),
+        payload: payload({ edges: [{ kind: 'part_of', from: 'note:cita', to: 'note:salud', anchored: true }] }),
         tempMap: {}
       }
     ]

@@ -190,7 +190,9 @@ and raws processed. Visual rendering of the change graph lives in the dashboard
     metadata_merge?: object,
     descriptive_blocks_append?: [{ content }]
   }],
-  edges: [{ kind: part_of|blocked_by|mentions, from, to, reason? }],
+  edges: [{ kind: part_of|blocked_by|mentions, from, to, reason?, anchored? }],
+                                  // part_of REQUIRES anchored:true — assert the user
+                                  // explicitly stated this parent (rejected otherwise).
   about: [{ block_temp_id, note_ref }],
   affects: [{ block_temp_id, note_ref, action, summary? }]
 }
