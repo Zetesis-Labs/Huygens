@@ -94,14 +94,18 @@ All edges are schemafull with CHANGEFEED 10y. Each pair (in, out) is UNIQUE.
 | `blocked_by` | `note` | `note\|block` | `reason?`, `since` |
 | `mentions` | `note\|block` | `note\|block` | — |
 
-Every edge has a **`via_proposal`** field (`option<record<proposal>>`) **intended** to trace it
-to the proposal whose commit materialized it. **Current reality — this is a goal, not yet an
-invariant:** only edges created after the field was added carry it; the bulk of the live graph
-predates it (`via_proposal = NONE`). And because the genesis snapshot carries only `in`/`out`
-(not per-edge provenance), a graph **rebuild re-stamps replayed edges with the genesis proposal**,
-flattening real provenance. So **do not rely on per-edge auditability** until the rebuild path is
-made provenance-preserving and legacy edges are backfilled with an explicit marker (tracked
-work). `created_at` / `since` are the edge timestamps.
+Every edge carries **`via_proposal`** (`option<record<proposal>>`): the proposal whose commit
+materialized it. New commits stamp it in `RELATE`; legacy edges (created before the field
+existed) were backfilled one-shot to the committed proposal whose payload declared them —
+`proposal:genesis` for the bootstrap snapshot, the real post-genesis commit otherwise. Live
+coverage is 100% (0 NONE). `created_at` / `since` are the edge timestamps.
+
+> **Two honest caveats.** (1) Presence is not *yet* a hard invariant: no commit-layer assert
+> forces it, so a future code path could reintroduce NONE (tracked — M2a). (2) `rebuildGraph`
+> is **guarded off**: it is mechanically unsafe (regenerates descriptive-block ids, does not
+> re-embed, no wrapping transaction) and would resurrect retracted records (retracts are not
+> events in the log) — unrelated to provenance, which a rebuild now *would* reproduce
+> correctly. Do not run it until that path is hardened.
 
 In the proposal payload, `edges` covers `part_of`, `blocked_by`, `mentions`. `about` and `affects` have their own dedicated arrays.
 
