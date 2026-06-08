@@ -232,7 +232,11 @@ graph state.
 6. **`commit_proposal`** the approved/authorized proposal. A ritual
    (`plan_day`/`review_day`) requires `approved: true` and is rejected if one
    already exists for the day — retract the prior one before re-committing.
-7. **`index_block`** the newly created blocks (embeddings → retrieval).
+7. **Indexing expectation** — `commit_proposal` normally attempts best-effort
+   indexing for newly created narrative/descriptive blocks when the server has
+   `DEEPINFRA_API_KEY`. Embedding failure does not roll back the commit. Still
+   verify embedding coverage after important commits and use `index_block` only
+   as a backfill step when blocks remain unembedded.
 8. **Verify** with `check_claim`, `neighborhood`, `get_proposal_changes`, or
    read-only SurrealQL **before** reporting success.
 
@@ -323,14 +327,22 @@ FROM block WHERE embedding IS NONE ORDER BY created_at DESC;
 ```
 
 ### Narrative blocks with weak semantic links
+Do **not** triage by `count(->about) = 0` alone; that overstates the problem
+because many narrative blocks are still operationally connected through `affects`.
+The high-signal check is narratives with **neither** `about` nor `affects`:
+
 ```surql
 SELECT id, string::slice(content,0,120) AS snip, created_at
-FROM block WHERE block_kind = 'narrative' AND count(->about) = 0
+FROM block
+WHERE block_kind = 'narrative'
+  AND count(->about) = 0
+  AND count(->affects) = 0
 ORDER BY created_at DESC;
 ```
-Also check narratives with no `affects`. Substantive informes with neither are
-topologically invisible — surface them in `process_inbox` so the user can anchor
-them through the proposal flow.
+
+Substantive informes with neither are topologically invisible — surface them in
+`process_inbox` so the user can anchor them through the proposal flow. Use the
+about-only count only as a loose smell, never as the headline metric.
 
 ### Live tasks without parent
 ```surql
@@ -342,10 +354,12 @@ ORDER BY updated_at DESC;
 ```
 
 ### Open blockers
-Return source state, target state, and `reason`. If `reason` exists in schema but
-is always empty, the commit path is dropping it (a known B-bucket defect) — report
-it, don't silently accept it. Flag blockers whose target is `DONE`/`ARCHIVED`
-(zombies).
+Return source state, target state, and `reason`. First separate **zombie blockers**
+(where the target is `DONE`/`ARCHIVED`) from live blockers. If every missing
+`reason` belongs to a zombie blocker, do **not** present this as a reason-backfill
+problem; the correct cleanup is to release/remove the dead blocker relation through
+the proposal/retract flow. Only report a commit-path `reason` defect when live
+blockers are missing reasons.
 
 ### Temporal axes / MIT hygiene
 The three axes are top-level indexed fields, **never** inside `metadata`:
@@ -353,6 +367,13 @@ The three axes are top-level indexed fields, **never** inside `metadata`:
 Watch for deadlines leaked into `metadata` (e.g. `metadata.deadline`) — they are
 invisible to the overdue radar. Query MITs as a datetime range, not a `YYYY-MM-DD`
 string.
+
+### Pinned saved-query hygiene
+Pinned saved queries are operational affordances. A pinned row with `query: NONE`
+or `query: null` is a false affordance: it looks callable but cannot run. When
+auditing Huygens operations, list pinned queries and either fill the query body or
+unpin/archive the placeholder through the appropriate saved-query tool; do not
+leave empty pinned entries in the daily/reporting backbone.
 
 ---
 
@@ -403,7 +424,7 @@ periodic review.
 - [ ] Every reported number came from `count()`/`array::len`.
 - [ ] `save_query` create omitted `id`; tool errors surfaced, not hidden.
 - [ ] User friction/corrections were `capture`d.
-- [ ] Mutations went through capture → proposal → commit → index → verify.
+- [ ] Mutations went through capture → proposal → commit → verify; embedding coverage checked and `index_block` used only if auto-index/backfill left blocks unembedded.
 - [ ] No `part_of` parent assumed from context; orphans invited/captured, not auto-mutated.
 - [ ] Rituals only on explicit request, with `approved: true`, one per day; no phantom close.
 - [ ] Daily reports began with the complete radar before tactical filtering.
