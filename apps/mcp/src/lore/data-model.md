@@ -100,12 +100,20 @@ existed) were backfilled one-shot to the committed proposal whose payload declar
 `proposal:genesis` for the bootstrap snapshot, the real post-genesis commit otherwise. Live
 coverage is 100% (0 NONE). `created_at` / `since` are the edge timestamps.
 
-> **Two honest caveats.** (1) Presence is not *yet* a hard invariant: no commit-layer assert
-> forces it, so a future code path could reintroduce NONE (tracked — M2a). (2) `rebuildGraph`
-> is **guarded off**: it is mechanically unsafe (regenerates descriptive-block ids, does not
-> re-embed, no wrapping transaction) and would resurrect retracted records (retracts are not
-> events in the log) — unrelated to provenance, which a rebuild now *would* reproduce
-> correctly. Do not run it until that path is hardened.
+> **Fold invariant — VERIFIED.** `the live graph == fold(log)` is now proven, not aspirational:
+> `bun run db:verify-fold` (scripts/verify-fold.ts) replays the committed proposals (creates) +
+> the `agent_event:retracted` events (deletes) into a throwaway shadow DB and structurally diffs
+> it against the live graph — every field (entities, content, topology, **via_proposal**,
+> metadata, block_order, edge reason/action/transformation) → **DIFF = 0**. Timestamps/embeddings
+> are excluded as derived cache. This is the *reproducibility* half of "auditable y citable"; the
+> *trust* half (nothing enters without an approved commit) is the VIEWER write boundary. It is a
+> point-in-time check — re-run it after anything unusual.
+>
+> **Two honest caveats remain.** (1) `via_proposal` presence is not *yet* a commit-layer hard
+> assert, so a future code path could reintroduce NONE (tracked — M2a). (2) The **production**
+> `rebuildGraph` is still **guarded off**: it does not yet apply retraction events and is
+> destructive (no shadow swap / re-embed) — `db:verify-fold` proves a *correct* rebuild is
+> achievable, but the production button is not that path yet (Option A).
 
 In the proposal payload, `edges` covers `part_of`, `blocked_by`, `mentions`. `about` and `affects` have their own dedicated arrays.
 
