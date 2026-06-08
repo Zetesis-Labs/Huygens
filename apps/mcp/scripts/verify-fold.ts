@@ -65,31 +65,82 @@ for (const r of retractions ?? []) {
 }
 
 // ── structural snapshots of both graphs ───────────────────────────────────
+/** Order-stable serialization so field comparison is exact (sorted object keys). */
+function stable(v: unknown): string {
+  if (v === null || v === undefined) return 'NONE'
+  if (v instanceof Date) return v.toISOString()
+  if (Array.isArray(v)) return `[${v.map(stable).join(',')}]`
+  if (typeof v === 'object') {
+    const o = v as Record<string, unknown>
+    return `{${Object.keys(o).sort().map(k => `${k}:${stable(o[k])}`).join(',')}}`
+  }
+  return String(v)
+}
+
+/**
+ * A full structural snapshot. Compared fields (the invariant):
+ *  - note:  title, type, state, mit_for, due_at, defer_until, metadata,
+ *           block_order (the descriptive ordering), source_kind, source_ref
+ *  - narrative block: content, kind (ritual tag)
+ *  - descriptive block: by (note, content) — id is non-invariant but stable now
+ *  - every edge: in, out, via_proposal + per-table metadata
+ *      (blocked_by.reason, affects.action/summary, derived_from.transformation)
+ * EXCLUDED as derived cache / non-deterministic: created_at, updated_at,
+ *  topologized_at, since, last_reviewed_at (stamped time::now at commit), embeddings.
+ */
 async function snapshot(db: Surreal): Promise<{
   notes: Map<string, string>
   narr: Map<string, string>
   desc: Set<string>
   edges: Map<string, string>
 }> {
-  const [notes] = await db.query<[Array<{ id: unknown; title: string; type: string; state: string }>]>(
-    'SELECT id, title, type.slug AS type, state FROM note'
+  const [notes] = await db.query<[Array<Record<string, unknown>>]>(
+    'SELECT id, title, type.slug AS type, state, mit_for, due_at, defer_until, metadata, block_order, source_kind, source_ref FROM note'
   )
-  const [narr] = await db.query<[Array<{ id: unknown; content: string }>]>(
-    "SELECT id, content FROM block WHERE block_kind = 'narrative'"
+  const [narr] = await db.query<[Array<Record<string, unknown>>]>(
+    "SELECT id, content, kind FROM block WHERE block_kind = 'narrative'"
   )
   const [desc] = await db.query<[Array<{ note: unknown; content: string }>]>(
     "SELECT note, content FROM block WHERE block_kind = 'descriptive'"
   )
+
+  const edgeMeta: Record<string, string> = {
+    part_of: '',
+    mentions: '',
+    about: '',
+    blocked_by: ', reason',
+    affects: ', action, summary',
+    derived_from: ', transformation'
+  }
   const edges = new Map<string, string>()
   for (const t of EDGE_TABLES) {
-    const [rows] = await db.query<[Array<{ in: unknown; out: unknown; via_proposal: unknown }>]>(
-      `SELECT in, out, via_proposal FROM ${t}`
-    )
-    for (const e of rows ?? []) edges.set(`${t}|${String(e.in)}|${String(e.out)}`, String(e.via_proposal))
+    const [rows] = await db.query<[Array<Record<string, unknown>>]>(`SELECT in, out, via_proposal${edgeMeta[t]} FROM ${t}`)
+    for (const e of rows ?? []) {
+      const meta: Record<string, unknown> = { via: String(e.via_proposal) }
+      for (const f of ['reason', 'action', 'summary', 'transformation']) if (f in e) meta[f] = e[f] ?? null
+      edges.set(`${t}|${String(e.in)}|${String(e.out)}`, stable(meta))
+    }
   }
+
   return {
-    notes: new Map((notes ?? []).map(n => [String(n.id), `${n.title}|${n.type}|${n.state}`])),
-    narr: new Map((narr ?? []).map(b => [String(b.id), b.content])),
+    notes: new Map(
+      (notes ?? []).map(n => [
+        String(n.id),
+        stable({
+          title: n.title,
+          type: n.type,
+          state: n.state,
+          mit_for: n.mit_for ?? null,
+          due_at: n.due_at ?? null,
+          defer_until: n.defer_until ?? null,
+          metadata: n.metadata ?? null,
+          block_order: ((n.block_order as unknown[]) ?? []).map(String),
+          source_kind: n.source_kind ?? null,
+          source_ref: n.source_ref ?? null
+        })
+      ])
+    ),
+    narr: new Map((narr ?? []).map(b => [String(b.id), stable({ content: b.content, kind: b.kind ?? null })])),
     desc: new Set((desc ?? []).map(d => `${String(d.note)}|${d.content}`)),
     edges
   }
