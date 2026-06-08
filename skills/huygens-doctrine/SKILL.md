@@ -37,7 +37,7 @@ Read **`huygens://lore/operating-doctrine`** before operating. It is the single
 source of truth for *how to behave* and **governs over this skill on conflict**.
 Companion resources: `huygens://lore/data-model` (the WHAT — entities, edges,
 proposal lifecycle), `huygens://lore/surrealql-cookbook` (read recipes — note it
-ships at least one broken recursion recipe, see Read Recipe 2), and
+ships at least one broken recursion recipe, see Part I §3), and
 `huygens://lore/schema` (the live physical schema).
 
 > **Why this matters:** Hermes does **not** receive the MCP server `instructions`
@@ -87,120 +87,38 @@ with no graph/provenance; protected Hermes-agent config (load `hermes-agent`).
 
 # Part I — Read & Query Discipline
 
-Every rule here comes from a **verified failure in a real persisted Hermes
-session** (conversation ids cited). These are the specific ways the agent has
-given wrong, empty, or abandoned answers while operating correctly at the tool
-level.
+## 1. Prefer the typed read tools — they obsolete most hand-written queries
+For the three things agents kept getting wrong by hand, use the tool: it returns a
+**structured result and never the ambiguous bare `[]`**.
+- **Hierarchy** (areas → projects → tasks) → **`get_hierarchy(root?)`** → `{nodes, edges}`.
+  Never build a tree from `neighborhood`/`expand_context` — they fuse all edge types
+  and drown `part_of` in semantic noise.
+- **Counts** → **`count_notes(type_slug?, state_in?)`** → from `count()`, with a breakdown.
+- **The live surface** → **`daily_radar()`** → active, non-deferred notes + parent + axes.
 
-### Read Recipe 1 — Hierarchy comes from `part_of`, not the semantic graph tools
+Drop to raw `query_query` only for **ad-hoc** exploration — then §3's gotchas apply.
 
-For any *hierarchical* view (areas → projects → tasks), query `part_of` explicitly
-with `query_query`. `neighborhood`/`expand_context` **fuse all edge types**; in the
-live graph ~598 semantic edges drown the ~95 `part_of` edges, so the "tree" comes
-back as noise — and they expose no `edge_types` filter. *(Evidence:
-conv:lcdl4c3gpf0xxj3wdln4 — the agent admitted "lo ideal sería casi solo part_of"
-and used `neighborhood` anyway; conv:50zax4rpktfwkxmve6m1.)*
+## 2. Always-on read discipline (each rule = a verified Hermes failure)
+- **Never present an empty result as truth.** `[]`/`0` for something you just saw
+  populated is a malformed query, not an absence — re-check with a direct `count()`
+  before asserting. *(conv:7y9mfvh1a1qtzau5ad73: `[]` reported as "no children";
+  Irontec had 3.)*
+- **Fix and re-run; never ask the user for a query you already have.** A read task
+  ending with a question and **zero tool calls** is almost always a failure.
+  *(conv:7y9mfvh1a1qtzau5ad73, final turn.)*
+- **Count from `count()`, never by eye.** *(conv:00gszgur…: reported "17" over 16 rows.)*
+- **`save_query`: omit `id` to create** (it's only for updating); **never hide a tool
+  error** — surface failures. *(save_query failed 4/4 by inventing an `id`.)*
 
-Proven pattern (renders the real forest — nodes **and** edges):
-
-```surql
-LET $edges = (SELECT id, in, out FROM part_of LIMIT 400);
-LET $nodes = array::distinct(array::flatten([$edges.*.in, $edges.*.out]));
-SELECT id, title, type.slug AS type, state FROM note WHERE id IN $nodes;
-SELECT id, in, out FROM part_of WHERE in IN $nodes AND out IN $nodes;
-```
-
-A graph/canvas view needs **real edge rows** (`in`/`out`), not flat columns like
-`->part_of->note.title AS parent` — those render as a table, nothing to draw.
-
-### Read Recipe 2 — Project fields OUTSIDE the recursion gate, then flatten
-
-The recursion operator returns **record ids in a nested structure**. Never project
-a field (`.title`, `.state`) *inside* the `{..+collect}` gate — it throws
-`Expected a record ID`, and the nested result can reduce to `[]`. The agent once
-ran `@.{..+collect}<-part_of<-note` on Irontec, got `[]`, and told the user it had
-**no children** — it has 3. This broken recipe is copied from the cookbook.
-*(Evidence: conv:7y9mfvh1a1qtzau5ad73; Irontec = note:159yz12k3mocht8hmssy.)*
-
-```surql
-LET $root = note:159yz12k3mocht8hmssy;
-LET $desc = (SELECT VALUE @.{..+collect}<-part_of<-note FROM ONLY $root);
-LET $nodes = array::distinct(array::flatten([$root, $desc]));   -- flatten first
-SELECT id, title, type.slug AS type, state FROM note WHERE id IN $nodes;
-SELECT id, in, out FROM part_of WHERE in IN $nodes AND out IN $nodes;
-```
-
-If unsure of the exact recursion idiom, fall back to Recipe 1 ("whole forest then
-filter") — slower, but it never silently returns `[]`.
-
-### Read Recipe 3 — Never present an empty result as truth
-
-`[]` for a node you **just saw populated** is a **malformed query, not an
-absence**. Before asserting emptiness, re-count directly:
-
-```surql
-SELECT count() FROM part_of WHERE out = $root GROUP ALL;
-```
-
-Only say "no relations" after a direct edge count confirms zero. *(Evidence:
-conv:7y9mfvh1a1qtzau5ad73, conv:50zax4rpktfwkxmve6m1 — `[]` reported as "no
-children", blame put on the canvas.)*
-
-### Read Recipe 4 — Fix and re-run; never ask the user for a query you already have
-
-On read-only pushback, **re-execute a corrected, scoped query yourself**; reuse
-the edge-selection pattern that worked a turn ago. Debugging a read query is your
-job. A turn that ends a read task with a question and **zero tool calls** is almost
-always a failure. *(Evidence: conv:7y9mfvh1a1qtzau5ad73, final turn: "pásame el
-query nuevo" with both queries already in context.)*
-
-### Read Recipe 5 — Count from `count()`, never by eye
-
-Any number you report comes from `count()`/`array::len`, computed in the query —
-never from counting a rendered list. *(Evidence: conv:00gszgur5ff88itfpynn,
-conv:zyvsjo9qqv262721kle3 — reported "17" over 16 rows.)*
-
-```surql
-SELECT count() FROM note
-WHERE type.slug IN ['task','idea']
-  AND state IN ['CLARIFIED','ACTIVE','WAITING','SOMEDAY']
-GROUP ALL;
-```
-
-### Read Recipe 6 — `save_query`: omit `id` to create; never silence the error
-
-To **create** a saved query, **omit `id`** (it is optional, only for *updating* an
-existing one). And **never hide a tool error** — surface failures to the user.
-*(Evidence: save_query failed 4/4 by inventing an `id`, error hidden each time —
-conv:lcdl4c3gpf0xxj3wdln4 ×3, conv:p0vvhf7le0ynkkee5mok ×1.)*
-
-### Read Recipe 7 — `ORDER BY` a field you did not project
-
-Ordering by a field requires projecting it (or not using the `VALUE`-narrowed
-form). Applies to **any** field, including plain `SELECT VALUE id`. *(Evidence:
-"Missing order idiom updated_at", right on the 3rd try — conv:p0vvhf7le0ynkkee5mok.)*
-
-```surql
--- mal:  SELECT VALUE id FROM note ORDER BY updated_at
--- bien: SELECT id, updated_at FROM note ORDER BY updated_at DESC;
-```
-
-### Read Recipe 8 — Projecting a field over a bound `$ids` array
-
-`SELECT content FROM $ids` (array of record links) fails with *"Specify a database
-to use"*. Use instead:
-
-```surql
-SELECT * FROM block WHERE id IN $ids;          -- preferred, explicit table
-SELECT VALUE content FROM $ids;                -- VALUE-narrowed works
-SELECT string::slice(content,0,200) FROM $ids; -- a function wrapper works
-```
-
-### Read Recipe 9 — Diagrams: the client drops `type:image`
-
-The Hermes client serializes MCP `type:image` as `""`, so `format_d2` as
-`svg`/`png`/`jpeg` arrives empty (client adapter limitation, not an MCP bug). Use
-`format_d2: "code"` and render separately if the user needs the image.
+## 3. Raw-query gotchas (only when you bypass the typed tools)
+- **Recursion: project fields OUTSIDE the gate.** `@.{..+collect}<-part_of<-note.title`
+  throws (`Expected a record ID`) / collapses to `[]`; collect ids, `array::flatten`,
+  *then* resolve fields. (This broken cookbook recipe caused the Irontec `[]`.)
+- **`ORDER BY` a field you didn't project** fails ("Missing order idiom") → project it:
+  `SELECT id, updated_at … ORDER BY updated_at`.
+- **`SELECT field FROM $ids`** (bound array) fails ("Specify a database") → use
+  `SELECT * FROM block WHERE id IN $ids` or `SELECT VALUE field FROM $ids`.
+- **Diagrams**: the Hermes client drops `type:image` → use `format_d2: "code"`.
 
 ---
 
@@ -272,7 +190,7 @@ graph state.
   `kind: plan_day` / `kind: review_day`, and query live MITs via the top-level
   `note.mit_for` field, before answering "what remains today?".
 - **Render hierarchically.** Don't stop at flat counts by state — query `part_of`
-  and render projects under areas/subareas, with state labels inline (Read Recipe 1).
+  and render projects under areas/subareas, with state labels inline (use `get_hierarchy`).
 - **Calendar + Huygens morning reports:** anchor the date with the calendar
   current-time tool in the user's timezone, list all calendars before fetching
   today's events, keep the output compact/mobile-friendly.
@@ -396,13 +314,13 @@ periodic review.
 
 ## Common Pitfalls
 
-1. **Tree from `neighborhood`/`expand_context`.** Hierarchy is `part_of` only (R1).
-2. **Projecting inside the recursion gate**, or reporting the nested `[]` (R2/R3).
-3. **Ending a read task with a question + zero tool calls** (R4).
-4. **Counting rendered rows by eye** (R5).
-5. **Inventing an `id` for `save_query` create**, or hiding tool errors (R6).
-6. **`ORDER BY` an unprojected field; `SELECT field FROM $ids`** (R7/R8).
-7. **Assuming a `part_of` parent from recent context**, or auto-creating it.
+1. **Building a tree from `neighborhood`/`expand_context`** instead of `get_hierarchy` — hierarchy is `part_of` only.
+2. **Projecting fields inside the recursion gate**, or reporting the nested `[]` as an absence.
+3. **Ending a read task with a question + zero tool calls.**
+4. **Counting rendered rows by eye** instead of `count_notes` / `count()`.
+5. **Inventing an `id` for `save_query` create**, or hiding tool errors.
+6. **`ORDER BY` an unprojected field; `SELECT field FROM $ids`.**
+7. **Assuming a `part_of` parent from context, or omitting `anchored: true`** — single-parent + the server rejects un-anchored part_of.
 8. **Counting objects but not testing retrieval** — many notes are useless if
    embeddings are incomplete or topology is sparse.
 9. **`affects` as a substitute for `about`** — `affects` explains mutation, `about`
