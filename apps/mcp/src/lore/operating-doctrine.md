@@ -215,4 +215,4 @@ aprobación del usuario.
 | `huygens://lore/data-model` | El *qué*: entidades, edges, ciclo de proposal, superficie de tools. |
 | `huygens://lore/surrealql-cookbook` | El *cómo leer*: recetas SurrealQL read-only verificadas. |
 | `huygens://lore/schema` | El schema físico **en vivo** (tablas, campos, enums, índices). |
-| Prompts `process_inbox` / `plan_day` / `review_day` | El guion paso a paso de cada modo. Son *deltas* sobre esta doctrina. |
+| Prompts `process_inbox` / `plan_day` / `review_day` / `decompose_project` | El guion paso a paso de cada modo (incl. coaching). Son *deltas* sobre esta doctrina. |
