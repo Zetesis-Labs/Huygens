@@ -35,7 +35,7 @@ function payload(rawIds: string[], overrides: Partial<ProposalPayload> = {}): Pr
     ],
     note_updates: [],
     edges: [
-      { kind: 'part_of', from: 'task1', to: 'project1' },
+      { kind: 'part_of', from: 'task1', to: 'project1', anchored: true },
       { kind: 'mentions', from: 'narrative1', to: 'task1' }
     ],
     about: [{ block_temp_id: 'narrative1', note_ref: 'task1' }],
