@@ -159,14 +159,16 @@ export async function indexBlockImpl(input: IndexBlockInput): Promise<IndexBlock
 
   const result = await embedTexts(orderedTexts)
 
-  for (let i = 0; i < input.block_ids.length; i++) {
-    await db.query('UPDATE $id SET embedding = $emb, embedding_model = $model, dimensions = $dim', {
-      id: refs[i],
-      emb: result.embeddings[i],
-      model: result.model,
-      dim: result.dimensions
-    })
-  }
+  await Promise.all(
+    refs.map((ref, i) =>
+      db.query('UPDATE $id SET embedding = $emb, embedding_model = $model, dimensions = $dim', {
+        id: ref,
+        emb: result.embeddings[i],
+        model: result.model,
+        dim: result.dimensions
+      })
+    )
+  )
 
   return {
     indexed: input.block_ids,

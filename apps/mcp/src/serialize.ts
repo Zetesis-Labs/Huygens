@@ -87,6 +87,20 @@ function predicate(t: EdgeTriple): string {
   return t.qualifier ? `${t.kind}(${t.qualifier})` : t.kind
 }
 
+/** Group items by a key, preserving first-seen key order and per-group insertion
+ * order. Local stand-in for `Object.groupBy` (ES2024) since the project targets
+ * ES2022. */
+function groupBy<T, K extends string>(items: T[], key: (item: T) => K): Map<K, T[]> {
+  const groups = new Map<K, T[]>()
+  for (const item of items) {
+    const k = key(item)
+    const group = groups.get(k)
+    if (group) group.push(item)
+    else groups.set(k, [item])
+  }
+  return groups
+}
+
 /** Render edges as `subject —predicate→ object` triples (the canonical KG-RAG
  * form). `label` resolves a record id to its human label (nodeLabel). */
 export function serializeTriples(edges: EdgeTriple[], label: (id: string) => string): string {
@@ -96,12 +110,11 @@ export function serializeTriples(edges: EdgeTriple[], label: (id: string) => str
 /** The same triples grouped by subject (entity-centric), for reasoning about a
  * single node and its relations. */
 export function serializeTriplesGrouped(edges: EdgeTriple[], label: (id: string) => string): string {
-  const bySubject = new Map<string, EdgeTriple[]>()
-  for (const t of edges) bySubject.set(t.source, [...(bySubject.get(t.source) ?? []), t])
-  const lines: string[] = []
-  for (const [subject, group] of bySubject) {
-    lines.push(label(subject))
-    for (const t of group) lines.push(`  —${predicate(t)}→ ${label(t.target)}`)
-  }
-  return lines.join('\n')
+  const bySubject = groupBy(edges, t => t.source)
+  return [...bySubject]
+    .flatMap(([subject, group]) => [
+      label(subject),
+      ...group.map(t => `  —${predicate(t)}→ ${label(t.target)}`)
+    ])
+    .join('\n')
 }
