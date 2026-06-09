@@ -19,25 +19,35 @@ export type EmitEventInput = {
 }
 
 /**
+ * Pure shaping of the agent_event CONTENT object. The optional fields use
+ * `!= null` semantics: both null and undefined are intentionally dropped.
+ */
+export function buildEventContent(event: EmitEventInput): Record<string, unknown> {
+  const optionalFields: Array<[string, unknown]> = [
+    ['subject', event.subject],
+    ['payload', event.payload],
+    ['confidence', event.confidence],
+    ['reasoning_summary', event.reasoning_summary],
+    ['model', event.model],
+    ['tokens_used', event.tokens_used],
+    ['duration_ms', event.duration_ms]
+  ]
+  return {
+    kind: event.kind,
+    actor: event.actor,
+    session_id: event.session_id,
+    ...Object.fromEntries(optionalFields.filter(([, value]) => value != null))
+  }
+}
+
+/**
  * Best-effort emit. NEVER throws — agent_event must not break the parent
  * operation. Errors are logged to stderr.
  */
 export async function emitEvent(event: EmitEventInput): Promise<void> {
   try {
     const db = await getDb()
-    const content: Record<string, unknown> = {
-      kind: event.kind,
-      actor: event.actor,
-      session_id: event.session_id
-    }
-    if (event.subject != null) content.subject = event.subject
-    if (event.payload != null) content.payload = event.payload
-    if (event.confidence != null) content.confidence = event.confidence
-    if (event.reasoning_summary != null) content.reasoning_summary = event.reasoning_summary
-    if (event.model != null) content.model = event.model
-    if (event.tokens_used != null) content.tokens_used = event.tokens_used
-    if (event.duration_ms != null) content.duration_ms = event.duration_ms
-    await db.query('CREATE agent_event CONTENT $content', { content })
+    await db.query('CREATE agent_event CONTENT $content', { content: buildEventContent(event) })
   } catch (err) {
     console.error('[agent_event] emit failed:', err)
   }

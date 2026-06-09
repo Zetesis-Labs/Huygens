@@ -25,23 +25,37 @@ export type InboxRow = {
   processed_at: string | null
 }
 
+type InboxDbRow = {
+  id: RecordId
+  content: string
+  source_kind: string
+  source_ref: string | null
+  status: string
+  created_at: Date
+  processed_at: Date | null
+}
+
+function sourceKindFilter(sourceKind: string | undefined): string {
+  return sourceKind ? 'AND source_kind = $source_kind' : ''
+}
+
+function toInboxRow(row: InboxDbRow): InboxRow {
+  return {
+    id: idStr(row.id),
+    content: row.content,
+    source_kind: row.source_kind,
+    source_ref: row.source_ref,
+    status: row.status,
+    created_at: isoString(row.created_at),
+    processed_at: isoStringOrNull(row.processed_at)
+  }
+}
+
 export async function listInboxImpl(input: ListInboxInput): Promise<InboxRow[]> {
   const db = await getDb()
-  const filter = input.source_kind ? 'AND source_kind = $source_kind' : ''
+  const filter = sourceKindFilter(input.source_kind)
   const status = input.status ?? 'pending'
-  const [rows] = await db.query<
-    [
-      {
-        id: RecordId
-        content: string
-        source_kind: string
-        source_ref: string | null
-        status: string
-        created_at: Date
-        processed_at: Date | null
-      }[]
-    ]
-  >(
+  const [rows] = await db.query<[InboxDbRow[]]>(
     `SELECT id, content, source_kind, source_ref, status, created_at, processed_at
      FROM raw_capture
      WHERE status = $status ${filter}
@@ -50,15 +64,7 @@ export async function listInboxImpl(input: ListInboxInput): Promise<InboxRow[]> 
     { limit: input.limit, source_kind: input.source_kind, status }
   )
 
-  return rows.map(r => ({
-    id: idStr(r.id),
-    content: r.content,
-    source_kind: r.source_kind,
-    source_ref: r.source_ref,
-    status: r.status,
-    created_at: isoString(r.created_at),
-    processed_at: isoStringOrNull(r.processed_at)
-  }))
+  return rows.map(toInboxRow)
 }
 
 function summarize(rows: InboxRow[], status: string): string {

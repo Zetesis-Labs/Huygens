@@ -1,13 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { RecordId } from 'surrealdb'
 import { z } from 'zod'
 import { NoteStateSchema } from '../domain'
 import { nodeLine } from '../serialize'
 import { getDb } from '../surreal'
 import { defineTool } from './define-tool'
-import { idStr } from './graph-records'
 import { provenanceByBlock } from './trace-provenance'
-import { attachProvenance, type SearchHit } from './vector-search'
+import { attachProvenance, type HitRow, rowToHit, type SearchHit } from './vector-search'
 
 /**
  * Lexical (BM25) search over `block.content` via the `block_content_fts`
@@ -34,15 +32,7 @@ export const lexicalSearchShape = {
 const lexicalSearchSchema = z.object(lexicalSearchShape)
 export type LexicalSearchInput = z.infer<typeof lexicalSearchSchema>
 
-type Row = {
-  id: RecordId
-  content: string
-  block_kind: string
-  score: number
-  note_id: RecordId | null
-  note_title: string | null
-  note_state: string | null
-}
+type Row = HitRow & { score: number }
 
 /**
  * Build the outer WHERE that filters by parent-note attributes. Mirrors the
@@ -112,15 +102,7 @@ export async function lexicalSearchImpl(input: LexicalSearchInput): Promise<Sear
 
   const [rows] = await db.query<[Row[]]>(sql, bindings)
 
-  const hits = rows.map(r => ({
-    block_id: idStr(r.id),
-    block_kind: r.block_kind,
-    note_id: r.note_id ? idStr(r.note_id) : null,
-    note_title: r.note_title ?? null,
-    note_state: r.note_state ?? null,
-    content: r.content,
-    score: r.score
-  }))
+  const hits = rows.map(r => rowToHit(r, row => row.score))
 
   return attachProvenance(hits, await provenanceByBlock(hits.map(h => h.block_id)))
 }

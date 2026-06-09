@@ -1,4 +1,4 @@
-import type { RecordId } from 'surrealdb'
+import type { RecordId, StringRecordId } from 'surrealdb'
 import { BLOCK_ID_RE, NOTE_ID_RE } from '../../domain'
 import { getDb } from '../../surreal'
 import type { ProposalPayload, StoredProposalPayload } from './schemas'
@@ -46,6 +46,21 @@ export async function assertRawCapturesExist(rawIds: string[]): Promise<void> {
   if (missing.length > 0) throw new Error(`raw_capture not found: ${missing.join(', ')}`)
 }
 
+/** Pure split of fetched raw_capture rows into the requested ids that are missing
+ * vs. those whose status blocks a commit (only pending|deferred are committable).
+ * No I/O — testable without a DB. */
+export function classifyRawCaptureCommittability(
+  rawIds: string[],
+  rows: { id: RecordId; status: string }[]
+): { missing: string[]; blocked: { id: string; status: string | undefined }[] } {
+  const byId = new Map(rows.map(row => [String(row.id), row.status]))
+  const missing = rawIds.filter(id => !byId.has(id))
+  const blocked = rawIds
+    .map(id => ({ id, status: byId.get(id) }))
+    .filter(row => row.status !== 'pending' && row.status !== 'deferred')
+  return { missing, blocked }
+}
+
 export async function assertRawCapturesCommittable(rawIds: string[]): Promise<void> {
   const db = await getDb()
   const refs = rawIds.map(toRawRef)
@@ -53,38 +68,38 @@ export async function assertRawCapturesCommittable(rawIds: string[]): Promise<vo
     'SELECT id, status FROM raw_capture WHERE id IN $ids',
     { ids: refs }
   )
-  const byId = new Map(rows.map(row => [String(row.id), row.status]))
-  const missing = rawIds.filter(id => !byId.has(id))
+  const { missing, blocked } = classifyRawCaptureCommittability(rawIds, rows)
   if (missing.length > 0) throw new Error(`raw_capture not found: ${missing.join(', ')}`)
-
-  const blocked = rawIds
-    .map(id => ({ id, status: byId.get(id) }))
-    .filter(row => row.status !== 'pending' && row.status !== 'deferred')
   if (blocked.length > 0) {
     throw new Error(`raw_capture not committable: ${blocked.map(row => `${row.id} status=${row.status}`).join(', ')}`)
   }
 }
 
-async function assertExistingRecordRefs(noteIds: Set<string>, blockIds: Set<string>): Promise<void> {
+/** The requested ids absent from the fetched existing rows. Pure. */
+function missingIds(ids: string[], rows: { id: RecordId }[]): string[] {
+  const existing = new Set(rows.map(row => String(row.id)))
+  return ids.filter(id => !existing.has(id))
+}
+
+async function assertAllExist(
+  ids: string[],
+  table: 'note' | 'block',
+  toRef: (id: string) => StringRecordId,
+  label: string
+): Promise<void> {
+  // Guard the degenerate empty-list query (invariant: never query with []).
+  if (ids.length === 0) return
   const db = await getDb()
-  if (noteIds.size > 0) {
-    const ids = Array.from(noteIds)
-    const [rows] = await db.query<[{ id: RecordId }[]]>('SELECT id FROM note WHERE id IN $ids', {
-      ids: ids.map(toNoteRef)
-    })
-    const existing = new Set(rows.map(row => String(row.id)))
-    const missing = ids.filter(id => !existing.has(id))
-    if (missing.length > 0) throw new Error(`note not found: ${missing.join(', ')}`)
-  }
-  if (blockIds.size > 0) {
-    const ids = Array.from(blockIds)
-    const [rows] = await db.query<[{ id: RecordId }[]]>('SELECT id FROM block WHERE id IN $ids', {
-      ids: ids.map(toBlockRef)
-    })
-    const existing = new Set(rows.map(row => String(row.id)))
-    const missing = ids.filter(id => !existing.has(id))
-    if (missing.length > 0) throw new Error(`block not found: ${missing.join(', ')}`)
-  }
+  const [rows] = await db.query<[{ id: RecordId }[]]>(`SELECT id FROM ${table} WHERE id IN $ids`, {
+    ids: ids.map(toRef)
+  })
+  const missing = missingIds(ids, rows)
+  if (missing.length > 0) throw new Error(`${label} not found: ${missing.join(', ')}`)
+}
+
+async function assertExistingRecordRefs(noteIds: Set<string>, blockIds: Set<string>): Promise<void> {
+  await assertAllExist(Array.from(noteIds), 'note', toNoteRef, 'note')
+  await assertAllExist(Array.from(blockIds), 'block', toBlockRef, 'block')
 }
 
 /** At most one part_of parent per child in a single proposal: two different
@@ -108,11 +123,12 @@ function nodeKind(id: string): 'note' | 'block' {
 }
 
 /**
- * Validate the *stored* payload (real ids everywhere) before commit: every
- * referenced record that this proposal does NOT create must already exist, and
- * part_of/blocked_by endpoints must be notes. Pure-id; no temp resolution.
+ * Pure derivation of which refs a *stored* payload requires to already exist
+ * (the records it does NOT itself create), plus all the topology/kind guards:
+ * about/affects block endpoints must be blocks, single-parent per child,
+ * part_of/blocked_by endpoints must be notes. No I/O — testable without a DB.
  */
-export async function assertProposalRefs(payload: StoredProposalPayload): Promise<void> {
+export function collectRequiredRefs(payload: StoredProposalPayload): { notes: Set<string>; blocks: Set<string> } {
   const createdNotes = new Set(payload.note_creates.map(n => n.id))
   const createdBlocks = new Set(payload.narrative_blocks.map(b => b.id))
 
@@ -151,13 +167,22 @@ export async function assertProposalRefs(payload: StoredProposalPayload): Promis
   ]
   // note_updates always target an existing note, so their ids are needed even when
   // they would otherwise be created — unconditional, unlike the linked refs.
-  const needNotes = new Set([
+  const notes = new Set([
     ...payload.note_updates.map(update => update.id),
     ...linkedNoteIds.filter(id => !createdNotes.has(id))
   ])
-  const needBlocks = new Set(linkedBlockIds.filter(id => !createdBlocks.has(id)))
+  const blocks = new Set(linkedBlockIds.filter(id => !createdBlocks.has(id)))
+  return { notes, blocks }
+}
 
-  await assertExistingRecordRefs(needNotes, needBlocks)
+/**
+ * Validate the *stored* payload (real ids everywhere) before commit: every
+ * referenced record that this proposal does NOT create must already exist, and
+ * part_of/blocked_by endpoints must be notes. Pure-id; no temp resolution.
+ */
+export async function assertProposalRefs(payload: StoredProposalPayload): Promise<void> {
+  const { notes, blocks } = collectRequiredRefs(payload)
+  await assertExistingRecordRefs(notes, blocks)
 }
 
 /**

@@ -3,6 +3,7 @@ import { getDb } from './surreal'
 type DbInfo = { tables?: Record<string, string> }
 type TableInfo = { fields?: Record<string, string>; indexes?: Record<string, string> }
 type TableSnapshot = { define: string; tinfo: TableInfo | undefined }
+type Introspection = { ns: string; dbName: string; tables: TableSnapshot[] }
 
 /** Drop the trailing `PERMISSIONS …` clause so each DEFINE stays compact. */
 function stripPermissions(define: string): string {
@@ -30,25 +31,18 @@ function renderTable({ define, tinfo }: TableSnapshot): string[] {
 }
 
 /**
- * Build a compact, human-readable snapshot of the *live* database schema by
- * introspecting `INFO FOR DB` + `INFO FOR TABLE`. It is exposed as the MCP
- * server's `instructions`, so every connecting agent always sees the real
- * tables, field types, enums and edges (RELATION in/out) and can compose
- * correct read-only SurrealQL (`query_query` / `run_query`) without guessing
- * or drifting from a hand-maintained doc.
- *
- * Introspected once at startup; restart the MCP after `db:apply` to refresh.
+ * I/O at the border: introspect the live database into a flat structure.
+ * `INFO FOR DB` then `INFO FOR TABLE` fetched sequentially, one per table,
+ * before the pure render step composes the snapshot.
  */
-export async function loadSchemaSnapshot(): Promise<string> {
+async function fetchIntrospection(): Promise<Introspection> {
   const db = await getDb()
   const ns = process.env.SURREAL_NS ?? 'huygens'
   const dbName = process.env.SURREAL_DB ?? 'main'
 
   const [info] = await db.query<[DbInfo]>('INFO FOR DB')
-  const tables = Object.keys(info?.tables ?? {}).sort()
+  const tableNames = Object.keys(info?.tables ?? {}).sort()
 
-  // I/O at the border: `INFO FOR TABLE` is fetched sequentially, one per table,
-  // before the pure render step composes the snapshot.
   const fetchTableSnapshot = async (table: string): Promise<TableSnapshot> => {
     const define = info?.tables?.[table] ?? `DEFINE TABLE ${table}`
     try {
@@ -59,11 +53,30 @@ export async function loadSchemaSnapshot(): Promise<string> {
     }
   }
 
-  const snapshots = await tables.reduce<Promise<TableSnapshot[]>>(
+  const tables = await tableNames.reduce<Promise<TableSnapshot[]>>(
     async (acc, table) => [...(await acc), await fetchTableSnapshot(table)],
     Promise.resolve([])
   )
 
-  const lines = [...SNAPSHOT_HEADER(ns, dbName), ...snapshots.flatMap(renderTable)]
+  return { ns, dbName, tables }
+}
+
+/** Pure render of the introspected schema into the snapshot markdown. */
+function renderSchemaSnapshot({ ns, dbName, tables }: Introspection): string {
+  const lines = [...SNAPSHOT_HEADER(ns, dbName), ...tables.flatMap(renderTable)]
   return lines.join('\n').trimEnd()
+}
+
+/**
+ * Build a compact, human-readable snapshot of the *live* database schema by
+ * introspecting `INFO FOR DB` + `INFO FOR TABLE`. It is exposed as the MCP
+ * server's `instructions`, so every connecting agent always sees the real
+ * tables, field types, enums and edges (RELATION in/out) and can compose
+ * correct read-only SurrealQL (`query_query` / `run_query`) without guessing
+ * or drifting from a hand-maintained doc.
+ *
+ * Introspected once at startup; restart the MCP after `db:apply` to refresh.
+ */
+export async function loadSchemaSnapshot(): Promise<string> {
+  return renderSchemaSnapshot(await fetchIntrospection())
 }

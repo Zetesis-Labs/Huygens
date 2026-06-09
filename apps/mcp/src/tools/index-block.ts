@@ -84,6 +84,35 @@ async function fetchAboutByBlock(db: Surreal, narrativeIds: string[]): Promise<M
   }, new Map<string, string[]>())
 }
 
+type PartitionedRows = { ownerIds: Set<string>; narrativeIds: string[] }
+
+function partitionRows(rows: BlockRow[]): PartitionedRows {
+  return rows.reduce<PartitionedRows>(
+    (acc, row) => {
+      if (row.block_kind === 'narrative') return { ...acc, narrativeIds: [...acc.narrativeIds, idStr(row.id)] }
+      if (row.note) return { ...acc, ownerIds: new Set(acc.ownerIds).add(idStr(row.note)) }
+      return acc
+    },
+    { ownerIds: new Set<string>(), narrativeIds: [] }
+  )
+}
+
+// The referenced notes whose labels we need: part_of parents + about targets.
+function collectNoteIds(ownerMap: Map<string, OwnerInfo>, aboutByBlock: Map<string, string[]>): Set<string> {
+  const parentIds = [...ownerMap.values()].map(owner => owner.parentId).filter((id): id is string => id != null)
+  const aboutIds = [...aboutByBlock.values()].flat()
+  return new Set<string>([...parentIds, ...aboutIds])
+}
+
+function buildContextMap(
+  rows: BlockRow[],
+  ownerMap: Map<string, OwnerInfo>,
+  aboutByBlock: Map<string, string[]>,
+  noteRec: Map<string, GraphNodeRecord>
+): Map<string, string> {
+  return new Map(rows.map(row => [idStr(row.id), headerForBlock(row, ownerMap, aboutByBlock, noteRec)]))
+}
+
 /**
  * A context header per block, so the embedded vector carries the block's subject
  * and its place in the hierarchy instead of an orphan fragment (see the retrieval
@@ -92,27 +121,18 @@ async function fetchAboutByBlock(db: Surreal, narrativeIds: string[]): Promise<M
  * parent for now; deepening the breadcrumb is a follow-up.
  */
 async function buildBlockContexts(db: Surreal, rows: BlockRow[]): Promise<Map<string, string>> {
-  const ownerIds = new Set<string>()
-  const narrativeIds: string[] = []
-  for (const r of rows) {
-    if (r.block_kind === 'narrative') narrativeIds.push(idStr(r.id))
-    else if (r.note) ownerIds.add(idStr(r.note))
-  }
+  const { ownerIds, narrativeIds } = partitionRows(rows)
 
   const ownerMap = await fetchOwners(db, ownerIds)
   const aboutByBlock = await fetchAboutByBlock(db, narrativeIds)
 
   // Resolve labels for the referenced notes (parents + about targets).
-  const noteIds = new Set<string>()
-  for (const v of ownerMap.values()) if (v.parentId) noteIds.add(v.parentId)
-  for (const ns of aboutByBlock.values()) for (const n of ns) noteIds.add(n)
+  const noteIds = collectNoteIds(ownerMap, aboutByBlock)
   const noteRec = new Map<string, GraphNodeRecord>(
     (await selectByIds<GraphNodeRecord>([...noteIds])).map(r => [idStr(r.id), r])
   )
 
-  const out = new Map<string, string>()
-  for (const r of rows) out.set(idStr(r.id), headerForBlock(r, ownerMap, aboutByBlock, noteRec))
-  return out
+  return buildContextMap(rows, ownerMap, aboutByBlock, noteRec)
 }
 
 export async function indexBlockImpl(input: IndexBlockInput): Promise<IndexBlockResult> {

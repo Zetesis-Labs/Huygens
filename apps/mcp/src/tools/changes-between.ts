@@ -169,21 +169,36 @@ export function renderAggregate(agg: Aggregate): string {
     .join('\n\n')
 }
 
+/** One row of the committed-proposal query. */
+type CommittedRow = {
+  id: unknown
+  payload: StoredProposalPayload
+  result?: { committed_at?: unknown; temp_ids?: { notes?: Record<string, RecordIdish> } } | null
+  updated_at: unknown
+}
+
+/** temp note id → real `note:` id, with every value normalized to a string. Pure. */
+function normalizeTempMap(notes: Record<string, RecordIdish>): Record<string, string> {
+  return Object.fromEntries(Object.entries(notes).map(([k, v]) => [k, idStr(v)]))
+}
+
+/** A committed-proposal row reduced to what the aggregation fuses over. Pure. */
+function toCommittedInput(row: CommittedRow): CommittedInput {
+  const committedAt = row.result?.committed_at
+  return {
+    id: String(row.id),
+    // `committed_at` is absent on pre-result commits → coalesce to `updated_at`.
+    landedAt: committedAt != null ? toIso(committedAt) : toIso(row.updated_at),
+    payload: row.payload,
+    tempMap: normalizeTempMap(row.result?.temp_ids?.notes ?? {})
+  }
+}
+
 /** Every committed proposal, reduced for aggregation. Read-only. */
 async function fetchCommitted(from: string, to: string): Promise<CommittedInput[]> {
   const db = await getDb()
   // The window is filtered in SurrealDB so only in-range payloads cross the wire.
-  // `committed_at` is absent on pre-result commits → coalesce to `updated_at`.
-  const [rows] = await db.query<
-    [
-      Array<{
-        id: unknown
-        payload: StoredProposalPayload
-        result?: { committed_at?: unknown; temp_ids?: { notes?: Record<string, RecordIdish> } } | null
-        updated_at: unknown
-      }>
-    ]
-  >(
+  const [rows] = await db.query<[CommittedRow[]]>(
     `SELECT meta::id(id) AS id, payload, result, updated_at
      FROM proposal
      WHERE status = 'committed'
@@ -191,18 +206,7 @@ async function fetchCommitted(from: string, to: string): Promise<CommittedInput[
        AND (result.committed_at ?? updated_at) <= type::datetime($to)`,
     { from, to }
   )
-  return (rows ?? []).map(r => {
-    const ca = r.result?.committed_at
-    const notes = r.result?.temp_ids?.notes ?? {}
-    const tempMap: Record<string, string> = {}
-    for (const [k, v] of Object.entries(notes)) tempMap[k] = idStr(v)
-    return {
-      id: String(r.id),
-      landedAt: ca != null ? toIso(ca) : toIso(r.updated_at),
-      payload: r.payload,
-      tempMap
-    }
-  })
+  return (rows ?? []).map(toCommittedInput)
 }
 
 const shape = {

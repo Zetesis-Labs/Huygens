@@ -79,6 +79,13 @@ function summarize(payload: StoredProposalPayload): ProposalChanges['changes'] {
   }
 }
 
+/** Normalize a commit anchor for transport: null passes through, a Date becomes
+ * ISO, anything else is stringified. Pure. */
+function normalizeCommittedAt(value: unknown): string | null {
+  if (value == null) return null
+  return value instanceof Date ? value.toISOString() : String(value)
+}
+
 /**
  * The delta a proposal applies, read straight from its payload — the SSOT. The
  * stored payload (real ids) IS the set of mutations: notes created/updated, blocks,
@@ -89,11 +96,10 @@ function summarize(payload: StoredProposalPayload): ProposalChanges['changes'] {
 export async function getProposalChangesImpl(input: GetProposalInput): Promise<ProposalChanges> {
   const proposal = await fetchProposal(input.proposal_id)
   if (!proposal) throw new Error(`proposal not found: ${input.proposal_id}`)
-  const ca: unknown = proposal.result?.committed_at
   return {
     proposal_id: idStr(proposal.id),
     status: proposal.status,
-    committed_at: ca == null ? null : ca instanceof Date ? ca.toISOString() : String(ca),
+    committed_at: normalizeCommittedAt(proposal.result?.committed_at),
     source: 'payload',
     changes: summarize(proposal.payload)
   }

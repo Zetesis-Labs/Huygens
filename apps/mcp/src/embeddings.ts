@@ -60,9 +60,13 @@ async function embedViaDeepInfra(inputs: string[], opts: { signal?: AbortSignal 
     throw new EmbeddingProviderError('deepinfra', res.status, body)
   }
 
-  const data = (await res.json()) as DeepInfraResponse
-  if (!data.embeddings || data.embeddings.length !== inputs.length) {
-    throw new EmbeddingProviderError('deepinfra', 200, `malformed response (expected ${inputs.length} embeddings)`)
+  return parseDeepInfraResponse((await res.json()) as DeepInfraResponse, inputs.length)
+}
+
+/** Pure validation of a DeepInfra payload: shape + dimension guards, derives input_tokens. */
+function parseDeepInfraResponse(data: DeepInfraResponse, expectedCount: number): EmbedResult {
+  if (!data.embeddings || data.embeddings.length !== expectedCount) {
+    throw new EmbeddingProviderError('deepinfra', 200, `malformed response (expected ${expectedCount} embeddings)`)
   }
 
   const first = data.embeddings[0]

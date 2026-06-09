@@ -70,18 +70,24 @@ export function logToolCall(entry: ToolCallLog): void {
   void persist(entry).catch(err => console.error('[tool] db log failed:', err instanceof Error ? err.message : err))
 }
 
-async function persist(entry: ToolCallLog): Promise<void> {
-  const db = await getDb()
-  const content: Record<string, unknown> = {
+/** Pure record stored in `mcp_tool_call`. Mirrors the stderr line's
+ * field-selection but keeps the FULL objects (toPlain, no length cap): result is
+ * present only when defined; error/code only when truthy. */
+function buildToolCallContent(entry: ToolCallLog): Record<string, unknown> {
+  return {
     tool: entry.tool,
     ok: entry.ok,
     duration_ms: entry.duration_ms,
-    args: toPlain(entry.args)
+    args: toPlain(entry.args),
+    ...(entry.result !== undefined ? { result: toPlain(entry.result) } : {}),
+    ...(entry.error ? { error: entry.error } : {}),
+    ...(entry.code ? { code: entry.code } : {})
   }
-  if (entry.result !== undefined) content.result = toPlain(entry.result)
-  if (entry.error) content.error = entry.error
-  if (entry.code) content.code = entry.code
-  await db.query('CREATE mcp_tool_call CONTENT $content', { content })
+}
+
+async function persist(entry: ToolCallLog): Promise<void> {
+  const db = await getDb()
+  await db.query('CREATE mcp_tool_call CONTENT $content', { content: buildToolCallContent(entry) })
 }
 
 /** Round-trip through JSON so the value stored is a plain, serializable object

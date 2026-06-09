@@ -13,6 +13,22 @@ import { logToolCall } from '../tool-log'
  * Because `shape` precedes `handler`, TypeScript infers the zod shape and
  * contextually types the handler's `args`, exactly like `server.tool`.
  */
+/**
+ * Pure classification of a thrown error into a log/return shape. A HuygensError
+ * becomes a structured tool error returned to the caller (the discriminator the
+ * Python worker reads); anything else maps to an McpError that is rethrown.
+ */
+function classifyToolError(
+  err: unknown
+):
+  | { rethrow: false; result: CallToolResult; error: string; code: string }
+  | { rethrow: true; mapped: ReturnType<typeof toMcpError> } {
+  if (err instanceof HuygensError) {
+    return { rethrow: false, result: huygensErrorToToolResult(err), error: err.message, code: err.code }
+  }
+  return { rethrow: true, mapped: toMcpError(err) }
+}
+
 export function defineTool<Args extends ZodRawShape>(
   server: McpServer,
   name: string,
@@ -23,20 +39,19 @@ export function defineTool<Args extends ZodRawShape>(
   const guarded = (async (...callArgs: unknown[]) => {
     const args = callArgs[0]
     const start = performance.now()
-    const ms = () => Math.round(performance.now() - start)
+    const baseLog = () => ({ tool: name, duration_ms: Math.round(performance.now() - start), args })
     try {
       const result = await (handler as (...a: unknown[]) => CallToolResult | Promise<CallToolResult>)(...callArgs)
-      logToolCall({ tool: name, ok: result?.isError !== true, duration_ms: ms(), args, result })
+      logToolCall({ ...baseLog(), ok: result?.isError !== true, result })
       return result
     } catch (err) {
-      if (err instanceof HuygensError) {
-        const result = huygensErrorToToolResult(err)
-        logToolCall({ tool: name, ok: false, duration_ms: ms(), args, result, error: err.message, code: err.code })
-        return result
+      const outcome = classifyToolError(err)
+      if (outcome.rethrow) {
+        logToolCall({ ...baseLog(), ok: false, error: outcome.mapped.message })
+        throw outcome.mapped
       }
-      const mapped = toMcpError(err)
-      logToolCall({ tool: name, ok: false, duration_ms: ms(), args, error: mapped.message })
-      throw mapped
+      logToolCall({ ...baseLog(), ok: false, result: outcome.result, error: outcome.error, code: outcome.code })
+      return outcome.result
     }
   }) as unknown as ToolCallback<Args>
   server.tool(name, description, shape, guarded)

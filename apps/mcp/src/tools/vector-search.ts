@@ -8,6 +8,7 @@ import { getDb } from '../surreal'
 import type { BlockProvenance } from './trace-provenance'
 import { defineTool } from './define-tool'
 import { idStr } from './graph-records'
+import { noteFilters } from './lexical-search'
 import { provenanceByBlock } from './trace-provenance'
 
 export const vectorSearchShape = {
@@ -55,14 +56,33 @@ export type SearchHit = {
   transformation: string | null
 }
 
-type Row = {
+type Row = HitRow & { distance: number }
+
+/** A SurrealDB row carrying the columns shared by the vector and lexical legs. */
+export type HitRow = {
   id: RecordId
   content: string
   block_kind: string
-  distance: number
   note_id: RecordId | null
   note_title: string | null
   note_state: string | null
+}
+
+/** Pure: project a SurrealDB row to a SearchHit. `scoreOf` adapts the per-leg
+ * score column (1 - distance for vector, raw score for lexical). Provenance
+ * fields are placeholders here and get filled in by `attachProvenance`. */
+export function rowToHit<R extends HitRow>(row: R, scoreOf: (row: R) => number): SearchHit {
+  return {
+    block_id: idStr(row.id),
+    block_kind: row.block_kind,
+    note_id: row.note_id ? idStr(row.note_id) : null,
+    note_title: row.note_title ?? null,
+    note_state: row.note_state ?? null,
+    content: row.content,
+    score: scoreOf(row),
+    derived_from: 0,
+    transformation: null
+  }
 }
 
 /** Pure: take an embedTexts result and return its first vector, or throw. */
@@ -70,6 +90,25 @@ export function firstVectorOrThrow(result: { embeddings: number[][] }): number[]
   const [queryVec] = result.embeddings
   if (!queryVec) throw new Error('embed_text returned no vector')
   return queryVec
+}
+
+/** Pure: build the HNSW KNN SQL for the vector leg. `where` is the outer
+ * parent-note filter (from noteFilters); `$q` is bound separately. */
+export function buildVectorSql(k: number, ef: number, where: string): string {
+  return `SELECT * FROM (
+    SELECT
+      id,
+      content,
+      block_kind,
+      note.id          AS note_id,
+      note.title       AS note_title,
+      note.state       AS note_state,
+      note.type.slug   AS note_type_slug,
+      note.updated_at  AS note_updated_at,
+      vector::distance::knn() AS distance
+    FROM block
+    WHERE embedding <|${k},${ef}|> $q
+  )${where} ORDER BY distance ASC`
 }
 
 /** Pure: attach per-block provenance signals onto search hits, without mutation. */
@@ -90,53 +129,11 @@ export async function vectorSearchImpl(input: VectorSearchInput): Promise<Search
   const ef = input.ef ?? 40
   const queryVec = firstVectorOrThrow(await embedTexts([input.query]))
 
-  const filters: string[] = []
-  const bindings: Record<string, unknown> = { q: queryVec }
-  if (input.state_in?.length) {
-    filters.push('note_state IN $states')
-    bindings.states = input.state_in
-  } else {
-    // Default: hide tombstones. ARCHIVED notes contaminate retrieval; a caller
-    // who wants them must opt in via explicit `state_in`. DONE stays searchable.
-    filters.push("note_state != 'ARCHIVED'")
-  }
-  if (input.type_slugs?.length) {
-    filters.push('note_type_slug IN $type_slugs')
-    bindings.type_slugs = input.type_slugs
-  }
-  if (input.updated_since) {
-    filters.push('note_updated_at > $since')
-    bindings.since = new Date(input.updated_since)
-  }
-  const outerWhere = filters.length > 0 ? ` WHERE ${filters.join(' AND ')}` : ''
+  const { where, bindings: filterBindings } = noteFilters(input)
+  const sql = buildVectorSql(k, ef, where)
+  const [rows] = await db.query<[Row[]]>(sql, { ...filterBindings, q: queryVec })
 
-  const sql = `SELECT * FROM (
-    SELECT
-      id,
-      content,
-      block_kind,
-      note.id          AS note_id,
-      note.title       AS note_title,
-      note.state       AS note_state,
-      note.type.slug   AS note_type_slug,
-      note.updated_at  AS note_updated_at,
-      vector::distance::knn() AS distance
-    FROM block
-    WHERE embedding <|${k},${ef}|> $q
-  )${outerWhere} ORDER BY distance ASC`
-
-  const [rows] = await db.query<[Row[]]>(sql, bindings)
-
-  const hits = rows.map(r => ({
-    block_id: idStr(r.id),
-    block_kind: r.block_kind,
-    note_id: r.note_id ? idStr(r.note_id) : null,
-    note_title: r.note_title ?? null,
-    note_state: r.note_state ?? null,
-    content: r.content,
-    score: 1 - r.distance
-  }))
-
+  const hits = rows.map(r => rowToHit(r, row => 1 - row.distance))
   const filtered = input.threshold != null ? hits.filter(h => h.score >= (input.threshold ?? 0)) : hits
   const prov = await provenanceByBlock(filtered.map(h => h.block_id))
   return attachProvenance(filtered, prov)

@@ -53,13 +53,17 @@ async function createConversation(
   return { id: idStr(rows[0].id), updated: false }
 }
 
-export async function saveConversationImpl(input: SaveConversationInput): Promise<{ id: string; updated: boolean }> {
-  const db = await getDb()
-  const doc: Record<string, unknown> = {
+function buildConversationDoc(input: SaveConversationInput): Record<string, unknown> {
+  return {
     messages: input.messages,
     ...(input.title !== undefined ? { title: input.title } : {}),
     ...(input.state !== undefined ? { state: input.state } : {})
   }
+}
+
+export async function saveConversationImpl(input: SaveConversationInput): Promise<{ id: string; updated: boolean }> {
+  const db = await getDb()
+  const doc = buildConversationDoc(input)
   if (input.id) return updateConversation(db, input.id, doc)
   return createConversation(db, doc)
 }

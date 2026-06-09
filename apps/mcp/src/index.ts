@@ -13,22 +13,36 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'))
 }
 
+type Route = 'health' | 'mcp' | 'not_found'
+
+// Pure routing decision: which kind of request this is, derived only from the
+// URL. Testable without touching `res` or standing up an HTTP server.
+function routeRequest(url: string | undefined): Route {
+  if (url === '/healthz') return 'health'
+  if (url?.startsWith('/mcp')) return 'mcp'
+  return 'not_found'
+}
+
+function writeJson(res: ServerResponse, status: number, payload: unknown): void {
+  res.statusCode = status
+  res.setHeader('content-type', 'application/json')
+  res.end(JSON.stringify(payload))
+}
+
 // The `instructions` (SurrealQL cookbook + live DB schema) are computed once at
 // startup and closed over here, so every connecting agent sees them without the
 // handler reading mutable module state.
 function createRequestHandler(instructions: string | undefined) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    if (req.url === '/healthz') {
-      res.statusCode = 200
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ ok: true }))
+    const route = routeRequest(req.url)
+
+    if (route === 'health') {
+      writeJson(res, 200, { ok: true })
       return
     }
 
-    if (!req.url?.startsWith('/mcp')) {
-      res.statusCode = 404
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ error: 'not_found' }))
+    if (route === 'not_found') {
+      writeJson(res, 404, { error: 'not_found' })
       return
     }
 
@@ -47,9 +61,7 @@ function createRequestHandler(instructions: string | undefined) {
     } catch (err) {
       console.error('[huygens-mcp] request error:', err)
       if (!res.headersSent) {
-        res.statusCode = 500
-        res.setHeader('content-type', 'application/json')
-        res.end(JSON.stringify({ error: 'internal_error' }))
+        writeJson(res, 500, { error: 'internal_error' })
       }
     }
   }

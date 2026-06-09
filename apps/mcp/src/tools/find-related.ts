@@ -67,6 +67,45 @@ function hasValidNote(row: Pick<Row, 'note_id'>): boolean {
   return noteId !== 'null' && noteId !== 'undefined'
 }
 
+/** Pure: collapse a block's content into a single-line snippet, capped to
+ * SNIPPET_LEN (with an ellipsis when truncated). */
+function buildSnippet(content: string): string {
+  return content.length > SNIPPET_LEN
+    ? `${content.slice(0, SNIPPET_LEN).replace(/\n/g, ' ')}…`
+    : content.replace(/\n/g, ' ')
+}
+
+/** Pure: turn distance-ordered KNN rows into the deduped, thresholded, sorted
+ * top-k hits. One hit per note (its best/first block, since rows arrive in
+ * distance-ascending order); provenance fields default and get filled later. */
+export function rowsToHits(rows: Row[], k: number, threshold: number): FindRelatedHit[] {
+  // A note with several matching blocks should appear once with its best
+  // block as the snippet. Rows arrive in distance-ascending order, so the first
+  // row seen per note is the best one.
+  const bestByNote = rows
+    .filter(hasValidNote)
+    .reduce((acc, r) => {
+      const noteId = idStr(r.note_id)
+      return acc.has(noteId) ? acc : acc.set(noteId, r)
+    }, new Map<string, Row>())
+
+  return Array.from(bestByNote.values())
+    .map(r => ({
+      note_id: idStr(r.note_id),
+      block_id: idStr(r.id),
+      title: r.note_title,
+      type_slug: r.note_type_slug,
+      state: r.note_state,
+      snippet: buildSnippet(r.content),
+      score: 1 - r.distance,
+      derived_from: 0,
+      transformation: null
+    }))
+    .filter(h => h.score >= threshold)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, k)
+}
+
 export async function findRelatedImpl(input: FindRelatedInput): Promise<FindRelatedHit[]> {
   const db = await getDb()
   const k = input.k ?? 5
@@ -95,33 +134,7 @@ export async function findRelatedImpl(input: FindRelatedInput): Promise<FindRela
 
   const [rows] = await db.query<[Row[]]>(sql, { q: queryVec })
 
-  // A note with several matching blocks should appear once with its best
-  // block as the snippet. Rows arrive in distance-ascending order, so the first
-  // row seen per note is the best one.
-  const bestByNote = rows
-    .filter(hasValidNote)
-    .reduce((acc, r) => {
-      const noteId = idStr(r.note_id)
-      return acc.has(noteId) ? acc : acc.set(noteId, r)
-    }, new Map<string, Row>())
-
-  const hits = Array.from(bestByNote.values())
-    .map(r => ({
-      note_id: idStr(r.note_id),
-      block_id: idStr(r.id),
-      title: r.note_title,
-      type_slug: r.note_type_slug,
-      state: r.note_state,
-      snippet:
-        r.content.length > SNIPPET_LEN
-          ? `${r.content.slice(0, SNIPPET_LEN).replace(/\n/g, ' ')}…`
-          : r.content.replace(/\n/g, ' '),
-      score: 1 - r.distance
-    }))
-    .filter(h => h.score >= threshold)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, k)
-
+  const hits = rowsToHits(rows, k, threshold)
   const prov = await provenanceByBlock(hits.map(h => h.block_id))
   return attachProvenance(hits, prov)
 }

@@ -364,6 +364,29 @@ async function assertRitualCommitAllowed(payload: StoredProposalPayload, input: 
   }
 }
 
+/** Shape the commit response from the stored payload (real ids) and the descriptive
+ * block ids the tx created. Pure: no I/O, so the response contract is testable
+ * without a DB round-trip. */
+function buildCommitResult(
+  input: CommitProposalInput,
+  payload: StoredProposalPayload,
+  descriptiveIds: string[]
+): CommitProposalResult {
+  return {
+    proposal_id: input.proposal_id,
+    raw_ids_processed: payload.raw_ids,
+    narrative_blocks_created: payload.narrative_blocks.map(b => b.id),
+    notes_created: payload.note_creates.map(n => n.id),
+    notes_updated: payload.note_updates.map(u => u.id),
+    descriptive_blocks_created: descriptiveIds,
+    derived_from_created: payload.narrative_blocks.reduce((sum, b) => sum + b.raw_ids.length, 0),
+    about_created: payload.about.length,
+    affects_created: payload.affects.length,
+    semantic_edges_created: payload.edges.length,
+    semantic_edges_removed: payload.edges_remove.length
+  }
+}
+
 export async function commitProposalImpl(input: CommitProposalInput): Promise<CommitProposalResult> {
   const db = await getDb()
   const proposal = await requireDraftProposal(input.proposal_id)
@@ -411,17 +434,5 @@ export async function commitProposalImpl(input: CommitProposalInput): Promise<Co
   }
 
   // Counts/ids come straight from the stored payload (already real ids).
-  return {
-    proposal_id: input.proposal_id,
-    raw_ids_processed: payload.raw_ids,
-    narrative_blocks_created: payload.narrative_blocks.map(b => b.id),
-    notes_created: payload.note_creates.map(n => n.id),
-    notes_updated: payload.note_updates.map(u => u.id),
-    descriptive_blocks_created: descriptiveIds,
-    derived_from_created: payload.narrative_blocks.reduce((sum, b) => sum + b.raw_ids.length, 0),
-    about_created: payload.about.length,
-    affects_created: payload.affects.length,
-    semantic_edges_created: payload.edges.length,
-    semantic_edges_removed: payload.edges_remove.length
-  }
+  return buildCommitResult(input, payload, descriptiveIds)
 }

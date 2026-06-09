@@ -102,10 +102,18 @@ function registerPromptEntry(server: McpServer, entry: PromptEntry): void {
   }))
 }
 
-export function registerLoreAndPrompts(server: McpServer): void {
+function registerLoreResources(server: McpServer): void {
   LORE_ENTRIES.map(entry => registerLoreResource(server, entry))
-  registerSchemaResource(server)
+}
+
+function registerPrompts(server: McpServer): void {
   PROMPT_ENTRIES.map(entry => registerPromptEntry(server, entry))
+}
+
+export function registerLoreAndPrompts(server: McpServer): void {
+  registerLoreResources(server)
+  registerSchemaResource(server)
+  registerPrompts(server)
 }
 
 export { LORE_ENTRIES, PROMPT_ENTRIES }

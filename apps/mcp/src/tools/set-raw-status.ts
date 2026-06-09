@@ -36,6 +36,14 @@ function toRawRef(rawId: string): StringRecordId {
   return new StringRecordId(rawId)
 }
 
+function toRawStatusRow(row: DbRawStatusRow): RawStatusRow {
+  return {
+    id: idStr(row.id),
+    status: row.status,
+    processed_at: isoStringOrNull(row.processed_at)
+  }
+}
+
 function findMissingIds(requested: string[], existing: string[]): string[] {
   const existingIds = new Set(existing)
   return requested.filter(id => !existingIds.has(id))
@@ -79,11 +87,7 @@ export async function setRawStatusImpl(input: SetRawStatusInput): Promise<RawSta
     payload: { raw_ids: input.raw_ids, status: input.status }
   })
 
-  return rows.map(row => ({
-    id: idStr(row.id),
-    status: row.status,
-    processed_at: isoStringOrNull(row.processed_at)
-  }))
+  return rows.map(toRawStatusRow)
 }
 
 export function registerSetRawStatus(server: McpServer): void {

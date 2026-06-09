@@ -78,22 +78,20 @@ export async function expand(
   return { visited, edges }
 }
 
-/**
- * Resolve labels for the visited nodes and render the induced subgraph (edges
- * with both endpoints visited) as `subject —predicate→ object` triples. Shared
- * by neighborhood and expand_context. Read-only.
- */
-export async function verbalizeSubgraph(visited: Set<string>, edges: Map<string, EdgeRow>): Promise<SubgraphText> {
-  const triples: EdgeTriple[] = []
-  for (const edge of edges.values()) {
-    const source = idStr(edge.in)
-    const target = idStr(edge.out)
-    if (visited.has(source) && visited.has(target)) {
-      triples.push({ source, target, kind: edge.kind, qualifier: edge.action ?? edge.transformation ?? undefined })
-    }
-  }
-  const records = await selectByIds<GraphNodeRecord>([...visited])
-  const labels = new Map(records.map(r => [idStr(r.id), nodeLabel(r)]))
+/** Triples of the induced subgraph: edges with both endpoints visited. Pure. */
+function inducedTriples(visited: Set<string>, edges: Map<string, EdgeRow>): EdgeTriple[] {
+  return [...edges.values()]
+    .filter(edge => visited.has(idStr(edge.in)) && visited.has(idStr(edge.out)))
+    .map(edge => ({
+      source: idStr(edge.in),
+      target: idStr(edge.out),
+      kind: edge.kind,
+      qualifier: edge.action ?? edge.transformation ?? undefined
+    }))
+}
+
+/** Render the visited nodes and induced triples as a SubgraphText. Pure. */
+function renderSubgraph(visited: Set<string>, triples: EdgeTriple[], labels: Map<string, string>): SubgraphText {
   const label = (id: string): string => labels.get(id) ?? id
   return {
     node_count: visited.size,
@@ -101,6 +99,18 @@ export async function verbalizeSubgraph(visited: Set<string>, edges: Map<string,
     edges: triples,
     triples: serializeTriples(triples, label)
   }
+}
+
+/**
+ * Resolve labels for the visited nodes and render the induced subgraph (edges
+ * with both endpoints visited) as `subject —predicate→ object` triples. Shared
+ * by neighborhood and expand_context. Read-only.
+ */
+export async function verbalizeSubgraph(visited: Set<string>, edges: Map<string, EdgeRow>): Promise<SubgraphText> {
+  const triples = inducedTriples(visited, edges)
+  const records = await selectByIds<GraphNodeRecord>([...visited])
+  const labels = new Map(records.map(r => [idStr(r.id), nodeLabel(r)]))
+  return renderSubgraph(visited, triples, labels)
 }
 
 /**

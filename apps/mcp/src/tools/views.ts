@@ -76,22 +76,26 @@ export async function getHierarchyImpl(root?: string): Promise<{
 }
 
 // ── count_notes ─────────────────────────────────────────────────────────────
+// Pure: filters -> { where, params }. An empty stateIn is treated as no filter.
+function buildNoteFilter({ typeSlug, stateIn }: { typeSlug?: string; stateIn?: string[] }): {
+  where: string
+  params: Record<string, unknown>
+} {
+  const clauses = [
+    typeSlug ? { cond: 'type.slug = $ts', param: { ts: typeSlug } } : null,
+    stateIn && stateIn.length > 0 ? { cond: 'state IN $st', param: { st: stateIn } } : null
+  ].filter(clause => clause != null)
+  const where = clauses.length > 0 ? `WHERE ${clauses.map(clause => clause.cond).join(' AND ')}` : ''
+  const params = Object.assign({}, ...clauses.map(clause => clause.param))
+  return { where, params }
+}
+
 export async function countNotesImpl(
   typeSlug?: string,
   stateIn?: string[]
 ): Promise<{ total: number; by_type_state: Array<{ type: string; state: string; count: number }> }> {
   const db = await getDb()
-  const conds: string[] = []
-  const params: Record<string, unknown> = {}
-  if (typeSlug) {
-    conds.push('type.slug = $ts')
-    params.ts = typeSlug
-  }
-  if (stateIn && stateIn.length > 0) {
-    conds.push('state IN $st')
-    params.st = stateIn
-  }
-  const where = conds.length > 0 ? `WHERE ${conds.join(' AND ')}` : ''
+  const { where, params } = buildNoteFilter({ typeSlug, stateIn })
   const [totalRows] = await db.query<[Array<{ c: number }>]>(`SELECT count() AS c FROM note ${where} GROUP ALL`, params)
   const [rows] = await db.query<[Array<{ type: string; state: string; c: number }>]>(
     `SELECT type.slug AS type, state, count() AS c FROM note ${where} GROUP BY type, state ORDER BY type, state`,
@@ -160,6 +164,71 @@ type MitRow = {
   cre: Array<{ id: unknown; mit_for: string | null }> | null
 }
 
+type MitWrite = Omit<MitEvent, 'action'> & { mit_for: string | null }
+type NoteMeta = { title: string | null; state: string | null; mit_for: string | null }
+
+// Pure: flatten committed-proposal rows to per-note event lists, in commit order.
+// Keeps create-before-update ordering within a row, since that ordering feeds the
+// assigned/moved classify. Filters to a single note when noteId is given.
+function groupMitWritesByNote(rows: MitRow[], noteId?: string): Map<string, MitWrite[]> {
+  const flatEvents = rows.flatMap(proposalRow => {
+    const committed_at = proposalRow.committed_at != null ? String(proposalRow.committed_at) : ''
+    const proposal_id = String(proposalRow.proposal_id)
+    const creates = (proposalRow.cre ?? []).map(createWrite => ({
+      noteId: String(createWrite.id),
+      event: { committed_at, proposal_id, mit_for: createWrite.mit_for ?? null, source: 'create' as const }
+    }))
+    const updates = (proposalRow.upd ?? []).map(updateWrite => ({
+      noteId: String(updateWrite.id),
+      event: { committed_at, proposal_id, mit_for: updateWrite.mit_for ?? null, source: 'update' as const }
+    }))
+    return [...creates, ...updates]
+  })
+  return flatEvents
+    .filter(({ noteId: eventNoteId }) => !noteId || eventNoteId === noteId)
+    .reduce((grouped, { noteId: eventNoteId, event }) => {
+      const events = grouped.get(eventNoteId) ?? []
+      return grouped.set(eventNoteId, [...events, event])
+    }, new Map<string, MitWrite[]>())
+}
+
+// Classify each write relative to the previous non-null value in this note's
+// own timeline: first date = assigned, a later (different) date = moved, null
+// = cleared. A consciously soltado MIT is exactly the `cleared` row. The reduce
+// threads `prev` through the accumulator so the map stays pure.
+function classifyHistory(events: MitWrite[]): MitEvent[] {
+  return events.reduce<{ prev: string | null; history: MitEvent[] }>(
+    ({ prev, history }, mitEvent) => {
+      const action: MitEvent['action'] =
+        mitEvent.mit_for == null ? 'cleared' : prev == null ? 'assigned' : 'moved'
+      return { prev: mitEvent.mit_for, history: [...history, { ...mitEvent, action }] }
+    },
+    { prev: null, history: [] }
+  ).history
+}
+
+// Pure: classify per-note events, decorate with note meta, sort most-recently-
+// active first.
+function buildMitTimelines(eventsByNote: Map<string, MitWrite[]>, metaByNote: Map<string, NoteMeta>): MitTimeline[] {
+  const timeline: MitTimeline[] = [...eventsByNote.keys()].map(id => {
+    const history = classifyHistory(eventsByNote.get(id) ?? [])
+    const noteMeta = metaByNote.get(id)
+    return {
+      note_id: id,
+      note_title: noteMeta?.title ?? null,
+      note_state: noteMeta?.state ?? null,
+      current_mit_for: noteMeta?.mit_for ?? null,
+      history
+    }
+  })
+  // Most-recently-active timelines first.
+  return [...timeline].sort((a, b) => {
+    const lastA = a.history[a.history.length - 1]?.committed_at ?? ''
+    const lastB = b.history[b.history.length - 1]?.committed_at ?? ''
+    return lastB.localeCompare(lastA)
+  })
+}
+
 export async function mitHistoryImpl(noteId?: string): Promise<{
   note_id: string | null
   note_count: number
@@ -183,27 +252,7 @@ export async function mitHistoryImpl(noteId?: string): Promise<{
      ORDER BY committed_at`
   )
 
-  // Flatten to per-note event lists, in commit order. Keep create-before-update
-  // ordering within a row, since that ordering feeds the assigned/moved classify.
-  const flatEvents = (rows ?? []).flatMap(proposalRow => {
-    const committed_at = proposalRow.committed_at != null ? String(proposalRow.committed_at) : ''
-    const proposal_id = String(proposalRow.proposal_id)
-    const creates = (proposalRow.cre ?? []).map(createWrite => ({
-      noteId: String(createWrite.id),
-      event: { committed_at, proposal_id, mit_for: createWrite.mit_for ?? null, source: 'create' as const }
-    }))
-    const updates = (proposalRow.upd ?? []).map(updateWrite => ({
-      noteId: String(updateWrite.id),
-      event: { committed_at, proposal_id, mit_for: updateWrite.mit_for ?? null, source: 'update' as const }
-    }))
-    return [...creates, ...updates]
-  })
-  const byNote = flatEvents
-    .filter(({ noteId: eventNoteId }) => !noteId || eventNoteId === noteId)
-    .reduce((grouped, { noteId: eventNoteId, event }) => {
-      const events = grouped.get(eventNoteId) ?? []
-      return grouped.set(eventNoteId, [...events, event])
-    }, new Map<string, Array<Omit<MitEvent, 'action'> & { mit_for: string | null }>>())
+  const byNote = groupMitWritesByNote(rows ?? [], noteId)
 
   if (byNote.size === 0) return { note_id: noteId ?? null, note_count: 0, event_count: 0, timeline: [] }
 
@@ -213,7 +262,7 @@ export async function mitHistoryImpl(noteId?: string): Promise<{
     'SELECT id, title, state, mit_for FROM note WHERE id IN $ids',
     { ids: ids.map(id => new StringRecordId(id)) }
   )
-  const meta = new Map(
+  const meta = new Map<string, NoteMeta>(
     (noteRows ?? []).map(noteRow => [
       String(noteRow.id),
       {
@@ -224,38 +273,8 @@ export async function mitHistoryImpl(noteId?: string): Promise<{
     ])
   )
 
-  // Classify each write relative to the previous non-null value in this note's
-  // own timeline: first date = assigned, a later (different) date = moved, null
-  // = cleared. A consciously soltado MIT is exactly the `cleared` row. The reduce
-  // threads `prev` through the accumulator so the map stays pure.
-  const classifyHistory = (events: Array<Omit<MitEvent, 'action'> & { mit_for: string | null }>): MitEvent[] =>
-    events.reduce<{ prev: string | null; history: MitEvent[] }>(
-      ({ prev, history }, mitEvent) => {
-        const action: MitEvent['action'] =
-          mitEvent.mit_for == null ? 'cleared' : prev == null ? 'assigned' : 'moved'
-        return { prev: mitEvent.mit_for, history: [...history, { ...mitEvent, action }] }
-      },
-      { prev: null, history: [] }
-    ).history
-
-  const timeline: MitTimeline[] = ids.map(id => {
-    const history = classifyHistory(byNote.get(id) ?? [])
-    const noteMeta = meta.get(id)
-    return {
-      note_id: id,
-      note_title: noteMeta?.title ?? null,
-      note_state: noteMeta?.state ?? null,
-      current_mit_for: noteMeta?.mit_for ?? null,
-      history
-    }
-  })
-  const event_count = timeline.reduce((total, entry) => total + entry.history.length, 0)
-  // Most-recently-active timelines first.
-  const sortedTimeline = [...timeline].sort((a, b) => {
-    const lastA = a.history[a.history.length - 1]?.committed_at ?? ''
-    const lastB = b.history[b.history.length - 1]?.committed_at ?? ''
-    return lastB.localeCompare(lastA)
-  })
+  const sortedTimeline = buildMitTimelines(byNote, meta)
+  const event_count = sortedTimeline.reduce((total, entry) => total + entry.history.length, 0)
 
   return { note_id: noteId ?? null, note_count: sortedTimeline.length, event_count, timeline: sortedTimeline }
 }
