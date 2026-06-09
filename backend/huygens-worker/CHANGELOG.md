@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.1](https://github.com/Zetesis-Labs/Huygens/compare/worker-v0.3.0...worker-v0.3.1) (2026-06-09)
+
+
+### Features
+
+* **dashboard:** Bitácora day/week entries and ritual nudge banners ([8661731](https://github.com/Zetesis-Labs/Huygens/commit/8661731a6905f3dafb321d050be4642fa0dd60c7))
+* **mcp:** coaching/pedagogical layer — teach ZTD, activate the dormant habit ([a3a0159](https://github.com/Zetesis-Labs/Huygens/commit/a3a015951dfad532548680544f07ab8c3fb4d603))
+* **worker:** anchor the dashboard agent on the operating doctrine ([4ac0dc2](https://github.com/Zetesis-Labs/Huygens/commit/4ac0dc271d97de26eb1dc9ca5d447aba71f155d5))
+* **worker:** fail fast when the MCP doctrine cannot be fetched ([66f1eb1](https://github.com/Zetesis-Labs/Huygens/commit/66f1eb12e6def6a997aa5d91abdda085e95fd926))
+
+
+### Bug Fixes
+
+* **worker:** revertir gpt-5.5 (el audit lo marcó irreal por error) y alinear README ([d8e61ca](https://github.com/Zetesis-Labs/Huygens/commit/d8e61ca94c8b39b2b692df77313a947cc8c0fde9))
+
+
+### Continuous Integration
+
+* **worker:** gate the Python worker on lint, types and tests ([ebd748f](https://github.com/Zetesis-Labs/Huygens/commit/ebd748f595ef1ec790f669671bc9936b81788570))
+
 ## [0.3.0](https://github.com/Zetesis-Labs/Huygens/compare/worker-v0.2.0...worker-v0.3.0) (2026-05-26)
 
 
