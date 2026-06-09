@@ -113,23 +113,44 @@ export async function buildGenesisPayload(): Promise<StoredProposalPayload> {
  * with a stable id. Descriptive blocks regenerate on replay, so they must not be
  * referenced; every edge/about/affects endpoint must be a note or narrative block
  * the payload itself creates. Throws with the offending refs otherwise. */
+function badEdgeRefs(edges: StoredProposalPayload['edges'], known: (id: string) => boolean): string[] {
+  return edges.flatMap(e => [
+    ...(known(e.from) ? [] : [`edge.from ${e.from}`]),
+    ...(known(e.to) ? [] : [`edge.to ${e.to}`])
+  ])
+}
+
+function badAboutRefs(
+  about: StoredProposalPayload['about'],
+  noteIds: Set<string>,
+  narrativeIds: Set<string>
+): string[] {
+  return about.flatMap(a => [
+    ...(narrativeIds.has(a.block_id) ? [] : [`about.block ${a.block_id}`]),
+    ...(noteIds.has(a.note_id) ? [] : [`about.note ${a.note_id}`])
+  ])
+}
+
+function badAffectsRefs(
+  affects: StoredProposalPayload['affects'],
+  noteIds: Set<string>,
+  narrativeIds: Set<string>
+): string[] {
+  return affects.flatMap(a => [
+    ...(narrativeIds.has(a.block_id) ? [] : [`affects.block ${a.block_id}`]),
+    ...(noteIds.has(a.note_id) ? [] : [`affects.note ${a.note_id}`])
+  ])
+}
+
 export function assertGenesisSafe(p: StoredProposalPayload): void {
   const noteIds = new Set(p.note_creates.map(n => n.id))
   const narrativeIds = new Set(p.narrative_blocks.map(b => b.id))
   const known = (id: string): boolean => noteIds.has(id) || narrativeIds.has(id)
-  const bad: string[] = []
-  for (const e of p.edges) {
-    if (!known(e.from)) bad.push(`edge.from ${e.from}`)
-    if (!known(e.to)) bad.push(`edge.to ${e.to}`)
-  }
-  for (const a of p.about) {
-    if (!narrativeIds.has(a.block_id)) bad.push(`about.block ${a.block_id}`)
-    if (!noteIds.has(a.note_id)) bad.push(`about.note ${a.note_id}`)
-  }
-  for (const a of p.affects) {
-    if (!narrativeIds.has(a.block_id)) bad.push(`affects.block ${a.block_id}`)
-    if (!noteIds.has(a.note_id)) bad.push(`affects.note ${a.note_id}`)
-  }
+  const bad = [
+    ...badEdgeRefs(p.edges, known),
+    ...badAboutRefs(p.about, noteIds, narrativeIds),
+    ...badAffectsRefs(p.affects, noteIds, narrativeIds)
+  ]
   if (bad.length > 0) throw new Error(`genesis not safe — refs to non-recreated records:\n  ${bad.join('\n  ')}`)
 }
 

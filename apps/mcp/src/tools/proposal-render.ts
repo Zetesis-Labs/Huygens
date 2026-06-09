@@ -63,23 +63,31 @@ function createSection(payload: StoredProposalPayload): string[] {
   return [header, ...payload.note_creates.map(createLine)]
 }
 
+/** Render a day-granular field change: `null` is an explicit clear, a value is a
+ * set, `undefined` (field absent from the update) yields no change line. */
+function tristate(value: string | null | undefined, label: string): string | null {
+  if (value === null) return `${label} → cleared`
+  if (value != null) return `${label} → ${value}`
+  return null
+}
+
+function isNotNull(value: string | null): value is string {
+  return value != null
+}
+
 function updateChanges(note: StoredProposalPayload['note_updates'][number]): string {
-  const changes: string[] = []
-  if (note.title != null) changes.push(`title → "${note.title}"`)
-  if (note.state != null) changes.push(`state → ${note.state}`)
-  if (note.mit_for === null) changes.push('MIT → cleared')
-  else if (note.mit_for != null) changes.push(`MIT → ${note.mit_for}`)
-  if (note.due_at === null) changes.push('due → cleared')
-  else if (note.due_at != null) changes.push(`due → ${note.due_at}`)
-  if (note.defer_until === null) changes.push('defer → cleared')
-  else if (note.defer_until != null) changes.push(`defer → ${note.defer_until}`)
   const mergeKeys = note.metadata_merge ? Object.keys(note.metadata_merge) : []
-  if (mergeKeys.length > 0) changes.push(`metadata: ${mergeKeys.join(', ')}`)
-  if (note.descriptive_blocks_append.length > 0) {
-    changes.push(
-      `+${note.descriptive_blocks_append.length} ${plural(note.descriptive_blocks_append.length, 'descriptive block')}`
-    )
-  }
+  const changes = [
+    note.title != null ? `title → "${note.title}"` : null,
+    note.state != null ? `state → ${note.state}` : null,
+    tristate(note.mit_for, 'MIT'),
+    tristate(note.due_at, 'due'),
+    tristate(note.defer_until, 'defer'),
+    mergeKeys.length > 0 ? `metadata: ${mergeKeys.join(', ')}` : null,
+    note.descriptive_blocks_append.length > 0
+      ? `+${note.descriptive_blocks_append.length} ${plural(note.descriptive_blocks_append.length, 'descriptive block')}`
+      : null
+  ].filter(isNotNull)
   return changes.length > 0 ? changes.join(' · ') : 'no field changes'
 }
 

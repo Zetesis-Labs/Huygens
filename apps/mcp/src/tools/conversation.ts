@@ -106,6 +106,10 @@ export async function getConversationImpl(input: GetConversationInput): Promise<
   return row ? toDoc(row) : null
 }
 
+function formatConversationHeader(doc: ConversationDoc): string {
+  return `${doc.title ?? doc.id} — ${doc.messages.length} message(s)`
+}
+
 // ── list_conversations ───────────────────────────────────────────────────────
 
 const listConversationsShape = {
@@ -134,6 +138,11 @@ export async function listConversationsImpl(input: ListConversationsInput): Prom
     message_count: r.message_count ?? 0,
     updated_at: r.updated_at ? isoString(r.updated_at) : null
   }))
+}
+
+function formatConversationList(rows: ConversationSummary[]): string {
+  if (rows.length === 0) return 'No conversations.'
+  return rows.map(c => `- ${c.title ?? c.id} (${c.message_count} msg) — ${c.id}`).join('\n')
 }
 
 // ── delete_conversation ──────────────────────────────────────────────────────
@@ -175,8 +184,7 @@ export function registerConversation(server: McpServer): void {
     async args => {
       const doc = await getConversationImpl(args)
       if (!doc) return { content: [{ type: 'text', text: `Not found: ${args.id}` }] }
-      const text = `${doc.title ?? doc.id} — ${doc.messages.length} message(s)`
-      return { content: [{ type: 'text', text }, jsonBlock(doc)] }
+      return { content: [{ type: 'text', text: formatConversationHeader(doc) }, jsonBlock(doc)] }
     }
   )
 
@@ -187,11 +195,7 @@ export function registerConversation(server: McpServer): void {
     listConversationsShape,
     async args => {
       const rows = await listConversationsImpl(args)
-      const text =
-        rows.length === 0
-          ? 'No conversations.'
-          : rows.map(c => `- ${c.title ?? c.id} (${c.message_count} msg) — ${c.id}`).join('\n')
-      return { content: [{ type: 'text', text }, jsonBlock(rows)] }
+      return { content: [{ type: 'text', text: formatConversationList(rows) }, jsonBlock(rows)] }
     }
   )
 

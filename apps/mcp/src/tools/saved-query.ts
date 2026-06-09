@@ -93,14 +93,20 @@ const runQueryShape = { id: QUERY_ID }
 const runQuerySchema = z.object(runQueryShape)
 export type RunQueryInput = z.infer<typeof runQuerySchema>
 
+/** Pure: pick the saved query text from rows, or throw not-found. */
+function extractSavedQueryText(rows: { query?: string }[] | undefined, id: string): string {
+  const query = rows?.[0]?.query
+  if (!query) throw new QueryError(`saved query not found: ${id}`)
+  return query
+}
+
 /** Load a saved query and execute it read-only. Returns the raw SurrealQL result. */
 export async function runQueryImpl(input: RunQueryInput): Promise<unknown[]> {
   const db = await getReadOnlyDb()
   const [rows] = await db.query<[{ query?: string }[]]>('SELECT * FROM $id', {
     id: new StringRecordId(input.id)
   })
-  const query = rows?.[0]?.query
-  if (!query) throw new QueryError(`saved query not found: ${input.id}`)
+  const query = extractSavedQueryText(rows, input.id)
   return queryQueryImpl({ query })
 }
 

@@ -297,6 +297,29 @@ export function buildReplayTx(
   return new CommitTx().buildReplay(payload, proposalId)
 }
 
+/** The distinct ritual kinds carried by a payload's narrative blocks. Empty for a
+ * plain process commit (no kind). Pure. */
+function ritualKindsOf(payload: StoredProposalPayload): string[] {
+  return [
+    ...new Set(payload.narrative_blocks.map(block => block.kind).filter((kind): kind is string => Boolean(kind)))
+  ]
+}
+
+/** Doctrine guard: a daily ritual commit requires the user's explicit approval.
+ * Throws the approval QueryError when not approved. Pure (no I/O). */
+function assertApprovalForRituals(ritualKinds: string[], approved: boolean | undefined): void {
+  if (approved === true) return
+  throw new QueryError(
+    `commit_proposal of a daily ritual (${ritualKinds.join(', ')}) requires the user's explicit approval: pass approved: true only after the user OK'd it. A plan/close must never be committed unasked (see huygens://lore/operating-doctrine).`
+  )
+}
+
+/** The first ritual kind that already has a live block committed today, or
+ * undefined if none collide. Pure decision core for the uniqueness rule. */
+function findDuplicateRitualKind(ritualKinds: string[], liveKindsToday: Set<string>): string | undefined {
+  return ritualKinds.find(kind => liveKindsToday.has(kind))
+}
+
 /**
  * Hard gate for daily-ritual commits (plan_day / review_day informes). The
  * doctrine says a plan/close must be (1) explicitly approved by the user and
@@ -309,17 +332,10 @@ export function buildReplayTx(
  * close of the day is rejected.
  */
 async function assertRitualCommitAllowed(payload: StoredProposalPayload, input: CommitProposalInput): Promise<void> {
-  const ritualKinds = [
-    ...new Set(payload.narrative_blocks.map(block => block.kind).filter((kind): kind is string => Boolean(kind)))
-  ]
+  const ritualKinds = ritualKindsOf(payload)
   if (ritualKinds.length === 0) return // not a ritual commit — no gate
 
-  // (1) explicit approval
-  if (input.approved !== true) {
-    throw new QueryError(
-      `commit_proposal of a daily ritual (${ritualKinds.join(', ')}) requires the user's explicit approval: pass approved: true only after the user OK'd it. A plan/close must never be committed unasked (see huygens://lore/operating-doctrine).`
-    )
-  }
+  assertApprovalForRituals(ritualKinds, input.approved)
 
   // (2) one ritual of each kind per Madrid-day, counting only live blocks
   const db = await getDb()
@@ -331,19 +347,20 @@ async function assertRitualCommitAllowed(payload: StoredProposalPayload, input: 
        AND count(payload.narrative_blocks[WHERE kind IS NOT NONE]) > 0`
   )
   const candidates = (rows ?? []).flatMap(row => row.kinded ?? [])
-  if (candidates.length > 0) {
-    const ids = candidates.map(candidate => new StringRecordId(String(candidate.id)))
-    const [liveRows] = await db.query<[unknown[]]>('SELECT VALUE id FROM block WHERE id IN $ids', { ids })
-    const live = new Set((liveRows ?? []).map(String))
-    const liveKindsToday = new Set(
-      candidates.filter(candidate => live.has(String(candidate.id))).map(candidate => candidate.kind)
+  if (candidates.length === 0) return
+
+  const ids = candidates.map(candidate => new StringRecordId(String(candidate.id)))
+  const [liveRows] = await db.query<[unknown[]]>('SELECT VALUE id FROM block WHERE id IN $ids', { ids })
+  const live = new Set((liveRows ?? []).map(String))
+  const liveKindsToday = new Set(
+    candidates.filter(candidate => live.has(String(candidate.id))).map(candidate => candidate.kind)
+  )
+
+  const dup = findDuplicateRitualKind(ritualKinds, liveKindsToday)
+  if (dup) {
+    throw new QueryError(
+      `a ${dup} informe already exists for today (Madrid) — only one per day. If you are correcting it, retract the previous ritual block first, then commit.`
     )
-    const dup = ritualKinds.find(kind => liveKindsToday.has(kind))
-    if (dup) {
-      throw new QueryError(
-        `a ${dup} informe already exists for today (Madrid) — only one per day. If you are correcting it, retract the previous ritual block first, then commit.`
-      )
-    }
   }
 }
 

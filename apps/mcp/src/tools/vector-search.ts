@@ -65,6 +65,13 @@ type Row = {
   note_state: string | null
 }
 
+/** Pure: take an embedTexts result and return its first vector, or throw. */
+export function firstVectorOrThrow(result: { embeddings: number[][] }): number[] {
+  const [queryVec] = result.embeddings
+  if (!queryVec) throw new Error('embed_text returned no vector')
+  return queryVec
+}
+
 /** Pure: attach per-block provenance signals onto search hits, without mutation. */
 export function attachProvenance<T extends { block_id: string }>(
   hits: T[],
@@ -81,9 +88,7 @@ export async function vectorSearchImpl(input: VectorSearchInput): Promise<Search
   const db = await getDb()
   const k = input.k ?? 10
   const ef = input.ef ?? 40
-  const { embeddings } = await embedTexts([input.query])
-  const queryVec = embeddings[0]
-  if (!queryVec) throw new Error('embed_text returned no vector')
+  const queryVec = firstVectorOrThrow(await embedTexts([input.query]))
 
   const filters: string[] = []
   const bindings: Record<string, unknown> = { q: queryVec }

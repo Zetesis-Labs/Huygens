@@ -59,6 +59,14 @@ type Row = {
 const SNIPPET_LEN = 180
 const OVERSAMPLE = 3
 
+/** Pure: keep only rows whose note_id resolves to a real id. idStr serializes
+ * null/undefined record ids to the literal strings 'null'/'undefined', so those
+ * sentinels mark rows whose parent note did not resolve and must be dropped. */
+function hasValidNote(row: Pick<Row, 'note_id'>): boolean {
+  const noteId = idStr(row.note_id)
+  return noteId !== 'null' && noteId !== 'undefined'
+}
+
 export async function findRelatedImpl(input: FindRelatedInput): Promise<FindRelatedHit[]> {
   const db = await getDb()
   const k = input.k ?? 5
@@ -91,10 +99,7 @@ export async function findRelatedImpl(input: FindRelatedInput): Promise<FindRela
   // block as the snippet. Rows arrive in distance-ascending order, so the first
   // row seen per note is the best one.
   const bestByNote = rows
-    .filter(r => {
-      const noteId = idStr(r.note_id)
-      return noteId !== 'null' && noteId !== 'undefined'
-    })
+    .filter(hasValidNote)
     .reduce((acc, r) => {
       const noteId = idStr(r.note_id)
       return acc.has(noteId) ? acc : acc.set(noteId, r)
