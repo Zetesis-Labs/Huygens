@@ -1,15 +1,20 @@
 import { type InformeRow, listInformes } from './surreal'
 
-// The Bitácora: a chronological reader of the planning/review informes (plan_day,
-// review_day, plan_week, review_week), grouped week → day, newest first. It's the
-// "over time" counterpart to the MITs view's "now": you read your intentions and
-// reflections as a continuous thread. Pure projection over listInformes().
+// The Bitácora: a chronological reader of the ritual informes — `day` (la
+// jornada: the single daily ritual that settles pending and orients the day)
+// and `week` (the weekly maintenance review) — grouped week → day, newest
+// first. It's the "over time" counterpart to the MITs view's "now": you read
+// your jornadas as a continuous thread. Pure projection over listInformes().
+// The legacy split kinds (plan_day/review_day/…) keep rendering on historic data.
 
 export type BitacoraEntry = InformeRow & { kindLabel: string; kindIcon: string }
 export type BitacoraDay = { day: string; label: string; entries: BitacoraEntry[] }
 export type BitacoraWeek = { weekStart: string; label: string; days: BitacoraDay[] }
 
 const KIND_META: Record<string, { label: string; icon: string }> = {
+  day: { label: 'Jornada', icon: '☀️' },
+  week: { label: 'Revisión de la semana', icon: '🔁' },
+  // Legacy kinds (pre single-ritual model): historic blocks only.
   plan_day: { label: 'Plan del día', icon: '🎯' },
   review_day: { label: 'Cierre del día', icon: '🔄' },
   plan_week: { label: 'Plan de la semana', icon: '🗓️' },
@@ -34,6 +39,45 @@ function dayLabel(day: string): string {
 
 function weekLabel(weekStart: string): string {
   return `Semana del ${new Date(`${weekStart}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}`
+}
+
+export type RitualNudge = { kind: 'day' | 'week'; message: string }
+
+/**
+ * The doctrine's "invitation" given a runtime: the agent can't initiate
+ * conversations, so the dashboard nudges instead (USE-002). A nudge is an
+ * invitation, never an artifact — committing the ritual stays a deliberate,
+ * user-approved act in conversation.
+ */
+export async function ritualNudges(todayMadrid: string): Promise<RitualNudge[]> {
+  const informes = await listInformes()
+  const nudges: RitualNudge[] = []
+
+  const dayKinds = new Set(['day', 'plan_day', 'review_day'])
+  if (!informes.some(r => r.day === todayMadrid && dayKinds.has(r.kind))) {
+    nudges.push({
+      kind: 'day',
+      message: 'No hay jornada de hoy — pídesela al agente: asentar lo pendiente y orientar el día.'
+    })
+  }
+
+  // Weekly nudge only on Sunday/Monday, and only if no weekly review landed in
+  // the last 7 days (so a Sunday review doesn't re-nudge on Monday).
+  const weekday = new Date(`${todayMadrid}T00:00:00Z`).getUTCDay() // 0=Sun, 1=Mon
+  if (weekday === 0 || weekday === 1) {
+    const cutoff = new Date(`${todayMadrid}T00:00:00Z`)
+    cutoff.setUTCDate(cutoff.getUTCDate() - 7)
+    const cutoffDay = cutoff.toISOString().slice(0, 10)
+    const weekKinds = new Set(['week', 'plan_week', 'review_week'])
+    if (!informes.some(r => weekKinds.has(r.kind) && r.day >= cutoffDay)) {
+      nudges.push({
+        kind: 'week',
+        message: 'La semana no tiene revisión — WAITING, deadlines entrantes, SOMEDAY e inbox diferido esperan.'
+      })
+    }
+  }
+
+  return nudges
 }
 
 /**

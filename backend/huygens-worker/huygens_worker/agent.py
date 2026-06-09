@@ -124,7 +124,7 @@ def _full_instructions() -> str:
     for attempt in range(1, _LORE_FETCH_ATTEMPTS + 1):
         try:
             lore = asyncio.run(get_server_instructions_via_mcp())
-        except Exception as e:  # noqa: BLE001 — any transport failure is retryable here
+        except Exception as e:
             last_error = e
             log.warning(
                 "fetch of MCP instructions failed (attempt %d/%d): %s",
