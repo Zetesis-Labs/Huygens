@@ -23,10 +23,10 @@ legacy del modelo anterior; si contradicen `docs/MODEL.md`, son transicionales.
 │   ├── surreal/               ← schema.surql + seed.surql
 │   ├── src/                   ← server, cliente SurrealDB
 │   └── scripts/               ← apply-schema, smoke test
-├── backend/huygens-worker/    ← Shell Python MCP; futuro worker especializado
+├── backend/huygens-worker/    ← Agente conversacional del dashboard (Agno + OpenAI, AG-UI); sin commit_proposal
 ├── docs/
 │   ├── MODEL.md               ← Modelo canónico (LÉEME)
-│   ├── CONVENTIONS.md         ← Reglas operativas para agentes
+│   ├── CONVENTIONS.md         ← Stub; sus reglas viven en la doctrina operativa
 │   └── research/              ← Investigación + diseño (contexto profundo)
 ├── .devcontainer/             ← Docker Compose (app + SurrealDB + init)
 ├── CLAUDE.md                  ← Entry point específico para Claude Code
@@ -54,45 +54,22 @@ captura durante el día
 ```
 
 El usuario habla con Claude Code, Codex, Hermes u otro agente conversacional. El
-agente usa el MCP; el MCP persiste en SurrealDB. El worker Python queda
-reservado para workers especializados futuros que usen el MCP, no como interfaz
-principal.
+agente usa el MCP; el MCP persiste en SurrealDB. El worker Python actual es el
+agente del dashboard (Agno + OpenAI, AG-UI); **excluye `commit_proposal`** — el
+commit es siempre humano.
 
-Tools MCP disponibles:
-
-```text
-capture              raw ligero al inbox (status=pending)
-list_inbox           lista raws por status, default pending
-set_raw_status       ignored/deferred/processed sin topología
-
-create_proposal      draft visible, no muta el grafo
-update_proposal      reemplaza payload de un draft
-get_proposal         diff legible + JSON
-discard_proposal     descarta draft sin mutar el grafo
-commit_proposal      tx atómica: crea blocks/notes/edges, marca raws processed;
-                       devuelve counts + ids reales. Un ritual (kind plan_day/
-                       review_day) exige approved:true y rechaza un 2º del día
-get_proposal_changes cambios exactos de una proposal commiteada, leídos del
-                       payload (SSOT, ids reales; source:'payload', sin changefeed);
-                       la visualización gráfica vive en el dashboard (React Flow)
-
-find_related         búsqueda semántica de notes similares (antes de crear duplicados)
-vector_search        K vecinos más cercanos en blocks vía HNSW cosine (BGE-M3)
-index_block          embebe 1..64 blocks con BGE-M3 y persiste embedding
-chunk_markdown       divide markdown en chunks con breadcrumb de cabeceras (sin BD)
-embed_text           embebe 1..64 strings con BGE-M3 (sin BD)
-query_query          SurrealQL de solo lectura (huygens_reader, VIEWER)
-```
+**Superficie de tools, entidades, edges y ciclo de proposal**: la fuente de
+verdad es [`apps/mcp/src/lore/data-model.md`](./apps/mcp/src/lore/data-model.md)
+(servida en runtime como recurso `huygens://lore/data-model`, con el schema vivo
+en `huygens://lore/schema`). No se duplica aquí: las copias drifteaban
+(`docs/issues/2026-06-09`, DOCT-006).
 
 ## Limpieza legacy
 
 El flujo antiguo `raw -> clarify -> notes` fue retirado. No existen tools MCP
 `commit_clarify` ni `generate_report`, el seed ya no incluye `note`/`report`, y
-el worker no usa Agno/OpenAI ni procesa el inbox por polling.
-
-El campo `mit_for` es un campo **top-level** de `note` (datetime, indexado).
-No va en `metadata`. `commit_proposal` lo escribe directamente sobre el nodo;
-se consulta con `WHERE mit_for >= start AND mit_for < end`.
+no hay worker autónomo que procese el inbox por polling (el worker actual es el
+agente del dashboard, sin capacidad de commit).
 
 ## Comandos clave (dentro del devcontainer)
 

@@ -30,23 +30,11 @@ La pieza central es el **informe-block**: un `block` narrativo
 literal y la topologia. No reintroducir reports como entidad persistida en el
 modelo objetivo.
 
-Tools MCP objetivo:
-
-```text
-capture
-list_inbox
-set_raw_status
-create_proposal / update_proposal / get_proposal / discard_proposal
-commit_proposal
-get_proposal_changes
-```
-
-Tools auxiliares ya implementadas (lectura y búsqueda):
-
-```text
-find_related / vector_search / index_block / embed_text / chunk_markdown
-query_query
-```
+La superficie de tools (completa y al día) vive en la **Tools surface** de
+`apps/mcp/src/lore/data-model.md` — no se duplica aquí: las listas copiadas
+drifteaban (`docs/issues/2026-06-09`, DOCT-005). En runtime, el MCP la sirve
+como recurso `huygens://lore/data-model` y el schema vivo como
+`huygens://lore/schema`.
 
 ## Reglas para Claude Code
 
@@ -132,54 +120,16 @@ SURREAL_USER=root
 SURREAL_PASS=root
 ```
 
-## Modelo de datos objetivo
+## Modelo de datos
 
-Resumen mínimo; detalle en `docs/MODEL.md`.
+Nodos, tipos de `note`, estados ZTD y edges: la fuente de verdad física es
+`apps/mcp/src/lore/data-model.md` (+ `schema.surql`); el porqué conceptual,
+`docs/MODEL.md`. No se duplican aquí.
 
-Nodos:
+Dos avisos que sí son de este repo:
 
-```text
-raw_capture
-note
-block
-```
-
-Tipos objetivo de `note`:
-
-```text
-task
-project
-area
-routine
-idea
-reference
-person
-objetivo
-```
-
-No migres el slug `objetivo` sin una decisión explícita del usuario.
-
-Estados ZTD como field:
-
-```text
-CLARIFIED
-ACTIVE
-WAITING
-SOMEDAY
-DONE
-ARCHIVED
-```
-
-Edges objetivo:
-
-```text
-derived_from: block -> raw_capture
-about:        block -> note
-affects:      block -> note
-part_of:      note -> note
-blocked_by:   note -> note
-mentions:     note|block -> note|block
-```
+- No migres el slug `objetivo` -> `objective` sin decisión explícita del usuario.
+- No introduzcas tipos, estados ni edges nuevos por iniciativa propia.
 
 ## Release pipeline
 
