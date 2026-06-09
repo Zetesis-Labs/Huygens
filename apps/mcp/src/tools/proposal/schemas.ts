@@ -207,15 +207,15 @@ export const discardProposalShape = proposalIdShape
 export const commitProposalShape = {
   proposal_id: z.string().regex(PROPOSAL_ID_RE, 'Must be a record id like "proposal:abc123"'),
   // The user's explicit approval to apply this commit. REQUIRED to be `true` when
-  // the proposal carries a daily-ritual informe (a narrative block with
-  // kind=plan_day/review_day): such a plan/close must never be committed unless
-  // the user actually asked for it. Plain (non-ritual) commits ignore it. The
-  // server can't verify a human said yes, but this forces a deliberate, audited
-  // assertion — see huygens://lore/operating-doctrine.
+  // the proposal carries a ritual informe (a narrative block with kind=day/week):
+  // a jornada or weekly review must never be committed unless the user actually
+  // asked for it. Plain (non-ritual) commits ignore it. The server can't verify
+  // a human said yes, but this forces a deliberate, audited assertion — see
+  // huygens://lore/operating-doctrine.
   approved: z
     .boolean()
     .optional()
-    .describe("The user's explicit approval. Must be true to commit a daily-ritual informe (plan_day/review_day).")
+    .describe("The user's explicit approval. Must be true to commit a ritual informe (kind day/week).")
 }
 export const getProposalChangesShape = proposalIdShape
 
@@ -266,6 +266,9 @@ export type ProposalRow = {
   raw_captures: RecordRef[]
   payload: StoredProposalPayload
   result?: ProposalResult | null
+  /** Stamped by get_proposal on a draft; cleared by update_proposal. commit_proposal
+   * requires it: what gets committed must have been rendered at least once as-is. */
+  previewed_at?: Date | null
   created_at: Date
   updated_at: Date
 }

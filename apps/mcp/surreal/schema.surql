@@ -127,8 +127,11 @@ DEFINE FIELD OVERWRITE block_kind      ON block TYPE string
 -- on the block itself so the block is self-describing and a rebuild/genesis
 -- preserves it. Written at commit (commit.ts narratives) and carried through
 -- replay/genesis. NONE for a normal process informe and for descriptive blocks.
+-- 'day' (jornada única) y 'week' son los kinds vivos; los cuatro divididos son
+-- legacy: válidos en blocks históricos y replay, rechazados en proposals nuevas
+-- (enforcement en el input schema, INFORME_KINDS en domain.ts).
 DEFINE FIELD OVERWRITE kind            ON block TYPE option<string>
-  ASSERT $value IS NONE OR $value INSIDE ['plan_day', 'review_day', 'plan_week', 'review_week'];
+  ASSERT $value IS NONE OR $value INSIDE ['day', 'week', 'plan_day', 'review_day', 'plan_week', 'review_week'];
 DEFINE FIELD OVERWRITE content         ON block TYPE string;
 -- Pilares Estratégicos dropeados al adoptar ZTD (ADR-0021). Limpieza del campo legacy.
 REMOVE FIELD IF EXISTS pillars ON TABLE block;
@@ -245,6 +248,10 @@ DEFINE FIELD OVERWRITE payload      ON proposal TYPE object FLEXIBLE;
 -- Resultado materializado del commit: IDs reales creados/tocados + committed_at.
 -- Permite responder "qué cambió este proposal" sin depender del changefeed.
 DEFINE FIELD OVERWRITE result       ON proposal TYPE option<object> FLEXIBLE;
+-- Muro de preview: get_proposal lo estampa sobre un draft; update_proposal lo
+-- limpia; commit_proposal lo exige. Garantiza que lo que se commitea fue
+-- renderizado al menos una vez tal cual está (la "propuesta visible").
+DEFINE FIELD OVERWRITE previewed_at ON proposal TYPE option<datetime>;
 DEFINE FIELD OVERWRITE created_at   ON proposal TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE updated_at   ON proposal TYPE datetime VALUE time::now();
 

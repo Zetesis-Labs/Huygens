@@ -254,6 +254,40 @@ function assertPartOfAnchored(payload: ProposalPayload): void {
   }
 }
 
+/**
+ * The part_of hierarchy must stay a forest. The UNIQUE single-parent index
+ * can't see cycles (A→B, B→A is two valid rows), so we check reachability
+ * here, against the graph as it WILL be after this commit: existing edges,
+ * minus explicit removals, with replace-on-write applied (a declared part_of
+ * replaces the child's previous parent), plus the new edges.
+ */
+export async function assertPartOfAcyclic(payload: StoredProposalPayload): Promise<void> {
+  const newEdges = payload.edges.filter(e => e.kind === 'part_of')
+  if (newEdges.length === 0) return
+
+  const db = await getDb()
+  const [rows] = await db.query<[Array<{ in: unknown; out: unknown }>]>('SELECT in, out FROM part_of')
+  const parent = new Map<string, string>()
+  for (const r of rows ?? []) parent.set(String(r.in), String(r.out))
+  for (const e of payload.edges_remove.filter(e => e.kind === 'part_of')) {
+    if (parent.get(e.from) === e.to) parent.delete(e.from)
+  }
+  for (const e of newEdges) parent.set(e.from, e.to) // replace-on-write: overwrites the old parent
+
+  for (const e of newEdges) {
+    const path = [e.from]
+    let node: string | undefined = parent.get(e.from)
+    while (node) {
+      path.push(node)
+      if (node === e.from) {
+        throw new Error(`part_of cycle: ${path.join(' -> ')}. A note cannot be (transitively) its own parent.`)
+      }
+      if (path.length > 1000) throw new Error('part_of chain too deep — aborting cycle check')
+      node = parent.get(node)
+    }
+  }
+}
+
 /** Input-level validation (temp_id space), run on create/update before realizing. */
 export function validatePayload(rawIds: string[], payload: ProposalPayload): ProposalPayload {
   assertRawIdsMatch(rawIds, payload.raw_ids)

@@ -1,7 +1,7 @@
 import type { RecordId, StringRecordId } from 'surrealdb'
 import { uuidv7 } from 'uuidv7'
-import { type EmitEventInput, emitEvent, newSessionId } from '../../events'
 import type { EventKind } from '../../domain'
+import { type EmitEventInput, emitEvent, newSessionId } from '../../events'
 import { getDb } from '../../surreal'
 import {
   type CreateProposalInput,
@@ -38,12 +38,7 @@ function buildProposalRecord(payload: StoredProposalPayload): {
 
 /** The lifecycle event for a proposal (created/updated/discarded), carrying its
  * raw_ids. Pure: the caller supplies the generated session_id and subject id. */
-function buildProposalEvent(
-  kind: EventKind,
-  sessionId: string,
-  subject: RecordId,
-  rawIds: string[]
-): EmitEventInput {
+function buildProposalEvent(kind: EventKind, sessionId: string, subject: RecordId, rawIds: string[]): EmitEventInput {
   return {
     kind,
     actor: 'conversational',
@@ -156,8 +151,10 @@ export async function updateProposalImpl(input: UpdateProposalInput): Promise<Pr
   await requireDraftProposal(input.proposal_id)
   const payload = realizePayload(input2)
 
+  // A changed payload invalidates any prior preview: it must be re-rendered
+  // (get_proposal) before commit_proposal accepts it.
   const [rows] = await db.query<[ProposalRow[]]>(
-    'UPDATE $id SET raw_captures = $raw_captures, payload = $payload RETURN AFTER',
+    'UPDATE $id SET raw_captures = $raw_captures, payload = $payload, previewed_at = NONE RETURN AFTER',
     {
       id: toProposalRef(input.proposal_id),
       raw_captures: payload.raw_ids.map(toRawRef),
@@ -174,7 +171,14 @@ export async function updateProposalImpl(input: UpdateProposalInput): Promise<Pr
 
 export async function getProposalImpl(input: GetProposalInput): Promise<ProposalDetail | null> {
   const proposal = await fetchProposal(input.proposal_id)
-  return proposal ? toProposalDetail(proposal) : null
+  if (!proposal) return null
+  // Reading a draft IS the preview: stamp it so commit_proposal can require
+  // that what gets committed was rendered at least once exactly as stored.
+  if (proposal.status === 'draft') {
+    const db = await getDb()
+    await db.query('UPDATE $id SET previewed_at = time::now()', { id: toProposalRef(input.proposal_id) })
+  }
+  return toProposalDetail(proposal)
 }
 
 export async function discardProposalImpl(input: DiscardProposalInput): Promise<ProposalDetail> {

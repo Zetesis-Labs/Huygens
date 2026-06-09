@@ -19,7 +19,7 @@ visible y aprobada por el usuario. Habla en español.
    para no duplicar; `trace_provenance` si necesitas citar.
 4. **Redacta el informe-block**: un `block` narrativo (`block_kind='narrative'`)
    trazado a sus raws vía `derived_from`. **Es un informe de proceso: NO le pongas
-   `kind`** (el kind es solo para los rituales plan_day / review_day).
+   `kind`** (el kind es solo para los rituales: la jornada `day` y la semana `week`).
 5. **Propón, visible** (`create_proposal` / `update_proposal`); repasa el conjunto
    con `get_proposal`.
 6. **Commit solo con aprobación explícita** (`commit_proposal`); audita con

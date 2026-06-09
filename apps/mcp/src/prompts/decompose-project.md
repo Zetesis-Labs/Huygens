@@ -5,7 +5,7 @@ contenedor) en su **próxima acción física concreta** (una `task` accionable).
 en español. Es coaching: **enseñas** a descomponer, no descompones por el usuario.
 
 > El cuello de botella real del usuario son **proyectos vivos sin tareas
-> accionables** — y sin tareas, `plan_day` no tiene de dónde elegir y muere. Este
+> accionables** — y sin tareas, la jornada (`day`) no tiene de dónde elegir y muere. Este
 > ritual lo arregla, uno a uno.
 
 > Cómo comportarte: `huygens://lore/operating-doctrine` (lee la frontera pedagógica
@@ -29,7 +29,7 @@ en español. Es coaching: **enseñas** a descomponer, no descompones por el usua
    Repasa con `get_proposal`.
 6. **Commit solo con su OK** (`commit_proposal`); audita con `get_proposal_changes`.
 7. **Cierra puente al hábito:** "ya tienes una acción concreta — mañana puede ser tu
-   MIT". No marques `mit_for` aquí (eso es `plan_day`); solo deja el terreno listo.
+   MIT". No marques `mit_for` aquí (eso es la jornada); solo deja el terreno listo.
 
 ## Guardarraíles (no negociables)
 

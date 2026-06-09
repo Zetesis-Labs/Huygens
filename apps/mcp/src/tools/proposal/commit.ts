@@ -2,11 +2,12 @@ import { type RecordId, StringRecordId } from 'surrealdb'
 import { uuidv7 } from 'uuidv7'
 import { QueryError } from '../../errors'
 import { emitEvent, newSessionId } from '../../events'
+import { madridDayRange, madridWeekRange } from '../../madrid-time'
 import { getDb } from '../../surreal'
 import { indexBlockImpl } from '../index-block'
 import type { CommitProposalInput, CommitProposalResult, StoredNoteCreate, StoredProposalPayload } from './schemas'
 import { requireDraftProposal } from './store'
-import { assertProposalRefs, assertRawCapturesCommittable } from './validation'
+import { assertPartOfAcyclic, assertProposalRefs, assertRawCapturesCommittable } from './validation'
 
 /**
  * Normalize a day-granular field (mit_for / due_at / defer_until) to UTC midnight
@@ -83,9 +84,10 @@ class CommitTx {
   readonly params: Record<string, unknown> = {}
   readonly lines: string[] = ['BEGIN;']
   private paramCount = 0
-  /** True when this commit is a review_day ritual: its note_updates are the day's
-   * dispositions, so we stamp last_reviewed_at on them (closing the day = reviewing
-   * those notes). Set in build(); replay leaves it false. */
+  /** True when this commit is a ritual that disposes notes (the `day` jornada,
+   * the `week` review, or their legacy review_* forms): its note_updates are
+   * dispositions, so we stamp last_reviewed_at on them (settling a note =
+   * reviewing it). Set in build(); replay leaves it false. */
   private reviewRitual = false
   /** Ids of descriptive blocks created in this tx (generated here; nothing refs them). */
   readonly descriptiveIds: string[] = []
@@ -160,8 +162,7 @@ class CommitTx {
         if (value != null) return `${field} = ${this.addParam(toDayUtcMidnight(value))}`
         return false
       }),
-      note.metadata_merge != null &&
-        `metadata = object::extend(metadata ?? {}, ${this.addParam(note.metadata_merge)})`,
+      note.metadata_merge != null && `metadata = object::extend(metadata ?? {}, ${this.addParam(note.metadata_merge)})`,
       // A review_day disposition reviews the note → stamp it (closes apuesta B,
       // makes the "never reviewed" radar actually work).
       this.reviewRitual && 'last_reviewed_at = time::now()'
@@ -251,7 +252,9 @@ class CommitTx {
 
   build(payload: StoredProposalPayload, proposalId: RecordId): { query: string; params: Record<string, unknown> } {
     this.proposalId = String(proposalId)
-    this.reviewRitual = payload.narrative_blocks.some(b => b.kind === 'review_day')
+    this.reviewRitual = payload.narrative_blocks.some(
+      b => b.kind === 'day' || b.kind === 'week' || b.kind === 'review_day' || b.kind === 'review_week'
+    )
     this.creates(payload)
     this.updates(payload)
     this.narratives(payload)
@@ -300,36 +303,31 @@ export function buildReplayTx(
 /** The distinct ritual kinds carried by a payload's narrative blocks. Empty for a
  * plain process commit (no kind). Pure. */
 function ritualKindsOf(payload: StoredProposalPayload): string[] {
-  return [
-    ...new Set(payload.narrative_blocks.map(block => block.kind).filter((kind): kind is string => Boolean(kind)))
-  ]
+  return [...new Set(payload.narrative_blocks.map(block => block.kind).filter((kind): kind is string => Boolean(kind)))]
 }
 
-/** Doctrine guard: a daily ritual commit requires the user's explicit approval.
+/** Doctrine guard: a ritual commit requires the user's explicit approval.
  * Throws the approval QueryError when not approved. Pure (no I/O). */
 function assertApprovalForRituals(ritualKinds: string[], approved: boolean | undefined): void {
   if (approved === true) return
   throw new QueryError(
-    `commit_proposal of a daily ritual (${ritualKinds.join(', ')}) requires the user's explicit approval: pass approved: true only after the user OK'd it. A plan/close must never be committed unasked (see huygens://lore/operating-doctrine).`
+    `commit_proposal of a ritual (${ritualKinds.join(', ')}) requires the user's explicit approval: pass approved: true only after the user OK'd it. A jornada/weekly review must never be committed unasked (see huygens://lore/operating-doctrine).`
   )
 }
 
-/** The first ritual kind that already has a live block committed today, or
- * undefined if none collide. Pure decision core for the uniqueness rule. */
-function findDuplicateRitualKind(ritualKinds: string[], liveKindsToday: Set<string>): string | undefined {
-  return ritualKinds.find(kind => liveKindsToday.has(kind))
-}
-
 /**
- * Hard gate for daily-ritual commits (plan_day / review_day informes). The
- * doctrine says a plan/close must be (1) explicitly approved by the user and
- * (2) unique per Madrid-day. Plain process commits (no kind) are untouched.
+ * Hard gate for ritual commits (kind=day jornada / kind=week review). The
+ * doctrine says a ritual must be (1) explicitly approved by the user and
+ * (2) unique per Madrid period: one `day` per Madrid calendar day, one `week`
+ * per Madrid ISO week (legacy *_day/*_week kinds in old drafts map to the same
+ * periods). Plain process commits (no kind) are untouched. Boundaries are
+ * DST-correct (madrid-time.ts) and passed as bound datetimes — no `+ 2h`.
  *
  * The uniqueness check counts only **live** ritual blocks: a kind lives in the
  * immutable proposal payload, so after a retract (block deleted) the payload
  * still carries it — we must cross-check the `block` table so a correction
- * (retract the wrong close, then re-commit) is allowed, while a genuine second
- * close of the day is rejected.
+ * (retract the wrong jornada, then re-commit) is allowed, while a genuine
+ * second ritual of the period is rejected.
  */
 async function assertRitualCommitAllowed(payload: StoredProposalPayload, input: CommitProposalInput): Promise<void> {
   const ritualKinds = ritualKindsOf(payload)
@@ -337,30 +335,35 @@ async function assertRitualCommitAllowed(payload: StoredProposalPayload, input: 
 
   assertApprovalForRituals(ritualKinds, input.approved)
 
-  // (2) one ritual of each kind per Madrid-day, counting only live blocks
+  // (2) one live ritual of each kind per Madrid period: a `day` jornada per
+  // Madrid calendar day, a `week` review per Madrid ISO week (legacy *_day/
+  // *_week kinds in old drafts map to the same periods). Boundaries are
+  // DST-correct (madrid-time.ts) and passed as bound datetimes — no `+ 2h`.
+  // Only LIVE ritual blocks count, so the documented correction flow (retract
+  // the wrong ritual, re-commit) keeps working.
   const db = await getDb()
-  const [rows] = await db.query<[Array<{ kinded: Array<{ id: unknown; kind: string }> }>]>(
-    `SELECT payload.narrative_blocks[WHERE kind IS NOT NONE].{ id, kind } AS kinded
-     FROM proposal
-     WHERE status = 'committed'
-       AND time::format(created_at + 2h, '%Y-%m-%d') = time::format(time::now() + 2h, '%Y-%m-%d')
-       AND count(payload.narrative_blocks[WHERE kind IS NOT NONE]) > 0`
-  )
-  const candidates = (rows ?? []).flatMap(row => row.kinded ?? [])
-  if (candidates.length === 0) return
-
-  const ids = candidates.map(candidate => new StringRecordId(String(candidate.id)))
-  const [liveRows] = await db.query<[unknown[]]>('SELECT VALUE id FROM block WHERE id IN $ids', { ids })
-  const live = new Set((liveRows ?? []).map(String))
-  const liveKindsToday = new Set(
-    candidates.filter(candidate => live.has(String(candidate.id))).map(candidate => candidate.kind)
-  )
-
-  const dup = findDuplicateRitualKind(ritualKinds, liveKindsToday)
-  if (dup) {
-    throw new QueryError(
-      `a ${dup} informe already exists for today (Madrid) — only one per day. If you are correcting it, retract the previous ritual block first, then commit.`
+  const now = new Date()
+  for (const kind of ritualKinds) {
+    const weekly = kind.includes('week')
+    const { start, end } = weekly ? madridWeekRange(now) : madridDayRange(now)
+    const [rows] = await db.query<[Array<{ kinded: Array<{ id: unknown; kind: string }> }>]>(
+      `SELECT payload.narrative_blocks[WHERE kind = $kind].{ id, kind } AS kinded
+       FROM proposal
+       WHERE status = 'committed'
+         AND created_at >= $start AND created_at < $end
+         AND count(payload.narrative_blocks[WHERE kind = $kind]) > 0`,
+      { kind, start, end }
     )
+    const candidates = (rows ?? []).flatMap(row => row.kinded ?? [])
+    if (candidates.length === 0) continue
+    const ids = candidates.map(candidate => new StringRecordId(String(candidate.id)))
+    const [liveRows] = await db.query<[unknown[]]>('SELECT VALUE id FROM block WHERE id IN $ids', { ids })
+    if ((liveRows ?? []).length > 0) {
+      const period = weekly ? 'this week' : 'today'
+      throw new QueryError(
+        `a ${kind} informe already exists for ${period} (Madrid) — only one per ${weekly ? 'week' : 'day'}. If you are correcting it, retract the previous ritual block first, then commit.`
+      )
+    }
   }
 }
 
@@ -390,9 +393,18 @@ function buildCommitResult(
 export async function commitProposalImpl(input: CommitProposalInput): Promise<CommitProposalResult> {
   const db = await getDb()
   const proposal = await requireDraftProposal(input.proposal_id)
+  // Preview muro: "la propuesta visible" is a precondition, not choreography.
+  // get_proposal stamps previewed_at; update_proposal clears it. So this commit
+  // can only apply a payload that was rendered at least once exactly as stored.
+  if (proposal.previewed_at == null) {
+    throw new QueryError(
+      'this proposal (or its latest payload) was never previewed: call get_proposal, show the diff to the user, and only then commit_proposal. Nothing structural is committed sight-unseen (see huygens://lore/operating-doctrine).'
+    )
+  }
   const payload = proposal.payload // stored: real ids everywhere
   await assertRawCapturesCommittable(payload.raw_ids)
   await assertProposalRefs(payload)
+  await assertPartOfAcyclic(payload)
   await assertRitualCommitAllowed(payload, input)
 
   // DB-clock datetime before the commit → anchor for recovering the versionstamp.
