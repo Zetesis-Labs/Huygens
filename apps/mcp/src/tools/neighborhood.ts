@@ -126,6 +126,12 @@ export async function neighborhoodImpl(input: NeighborhoodInput): Promise<Neighb
   return { seed: input.seed_id, ...(await verbalizeSubgraph(visited, edges)) }
 }
 
+/** Render a neighborhood result as the human-readable MCP `text`. Pure. */
+function renderNeighborhoodText(result: NeighborhoodResult): string {
+  const legend = result.nodes.map(node => `${node.id}  ${node.label}`).join('\n')
+  return `${result.node_count} nodo(s) alrededor de ${result.seed}\n\n${result.triples || '(sin relaciones)'}\n\n— nodos —\n${legend}`
+}
+
 export function registerNeighborhood(server: McpServer): void {
   defineTool(
     server,
@@ -135,8 +141,7 @@ export function registerNeighborhood(server: McpServer): void {
     async args => {
       const result = await neighborhoodImpl(args)
       if (!result) return { content: [{ type: 'text', text: `Not found: ${args.seed_id}` }] }
-      const legend = result.nodes.map(n => `${n.id}  ${n.label}`).join('\n')
-      const text = `${result.node_count} nodo(s) alrededor de ${result.seed}\n\n${result.triples || '(sin relaciones)'}\n\n— nodos —\n${legend}`
+      const text = renderNeighborhoodText(result)
       return { content: [{ type: 'text', text }, jsonBlock(result)] }
     }
   )

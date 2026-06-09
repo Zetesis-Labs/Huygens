@@ -139,19 +139,34 @@ export async function vectorSearchImpl(input: VectorSearchInput): Promise<Search
   return attachProvenance(filtered, prov)
 }
 
+/** Pure: the head of a hit line — the note line if backed by a note, else the
+ * bare block kind/id. */
+export function hitHead(hit: SearchHit): string {
+  return hit.note_id
+    ? nodeLine({ id: hit.note_id, title: hit.note_title ?? hit.note_id, state: hit.note_state ?? undefined })
+    : `${hit.block_kind} — ${hit.block_id}`
+}
+
+/** Pure: the content snippet, truncated to 100 chars with newlines flattened. */
+export function hitSnippet(hit: SearchHit): string {
+  return `${hit.content.slice(0, 100).replace(/\n/g, ' ')}${hit.content.length > 100 ? '…' : ''}`
+}
+
+/** Pure: the provenance suffix (⟵ N raw …) when the hit derives from captures. */
+export function hitProv(hit: SearchHit): string {
+  return hit.derived_from > 0
+    ? `  ⟵ ${hit.derived_from} raw${hit.transformation ? ` (${hit.transformation})` : ''}`
+    : ''
+}
+
+/** Pure: one summary line for a hit, prefixed by a leg-specific score tag. */
+export function formatHitLine(hit: SearchHit, scoreTag: string): string {
+  return `- ${scoreTag} ${hitHead(hit)} :: ${hitSnippet(hit)}${hitProv(hit)}`
+}
+
 function summarize(hits: SearchHit[]): string {
   if (hits.length === 0) return 'No matches.'
-  return hits
-    .map(h => {
-      const head = h.note_id
-        ? nodeLine({ id: h.note_id, title: h.note_title ?? h.note_id, state: h.note_state ?? undefined })
-        : `${h.block_kind} — ${h.block_id}`
-      const snippet = `${h.content.slice(0, 100).replace(/\n/g, ' ')}${h.content.length > 100 ? '…' : ''}`
-      const prov =
-        h.derived_from > 0 ? `  ⟵ ${h.derived_from} raw${h.transformation ? ` (${h.transformation})` : ''}` : ''
-      return `- [${h.score.toFixed(3)}] ${head} :: ${snippet}${prov}`
-    })
-    .join('\n')
+  return hits.map(h => formatHitLine(h, `[${h.score.toFixed(3)}]`)).join('\n')
 }
 
 export function registerVectorSearch(server: McpServer): void {

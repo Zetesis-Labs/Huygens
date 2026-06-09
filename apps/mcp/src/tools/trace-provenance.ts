@@ -144,49 +144,80 @@ async function traceNoteSources(db: Surreal, blockIds: Set<string>): Promise<Pro
  * Lets the agent CITE provenance and tell "you said this" from "I inferred this".
  * Read-only.
  */
+/** Pure guard: trace_provenance only accepts note: or block: ids. Throws the
+ * exact message tests assert on for any other table. */
+function validateProvenanceTable(id: string): 'note' | 'block' {
+  const table = tableOf(id)
+  if (table !== 'note' && table !== 'block') {
+    throw new Error(`trace_provenance accepts only note: or block: ids, got ${id}`)
+  }
+  return table
+}
+
+/** Pure: assemble the final trace from the fetched self, gathered edges and the
+ * resolved label map — relabels sources/links by their resolved node labels. */
+function assembleTrace(
+  id: string,
+  self: GraphNodeRecord,
+  gathered: Gathered,
+  labels: Map<string, string>
+): ProvenanceTrace {
+  const relabel = <T extends { id: string; label: string }>(x: T): T => ({ ...x, label: labels.get(x.id) ?? x.id })
+  return {
+    id,
+    label: nodeLabel(self),
+    sources: gathered.sources.map(relabel),
+    links: gathered.links.map(relabel)
+  }
+}
+
 export async function traceProvenanceImpl(input: TraceProvenanceInput): Promise<ProvenanceTrace | null> {
   const db = await getDb()
   const ref = new StringRecordId(input.id)
-  const table = tableOf(input.id)
-  if (table !== 'note' && table !== 'block') {
-    throw new Error(`trace_provenance accepts only note: or block: ids, got ${input.id}`)
-  }
+  const table = validateProvenanceTable(input.id)
 
   const [self] = await selectByIds<GraphNodeRecord>([input.id])
   if (!self) return null
 
-  const { sources, links, needLabels } =
-    table === 'block' ? await traceFromBlock(db, ref) : await traceFromNote(db, ref)
+  const gathered = table === 'block' ? await traceFromBlock(db, ref) : await traceFromNote(db, ref)
 
-  const labelRecords = await selectByIds<GraphNodeRecord>([...needLabels])
+  const labelRecords = await selectByIds<GraphNodeRecord>([...gathered.needLabels])
   const labels = new Map(labelRecords.map(r => [idStr(r.id), nodeLabel(r)]))
-  const relabel = <T extends { id: string; label: string }>(x: T): T => ({ ...x, label: labels.get(x.id) ?? x.id })
 
-  return {
-    id: input.id,
-    label: nodeLabel(self),
-    sources: sources.map(relabel),
-    links: links.map(relabel)
-  }
+  return assembleTrace(input.id, self, gathered, labels)
+}
+
+/** Pure: the "deriva de:" block — header + one line per source, or empty. */
+function sourcesBlock(sources: ProvenanceSource[]): string[] {
+  if (sources.length === 0) return []
+  return [
+    'deriva de:',
+    ...sources.map(s => `  - ${s.label} (${s.transformation})${s.via ? ` [vía ${s.via}]` : ''}   ${s.id}`)
+  ]
+}
+
+/** Pure: the about/affects block for one relation kind — header + one line per
+ * link, or empty when no links of that kind exist. */
+function linksBlock(links: ProvenanceLink[], kind: 'about' | 'affects'): string[] {
+  const group = links.filter(l => l.relation === kind)
+  if (group.length === 0) return []
+  return [
+    `${edgeLabel(kind)}:`,
+    ...group.map(l => {
+      const meta = l.action ? ` (${l.action}${l.summary ? `: ${l.summary}` : ''})` : ''
+      return `  - ${l.label}${meta}   ${l.id}`
+    })
+  ]
 }
 
 function verbalize(t: ProvenanceTrace): string {
-  const lines = [`${t.label}   ${t.id}`]
-  if (t.sources.length > 0) {
-    lines.push('deriva de:')
-    for (const s of t.sources)
-      lines.push(`  - ${s.label} (${s.transformation})${s.via ? ` [vía ${s.via}]` : ''}   ${s.id}`)
-  }
-  for (const kind of ['about', 'affects'] as const) {
-    const group = t.links.filter(l => l.relation === kind)
-    if (group.length === 0) continue
-    lines.push(`${edgeLabel(kind)}:`)
-    for (const l of group) {
-      const meta = l.action ? ` (${l.action}${l.summary ? `: ${l.summary}` : ''})` : ''
-      lines.push(`  - ${l.label}${meta}   ${l.id}`)
-    }
-  }
-  if (t.sources.length === 0 && t.links.length === 0) lines.push('(sin procedencia registrada)')
+  const emptyTail = t.sources.length === 0 && t.links.length === 0 ? ['(sin procedencia registrada)'] : []
+  const lines = [
+    `${t.label}   ${t.id}`,
+    ...sourcesBlock(t.sources),
+    ...(['about', 'affects'] as const).flatMap(kind => linksBlock(t.links, kind)),
+    ...emptyTail
+  ]
   return lines.join('\n')
 }
 
