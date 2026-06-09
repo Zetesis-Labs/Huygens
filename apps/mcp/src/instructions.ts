@@ -35,9 +35,5 @@ function composeInstructions(doctrine: string, cookbook: string, schema: string)
  */
 export async function buildInstructions(): Promise<string> {
   const schema = await loadSchemaSnapshot()
-  return composeInstructions(
-    readLore('lore/operating-doctrine.md'),
-    readLore('lore/surrealql-cookbook.md'),
-    schema,
-  )
+  return composeInstructions(readLore('lore/operating-doctrine.md'), readLore('lore/surrealql-cookbook.md'), schema)
 }

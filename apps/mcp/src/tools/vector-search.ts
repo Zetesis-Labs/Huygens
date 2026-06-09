@@ -5,10 +5,10 @@ import { NoteStateSchema } from '../domain'
 import { embedTexts } from '../embeddings'
 import { nodeLine } from '../serialize'
 import { getDb } from '../surreal'
-import type { BlockProvenance } from './trace-provenance'
 import { defineTool } from './define-tool'
 import { idStr } from './graph-records'
 import { noteFilters } from './lexical-search'
+import type { BlockProvenance } from './trace-provenance'
 import { provenanceByBlock } from './trace-provenance'
 
 export const vectorSearchShape = {

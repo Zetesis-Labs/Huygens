@@ -110,11 +110,29 @@ export async function countNotesImpl(
 // ── daily_radar ─────────────────────────────────────────────────────────────
 export async function dailyRadarImpl(): Promise<{
   live_count: number
-  items: Array<{ id: string; title: string; type: string; state: string; parent: string | null; mit_for: string | null; due_at: string | null }>
+  items: Array<{
+    id: string
+    title: string
+    type: string
+    state: string
+    parent: string | null
+    mit_for: string | null
+    due_at: string | null
+  }>
 }> {
   const db = await getDb()
   const [rows] = await db.query<
-    [Array<{ id: unknown; title: string; type: string; state: string; parent: unknown[]; mit_for: unknown; due_at: unknown }>]
+    [
+      Array<{
+        id: unknown
+        title: string
+        type: string
+        state: string
+        parent: unknown[]
+        mit_for: unknown
+        due_at: unknown
+      }>
+    ]
   >(
     `SELECT id, title, type.slug AS type, state, ->part_of->note.title AS parent, mit_for, due_at
      FROM note
@@ -199,8 +217,7 @@ function groupMitWritesByNote(rows: MitRow[], noteId?: string): Map<string, MitW
 function classifyHistory(events: MitWrite[]): MitEvent[] {
   return events.reduce<{ prev: string | null; history: MitEvent[] }>(
     ({ prev, history }, mitEvent) => {
-      const action: MitEvent['action'] =
-        mitEvent.mit_for == null ? 'cleared' : prev == null ? 'assigned' : 'moved'
+      const action: MitEvent['action'] = mitEvent.mit_for == null ? 'cleared' : prev == null ? 'assigned' : 'moved'
       return { prev: mitEvent.mit_for, history: [...history, { ...mitEvent, action }] }
     },
     { prev: null, history: [] }
@@ -284,12 +301,21 @@ export function registerViews(server: McpServer): void {
     server,
     'get_hierarchy',
     'The part_of hierarchy as structured { nodes, edges } — the correct way to see areas → projects → tasks. Pass `root` (a note id) for that subtree; omit for the whole forest. Returns real edge rows (never the ambiguous bare [] that raw recursion produces, and never the semantic-edge noise of neighborhood/expand_context). Read-only.',
-    { root: z.string().regex(NOTE_ID_RE).optional().describe('Note id to root the subtree at; omit for the whole forest') },
+    {
+      root: z
+        .string()
+        .regex(NOTE_ID_RE)
+        .optional()
+        .describe('Note id to root the subtree at; omit for the whole forest')
+    },
     async ({ root }) => {
       const r = await getHierarchyImpl(root)
       return {
         content: [
-          { type: 'text', text: `${r.node_count} nodes, ${r.edge_count} part_of edges${r.root ? ` under ${r.root}` : ' (full forest)'}` },
+          {
+            type: 'text',
+            text: `${r.node_count} nodes, ${r.edge_count} part_of edges${r.root ? ` under ${r.root}` : ' (full forest)'}`
+          },
           jsonBlock(r)
         ]
       }
@@ -325,14 +351,17 @@ export function registerViews(server: McpServer): void {
     server,
     'mit_history',
     'The MIT timeline derived from the commit log. The live note.mit_for is a single cell — reassigning or clearing it erases the prior value — but every assignment/move/clear is preserved as a mit_for write in a committed proposal. This reconstructs, per note, the ordered history (assigned → moved → cleared) with the committing proposal and timestamp. Pass `note_id` for one task; omit for every note that ever held a MIT. The source of truth for coaching streaks (consecutive days planned/closed). Read-only.',
-    { note_id: z.string().regex(NOTE_ID_RE).optional().describe('Note id to trace; omit for every note that ever held a MIT') },
+    {
+      note_id: z
+        .string()
+        .regex(NOTE_ID_RE)
+        .optional()
+        .describe('Note id to trace; omit for every note that ever held a MIT')
+    },
     async ({ note_id }) => {
       const r = await mitHistoryImpl(note_id)
       return {
-        content: [
-          { type: 'text', text: `${r.event_count} MIT events across ${r.note_count} note(s)` },
-          jsonBlock(r)
-        ]
+        content: [{ type: 'text', text: `${r.event_count} MIT events across ${r.note_count} note(s)` }, jsonBlock(r)]
       }
     }
   )

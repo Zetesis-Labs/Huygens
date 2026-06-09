@@ -51,11 +51,7 @@ function findMissingIds(requested: string[], existing: string[]): string[] {
 
 // 'processed' sella processed_at; 'pending' lo suelta a NONE; los demás estados no lo tocan.
 function processedAtClause(status: SetRawStatusInput['status']): string {
-  return status === 'processed'
-    ? ', processed_at = time::now()'
-    : status === 'pending'
-      ? ', processed_at = NONE'
-      : ''
+  return status === 'processed' ? ', processed_at = time::now()' : status === 'pending' ? ', processed_at = NONE' : ''
 }
 
 export async function setRawStatusImpl(input: SetRawStatusInput): Promise<RawStatusRow[]> {

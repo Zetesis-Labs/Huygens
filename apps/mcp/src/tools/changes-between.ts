@@ -74,16 +74,22 @@ export function aggregateChanges(proposals: CommittedInput[], from: string, to: 
 
   const raws = inWindow.reduce((sum, p) => sum + p.payload.raw_ids.length, 0)
 
+  // Local accumulator mutation (not spread-per-item, which is O(n²)); the
+  // result object is still freshly built and never escapes mid-fold.
   const updatedCounts = inWindow
     .flatMap(p => p.payload.note_updates)
     .reduce<Record<string, number>>((acc, n) => {
       const id = idStr(n.id as RecordIdish)
-      return { ...acc, [id]: (acc[id] ?? 0) + 1 }
+      acc[id] = (acc[id] ?? 0) + 1
+      return acc
     }, {})
 
   const dayGroups = inWindow.reduce<Record<string, CommittedInput[]>>((acc, p) => {
     const day = p.landedAt.slice(0, 10)
-    return { ...acc, [day]: [...(acc[day] ?? []), p] }
+    const group = acc[day] ?? []
+    group.push(p)
+    acc[day] = group
+    return acc
   }, {})
   const byDay = Object.entries(dayGroups)
     .map(([day, dayProposals]) => ({ day, ...tallyForDay(dayProposals) }))

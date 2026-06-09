@@ -42,7 +42,9 @@ export type BlockProvenance = { derived_from: number; transformation: string | n
 /** Pure: aggregate derived_from rows into per-block provenance — count per block
  * and keep the first non-null transformation as the representative one. No
  * mutation of accumulators: each step spreads a fresh entry into a new Map. */
-export function aggregateBlockProvenance(rows: { in: RecordId; transformation?: string }[]): Map<string, BlockProvenance> {
+export function aggregateBlockProvenance(
+  rows: { in: RecordId; transformation?: string }[]
+): Map<string, BlockProvenance> {
   return rows.reduce((map, r) => {
     const block = idStr(r.in)
     const cur = map.get(block) ?? { derived_from: 0, transformation: null }
@@ -127,9 +129,12 @@ async function traceFromNote(db: Surreal, ref: StringRecordId): Promise<Gathered
 async function traceNoteSources(db: Surreal, blockIds: Set<string>): Promise<ProvenanceSource[]> {
   if (blockIds.size === 0) return []
   const refs = [...blockIds].map(b => new StringRecordId(b))
-  const [derived] = await db.query<[DerivedRow[]]>('SELECT in, out, transformation FROM derived_from WHERE in IN $ids', {
-    ids: refs
-  })
+  const [derived] = await db.query<[DerivedRow[]]>(
+    'SELECT in, out, transformation FROM derived_from WHERE in IN $ids',
+    {
+      ids: refs
+    }
+  )
   return (derived ?? []).map(r => ({
     id: idStr(r.out),
     label: idStr(r.out),

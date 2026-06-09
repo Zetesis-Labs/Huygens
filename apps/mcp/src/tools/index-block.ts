@@ -61,10 +61,7 @@ async function fetchOwners(db: Surreal, ownerIds: Set<string>): Promise<Map<stri
     { ids: refs }
   )
   return new Map<string, OwnerInfo>(
-    (owners ?? []).map(o => [
-      idStr(o.id),
-      { rec: o, parentId: o.parents?.[0] ? idStr(o.parents[0]) : undefined }
-    ])
+    (owners ?? []).map(o => [idStr(o.id), { rec: o, parentId: o.parents?.[0] ? idStr(o.parents[0]) : undefined }])
   )
 }
 
@@ -87,14 +84,15 @@ async function fetchAboutByBlock(db: Surreal, narrativeIds: string[]): Promise<M
 type PartitionedRows = { ownerIds: Set<string>; narrativeIds: string[] }
 
 function partitionRows(rows: BlockRow[]): PartitionedRows {
-  return rows.reduce<PartitionedRows>(
-    (acc, row) => {
-      if (row.block_kind === 'narrative') return { ...acc, narrativeIds: [...acc.narrativeIds, idStr(row.id)] }
-      if (row.note) return { ...acc, ownerIds: new Set(acc.ownerIds).add(idStr(row.note)) }
-      return acc
-    },
-    { ownerIds: new Set<string>(), narrativeIds: [] }
-  )
+  // Local accumulators (not copy-per-row, which is O(n²)); the function stays
+  // pure from the outside — fresh containers, no shared state touched.
+  const ownerIds = new Set<string>()
+  const narrativeIds: string[] = []
+  for (const row of rows) {
+    if (row.block_kind === 'narrative') narrativeIds.push(idStr(row.id))
+    else if (row.note) ownerIds.add(idStr(row.note))
+  }
+  return { ownerIds, narrativeIds }
 }
 
 // The referenced notes whose labels we need: part_of parents + about targets.

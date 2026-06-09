@@ -219,11 +219,7 @@ function deriveGenesisCommittedAt(earliest: unknown): Date {
 
 /** The genesis report from the assembled payload + how many proposals were
  * superseded. Pure. */
-function buildGenesisReport(
-  payload: StoredProposalPayload,
-  committedAt: Date,
-  superseded: number
-): GenesisReport {
+function buildGenesisReport(payload: StoredProposalPayload, committedAt: Date, superseded: number): GenesisReport {
   return {
     notes: payload.note_creates.length,
     narrative_blocks: payload.narrative_blocks.length,

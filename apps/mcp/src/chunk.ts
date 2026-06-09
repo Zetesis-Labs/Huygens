@@ -22,7 +22,7 @@ function parseLine(state: SectionParseState, line: string): SectionParseState {
   const stack = [...state.stack.slice(0, level - 1), title]
   return {
     sections: [...state.sections, { headingPath: stack.filter(Boolean), lines: [line] }],
-    stack,
+    stack
   }
 }
 
@@ -39,7 +39,7 @@ function splitOversizedSection(content: string, headingPath: string[], maxChars:
     if (candidate.length > maxChars && state.buffer.length > 0) {
       return {
         chunks: [...state.chunks, { content: state.buffer, heading_path: headingPath }],
-        buffer: paragraph,
+        buffer: paragraph
       }
     }
     return { chunks: state.chunks, buffer: candidate }
@@ -49,7 +49,7 @@ function splitOversizedSection(content: string, headingPath: string[], maxChars:
 
 export function chunkMarkdown(text: string, opts: { maxChars?: number } = {}): Chunk[] {
   const maxChars = opts.maxChars ?? DEFAULT_MAX_CHARS
-  return splitIntoSections(text).flatMap((section) => {
+  return splitIntoSections(text).flatMap(section => {
     const content = section.lines.join('\n').trim()
     if (!content) return []
     if (content.length <= maxChars) return [{ content, heading_path: section.headingPath }]

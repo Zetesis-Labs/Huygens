@@ -112,9 +112,6 @@ export function serializeTriples(edges: EdgeTriple[], label: (id: string) => str
 export function serializeTriplesGrouped(edges: EdgeTriple[], label: (id: string) => string): string {
   const bySubject = groupBy(edges, t => t.source)
   return [...bySubject]
-    .flatMap(([subject, group]) => [
-      label(subject),
-      ...group.map(t => `  —${predicate(t)}→ ${label(t.target)}`)
-    ])
+    .flatMap(([subject, group]) => [label(subject), ...group.map(t => `  —${predicate(t)}→ ${label(t.target)}`)])
     .join('\n')
 }

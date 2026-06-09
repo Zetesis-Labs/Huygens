@@ -82,12 +82,10 @@ export function rowsToHits(rows: Row[], k: number, threshold: number): FindRelat
   // A note with several matching blocks should appear once with its best
   // block as the snippet. Rows arrive in distance-ascending order, so the first
   // row seen per note is the best one.
-  const bestByNote = rows
-    .filter(hasValidNote)
-    .reduce((acc, r) => {
-      const noteId = idStr(r.note_id)
-      return acc.has(noteId) ? acc : acc.set(noteId, r)
-    }, new Map<string, Row>())
+  const bestByNote = rows.filter(hasValidNote).reduce((acc, r) => {
+    const noteId = idStr(r.note_id)
+    return acc.has(noteId) ? acc : acc.set(noteId, r)
+  }, new Map<string, Row>())
 
   return Array.from(bestByNote.values())
     .map(r => ({

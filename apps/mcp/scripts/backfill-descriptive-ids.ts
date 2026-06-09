@@ -1,4 +1,4 @@
-import { StringRecordId } from 'surrealdb'
+import { type RecordId, StringRecordId } from 'surrealdb'
 import { closeDb, getDb } from '../src/surreal'
 
 /**
@@ -19,7 +19,16 @@ import { closeDb, getDb } from '../src/surreal'
 
 const db = await getDb()
 
-const [proposals] = await db.query<[Array<{ id: unknown; payload: Record<string, any> }>]>(
+// The slice of the stored payload this migration reads/patches. Looser than
+// StoredProposalPayload on purpose: legacy payloads may miss fields. Stored
+// payloads speak string record ids (ADR-0028); the row id is a live RecordId.
+type PatchableBlock = { id?: string; content: string }
+type PatchablePayload = {
+  note_creates?: Array<{ id: string; descriptive_blocks?: PatchableBlock[] }>
+  note_updates?: Array<{ id: string; descriptive_blocks_append?: PatchableBlock[] }>
+}
+
+const [proposals] = await db.query<[Array<{ id: RecordId; payload: PatchablePayload }>]>(
   "SELECT id, payload FROM proposal WHERE status = 'committed'"
 )
 

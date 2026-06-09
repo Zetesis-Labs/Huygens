@@ -125,7 +125,9 @@ function edgesRemovedSection(payload: StoredProposalPayload, labels: Map<string,
   const header = `Edges removed (${payload.edges_remove.length}):`
   return [
     header,
-    ...payload.edges_remove.map(edge => `  • ${labelFor(edge.from, labels)} —${edge.kind}✕→ ${labelFor(edge.to, labels)}`)
+    ...payload.edges_remove.map(
+      edge => `  • ${labelFor(edge.from, labels)} —${edge.kind}✕→ ${labelFor(edge.to, labels)}`
+    )
   ]
 }
 
