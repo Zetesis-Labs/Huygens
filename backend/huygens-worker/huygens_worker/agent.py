@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from agno.agent import Agent
 from agno.models.openai import OpenAIResponses
@@ -103,18 +104,47 @@ Conversación:
 """
 
 
+_LORE_FETCH_ATTEMPTS = 5
+_LORE_FETCH_BACKOFF_SECONDS = 3.0
+
+
 def _full_instructions() -> str:
     """Base instructions + the MCP's own `instructions` (operating-doctrine +
     SurrealQL cookbook + live schema). Agno's MCPTools wires the tools but drops
     the server instructions, so we fetch and inject them — otherwise the agent
     never sees the doctrine (how to behave) and improvises SurrealQL, repeating
-    documented mistakes (ORDER BY, multi-statement, …)."""
-    try:
-        lore = asyncio.run(get_server_instructions_via_mcp())
-    except Exception as e:
-        log.warning("could not fetch MCP instructions (doctrine/cookbook/schema): %s", e)
-        lore = ""
+    documented mistakes (ORDER BY, multi-statement, …).
+
+    The doctrine is load-bearing: the hardcoded INSTRUCTIONS above are only a
+    summary and omit rules. So a failed fetch is fatal by default — the worker
+    must not serve a memory agent with a degraded doctrine (DOCT-004,
+    docs/issues/2026-06-09). Opt out with ALLOW_DEGRADED_DOCTRINE=true."""
+    lore = ""
+    last_error: Exception | None = None
+    for attempt in range(1, _LORE_FETCH_ATTEMPTS + 1):
+        try:
+            lore = asyncio.run(get_server_instructions_via_mcp())
+        except Exception as e:  # noqa: BLE001 — any transport failure is retryable here
+            last_error = e
+            log.warning(
+                "fetch of MCP instructions failed (attempt %d/%d): %s",
+                attempt,
+                _LORE_FETCH_ATTEMPTS,
+                e,
+            )
+        if lore:
+            break
+        if attempt < _LORE_FETCH_ATTEMPTS:
+            time.sleep(_LORE_FETCH_BACKOFF_SECONDS)
     if not lore:
+        msg = (
+            "could not fetch the MCP instructions (doctrine/cookbook/schema) after "
+            f"{_LORE_FETCH_ATTEMPTS} attempts; refusing to start with a degraded doctrine. "
+            "Set ALLOW_DEGRADED_DOCTRINE=true to override."
+        )
+        if not settings.allow_degraded_doctrine:
+            raise RuntimeError(msg) from last_error
+        log.error("DEGRADED START: %s (override active)", msg)
         return INSTRUCTIONS
     return f"{INSTRUCTIONS}\n\n# Doctrina + cookbook SurrealQL + schema en vivo (servidos por el MCP)\n\n{lore}"
 
