@@ -21,7 +21,7 @@ export const hybridSearchShape = {
   state_in: z
     .array(NoteStateSchema)
     .optional()
-    .describe('Filter by parent note state. Omit to search across all states.'),
+    .describe('Filter by parent note state. Omit to search all non-archived states (ARCHIVED is hidden by default).'),
   type_slugs: z.array(z.string()).optional().describe('Filter by parent note type slug (e.g. ["task","project"])'),
   updated_since: z
     .string()

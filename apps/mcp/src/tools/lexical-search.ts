@@ -22,7 +22,7 @@ export const lexicalSearchShape = {
   state_in: z
     .array(NoteStateSchema)
     .optional()
-    .describe('Filter by parent note state. Omit to search across all states.'),
+    .describe('Filter by parent note state. Omit to search all non-archived states (ARCHIVED is hidden by default).'),
   type_slugs: z.array(z.string()).optional().describe('Filter by parent note type slug (e.g. ["task","project"])'),
   updated_since: z
     .string()
@@ -58,6 +58,11 @@ export function noteFilters(input: { state_in?: string[]; type_slugs?: string[];
   if (input.state_in?.length) {
     clauses.push('note_state IN $states')
     bindings.states = input.state_in
+  } else {
+    // Default: hide tombstones. ARCHIVED notes are dead weight that contaminate
+    // retrieval (84 blocks at last count). A caller who truly wants them must
+    // ask via explicit `state_in`. DONE stays searchable — it's legitimate history.
+    clauses.push("note_state != 'ARCHIVED'")
   }
   if (input.type_slugs?.length) {
     clauses.push('note_type_slug IN $type_slugs')
@@ -74,11 +79,24 @@ export async function lexicalSearchImpl(input: LexicalSearchInput): Promise<Sear
   const db = await getDb()
   const k = input.k ?? 10
   const { where, bindings } = noteFilters(input)
-  bindings.terms = input.query
   bindings.k = k
 
-  // `@1@` matches against the FTS index; `search::score(1)` reads the BM25
-  // relevance of that same predicate. The KNN ordering analogue is score DESC.
+  // OR-tokenise the query. The `@N@` FTS operator is AND over the whole string,
+  // so a multi-word natural-language query (the norm coming from hybrid_search)
+  // requires EVERY token in one block and matches almost nothing — the BM25 leg
+  // dies and hybrid degenerates to vector-only. Instead, give each token its own
+  // predicate `content @N@ $tN`, OR them (any token qualifies a block), and sum
+  // their per-token `search::score(N)` (a non-matching predicate scores 0, so the
+  // sum naturally rewards blocks hitting more terms — verified on live data).
+  const terms = input.query.split(/\s+/).filter(Boolean).slice(0, 16)
+  if (terms.length === 0) terms.push(input.query)
+  terms.forEach((t, i) => {
+    bindings[`t${i}`] = t
+  })
+  const predicates = terms.map((_, i) => `content @${i + 1}@ $t${i}`).join(' OR ')
+  const scoreExpr = terms.map((_, i) => `search::score(${i + 1})`).join(' + ')
+
+  // The KNN ordering analogue is score DESC.
   const sql = `SELECT * FROM (
     SELECT
       id,
@@ -89,9 +107,9 @@ export async function lexicalSearchImpl(input: LexicalSearchInput): Promise<Sear
       note.state       AS note_state,
       note.type.slug   AS note_type_slug,
       note.updated_at  AS note_updated_at,
-      search::score(1) AS score
+      ${scoreExpr} AS score
     FROM block
-    WHERE content @1@ $terms
+    WHERE ${predicates}
   )${where} ORDER BY score DESC LIMIT $k`
 
   const [rows] = await db.query<[Row[]]>(sql, bindings)

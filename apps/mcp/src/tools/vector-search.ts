@@ -28,7 +28,7 @@ export const vectorSearchShape = {
   state_in: z
     .array(NoteStateSchema)
     .optional()
-    .describe('Filter by parent note state. Omit to search across all states.'),
+    .describe('Filter by parent note state. Omit to search all non-archived states (ARCHIVED is hidden by default).'),
   type_slugs: z.array(z.string()).optional().describe('Filter by parent note type slug (e.g. ["task","project"])'),
   updated_since: z
     .string()
@@ -77,6 +77,10 @@ export async function vectorSearchImpl(input: VectorSearchInput): Promise<Search
   if (input.state_in?.length) {
     filters.push('note_state IN $states')
     bindings.states = input.state_in
+  } else {
+    // Default: hide tombstones. ARCHIVED notes contaminate retrieval; a caller
+    // who wants them must opt in via explicit `state_in`. DONE stays searchable.
+    filters.push("note_state != 'ARCHIVED'")
   }
   if (input.type_slugs?.length) {
     filters.push('note_type_slug IN $type_slugs')

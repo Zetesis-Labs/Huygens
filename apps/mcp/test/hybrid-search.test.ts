@@ -52,6 +52,24 @@ describe('lexicalSearchImpl (BM25 full-text)', () => {
     expect(hits.length).toBe(1)
     expect(hits[0]?.note_state).toBe('ACTIVE')
   })
+
+  test('OR-tokenises a multi-word query — a partial match still surfaces', async () => {
+    await seed(ctx, 'Stripe billing', 'Configurar el webhook de Stripe para cobros.')
+    // 'zzznoexiste' matches nothing. Under the old `@1@` AND semantics the whole
+    // query needed every token in one block, so this returned zero rows and the
+    // BM25 leg died. Under OR the 'Stripe' token alone still surfaces the block.
+    const hits = await lexicalSearchImpl({ query: 'Stripe zzznoexiste', k: 5 })
+    expect(hits.length).toBe(1)
+    expect(hits[0]?.content).toContain('Stripe')
+  })
+
+  test('hides ARCHIVED notes by default when no state_in is given', async () => {
+    await seed(ctx, 'Active', 'Functor pattern note.', 'ACTIVE')
+    await seed(ctx, 'Archived', 'Functor pattern note.', 'ARCHIVED')
+    const hits = await lexicalSearchImpl({ query: 'functor', k: 5 })
+    expect(hits.length).toBe(1)
+    expect(hits[0]?.note_state).toBe('ACTIVE')
+  })
 })
 
 describe('hybridSearchImpl (RRF fusion)', () => {
