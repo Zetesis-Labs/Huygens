@@ -125,6 +125,124 @@ export async function dailyRadarImpl(): Promise<{
   return { live_count: items.length, items }
 }
 
+// ── mit_history ───────────────────────────────────────────────────────────────
+// The live `note.mit_for` is a single cell: assigning today's MIT, or clearing it
+// (`mit_for: null`), erases yesterday's. But the trace is NOT lost — every
+// assignment and every clear is a `mit_for` write inside a committed proposal's
+// payload (set in `note_creates`/`note_updates` only when the field was touched;
+// absent otherwise, `null` when deliberately cleared). This derives that timeline
+// read-only from the log: no schema, no extra state. It is what coaching streaks
+// ("how many days running has Rubén planned a MIT?") read from.
+type MitEvent = {
+  committed_at: string
+  proposal_id: string
+  mit_for: string | null
+  action: 'assigned' | 'moved' | 'cleared'
+  source: 'create' | 'update'
+}
+type MitTimeline = {
+  note_id: string
+  note_title: string | null
+  note_state: string | null
+  current_mit_for: string | null
+  history: MitEvent[]
+}
+
+type MitRow = {
+  proposal_id: unknown
+  committed_at: unknown
+  upd: Array<{ id: unknown; mit_for: string | null }> | null
+  cre: Array<{ id: unknown; mit_for: string | null }> | null
+}
+
+export async function mitHistoryImpl(noteId?: string): Promise<{
+  note_id: string | null
+  note_count: number
+  event_count: number
+  timeline: MitTimeline[]
+}> {
+  const db = await getDb()
+  // Pull every committed proposal that touched `mit_for` on any note, oldest
+  // first. `[WHERE mit_for != NONE]` keeps only the entries that actually wrote
+  // the field (a deliberate `null` clear counts; an untouched note does not).
+  const [rows] = await db.query<[MitRow[]]>(
+    `SELECT
+       id AS proposal_id,
+       result.committed_at AS committed_at,
+       payload.note_updates[WHERE mit_for != NONE] AS upd,
+       payload.note_creates[WHERE mit_for != NONE] AS cre
+     FROM proposal
+     WHERE status = 'committed'
+       AND result.committed_at IS NOT NONE
+       AND (payload.note_updates[WHERE mit_for != NONE] OR payload.note_creates[WHERE mit_for != NONE])
+     ORDER BY committed_at`
+  )
+
+  // Flatten to per-note event lists, in commit order.
+  const byNote = new Map<string, Array<Omit<MitEvent, 'action'> & { mit_for: string | null }>>()
+  for (const r of rows ?? []) {
+    const committed_at = r.committed_at != null ? String(r.committed_at) : ''
+    const proposal_id = String(r.proposal_id)
+    const push = (id: string, mit_for: string | null, source: 'create' | 'update') => {
+      if (noteId && id !== noteId) return
+      const arr = byNote.get(id) ?? []
+      arr.push({ committed_at, proposal_id, mit_for, source })
+      byNote.set(id, arr)
+    }
+    for (const c of r.cre ?? []) push(String(c.id), c.mit_for ?? null, 'create')
+    for (const u of r.upd ?? []) push(String(u.id), u.mit_for ?? null, 'update')
+  }
+
+  if (byNote.size === 0) return { note_id: noteId ?? null, note_count: 0, event_count: 0, timeline: [] }
+
+  // Decorate with the note's current title/state/mit_for.
+  const ids = [...byNote.keys()]
+  const [noteRows] = await db.query<[Array<{ id: unknown; title: string; state: string; mit_for: unknown }>]>(
+    'SELECT id, title, state, mit_for FROM note WHERE id IN $ids',
+    { ids: ids.map(id => new StringRecordId(id)) }
+  )
+  const meta = new Map(
+    (noteRows ?? []).map(n => [
+      String(n.id),
+      { title: n.title ?? null, state: n.state ?? null, mit_for: n.mit_for != null ? String(n.mit_for) : null }
+    ])
+  )
+
+  let event_count = 0
+  const timeline: MitTimeline[] = ids.map(id => {
+    const events = byNote.get(id) ?? []
+    // Classify each write relative to the previous non-null value in this note's
+    // own timeline: first date = assigned, a later (different) date = moved, null
+    // = cleared. A consciously soltado MIT is exactly the `cleared` row.
+    let prev: string | null = null
+    const history: MitEvent[] = events.map(e => {
+      let action: MitEvent['action']
+      if (e.mit_for == null) action = 'cleared'
+      else if (prev == null) action = 'assigned'
+      else action = 'moved'
+      prev = e.mit_for
+      return { ...e, action }
+    })
+    event_count += history.length
+    const m = meta.get(id)
+    return {
+      note_id: id,
+      note_title: m?.title ?? null,
+      note_state: m?.state ?? null,
+      current_mit_for: m?.mit_for ?? null,
+      history
+    }
+  })
+  // Most-recently-active timelines first.
+  timeline.sort((a, b) => {
+    const la = a.history[a.history.length - 1]?.committed_at ?? ''
+    const lb = b.history[b.history.length - 1]?.committed_at ?? ''
+    return lb.localeCompare(la)
+  })
+
+  return { note_id: noteId ?? null, note_count: timeline.length, event_count, timeline }
+}
+
 export function registerViews(server: McpServer): void {
   defineTool(
     server,
@@ -164,6 +282,22 @@ export function registerViews(server: McpServer): void {
     async () => {
       const r = await dailyRadarImpl()
       return { content: [{ type: 'text', text: `${r.live_count} live (non-deferred) notes` }, jsonBlock(r)] }
+    }
+  )
+
+  defineTool(
+    server,
+    'mit_history',
+    'The MIT timeline derived from the commit log. The live note.mit_for is a single cell — reassigning or clearing it erases the prior value — but every assignment/move/clear is preserved as a mit_for write in a committed proposal. This reconstructs, per note, the ordered history (assigned → moved → cleared) with the committing proposal and timestamp. Pass `note_id` for one task; omit for every note that ever held a MIT. The source of truth for coaching streaks (consecutive days planned/closed). Read-only.',
+    { note_id: z.string().regex(NOTE_ID_RE).optional().describe('Note id to trace; omit for every note that ever held a MIT') },
+    async ({ note_id }) => {
+      const r = await mitHistoryImpl(note_id)
+      return {
+        content: [
+          { type: 'text', text: `${r.event_count} MIT events across ${r.note_count} note(s)` },
+          jsonBlock(r)
+        ]
+      }
     }
   )
 }
