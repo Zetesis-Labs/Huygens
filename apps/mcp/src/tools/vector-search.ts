@@ -5,6 +5,7 @@ import { NoteStateSchema } from '../domain'
 import { embedTexts } from '../embeddings'
 import { nodeLine } from '../serialize'
 import { getDb } from '../surreal'
+import type { BlockProvenance } from './trace-provenance'
 import { defineTool } from './define-tool'
 import { idStr } from './graph-records'
 import { provenanceByBlock } from './trace-provenance'
@@ -64,6 +65,18 @@ type Row = {
   note_state: string | null
 }
 
+/** Pure: attach per-block provenance signals onto search hits, without mutation. */
+export function attachProvenance<T extends { block_id: string }>(
+  hits: T[],
+  prov: Map<string, BlockProvenance>
+): (T & { derived_from: number; transformation: string | null })[] {
+  return hits.map(h => ({
+    ...h,
+    derived_from: prov.get(h.block_id)?.derived_from ?? 0,
+    transformation: prov.get(h.block_id)?.transformation ?? null
+  }))
+}
+
 export async function vectorSearchImpl(input: VectorSearchInput): Promise<SearchHit[]> {
   const db = await getDb()
   const k = input.k ?? 10
@@ -109,26 +122,19 @@ export async function vectorSearchImpl(input: VectorSearchInput): Promise<Search
 
   const [rows] = await db.query<[Row[]]>(sql, bindings)
 
-  const hits: SearchHit[] = rows.map(r => ({
+  const hits = rows.map(r => ({
     block_id: idStr(r.id),
     block_kind: r.block_kind,
     note_id: r.note_id ? idStr(r.note_id) : null,
     note_title: r.note_title ?? null,
     note_state: r.note_state ?? null,
     content: r.content,
-    score: 1 - r.distance,
-    derived_from: 0,
-    transformation: null
+    score: 1 - r.distance
   }))
 
   const filtered = input.threshold != null ? hits.filter(h => h.score >= (input.threshold ?? 0)) : hits
   const prov = await provenanceByBlock(filtered.map(h => h.block_id))
-  for (const h of filtered) {
-    const p = prov.get(h.block_id)
-    h.derived_from = p?.derived_from ?? 0
-    h.transformation = p?.transformation ?? null
-  }
-  return filtered
+  return attachProvenance(filtered, prov)
 }
 
 function summarize(hits: SearchHit[]): string {

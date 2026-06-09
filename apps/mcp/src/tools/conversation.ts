@@ -31,22 +31,37 @@ const saveConversationShape = {
 const saveConversationSchema = z.object(saveConversationShape)
 export type SaveConversationInput = z.infer<typeof saveConversationSchema>
 
-export async function saveConversationImpl(input: SaveConversationInput): Promise<{ id: string; updated: boolean }> {
-  const db = await getDb()
-  const doc: Record<string, unknown> = { messages: input.messages }
-  if (input.title !== undefined) doc.title = input.title
-  if (input.state !== undefined) doc.state = input.state
-  if (input.id) {
-    const [rows] = await db.query<[{ id: RecordIdish }[]]>('UPDATE $id MERGE $doc RETURN id', {
-      id: new StringRecordId(input.id),
-      doc
-    })
-    if (!rows?.[0]) throw new QueryError(`conversation not found: ${input.id}`)
-    return { id: idStr(rows[0].id), updated: true }
-  }
+async function updateConversation(
+  db: Awaited<ReturnType<typeof getDb>>,
+  id: string,
+  doc: Record<string, unknown>
+): Promise<{ id: string; updated: boolean }> {
+  const [rows] = await db.query<[{ id: RecordIdish }[]]>('UPDATE $id MERGE $doc RETURN id', {
+    id: new StringRecordId(id),
+    doc
+  })
+  if (!rows?.[0]) throw new QueryError(`conversation not found: ${id}`)
+  return { id: idStr(rows[0].id), updated: true }
+}
+
+async function createConversation(
+  db: Awaited<ReturnType<typeof getDb>>,
+  doc: Record<string, unknown>
+): Promise<{ id: string; updated: boolean }> {
   const [rows] = await db.query<[{ id: RecordIdish }[]]>('CREATE conversation CONTENT $doc RETURN id', { doc })
   if (!rows?.[0]) throw new QueryError('failed to create conversation')
   return { id: idStr(rows[0].id), updated: false }
+}
+
+export async function saveConversationImpl(input: SaveConversationInput): Promise<{ id: string; updated: boolean }> {
+  const db = await getDb()
+  const doc: Record<string, unknown> = {
+    messages: input.messages,
+    ...(input.title !== undefined ? { title: input.title } : {}),
+    ...(input.state !== undefined ? { state: input.state } : {})
+  }
+  if (input.id) return updateConversation(db, input.id, doc)
+  return createConversation(db, doc)
 }
 
 // ── get_conversation ─────────────────────────────────────────────────────────

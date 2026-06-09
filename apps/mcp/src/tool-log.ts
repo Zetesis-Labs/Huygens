@@ -45,21 +45,25 @@ function safeJson(value: unknown, maxLen = 4000): string {
  * tool response; it rides the shared SurrealDB connection, independent of the
  * per-request MCP transport.
  */
+/** Pure shape of the greppable `[tool] {...}` stderr line. `ts` is injected so
+ * the builder stays pure (no `new Date()` inside) and the line is assertable. */
+function buildStderrRecord(entry: ToolCallLog, ts: string): Record<string, unknown> {
+  return {
+    ts,
+    tool: entry.tool,
+    ok: entry.ok,
+    ms: entry.duration_ms,
+    ...(entry.code ? { code: entry.code } : {}),
+    ...(entry.error ? { error: entry.error } : {}),
+    args: entry.args,
+    ...(entry.result !== undefined ? { result: entry.result } : {})
+  }
+}
+
 export function logToolCall(entry: ToolCallLog): void {
   const ts = new Date().toISOString()
   // 1. stderr — immediate, greppable, can't fail.
-  console.error(
-    `[tool] ${safeJson({
-      ts,
-      tool: entry.tool,
-      ok: entry.ok,
-      ms: entry.duration_ms,
-      ...(entry.code ? { code: entry.code } : {}),
-      ...(entry.error ? { error: entry.error } : {}),
-      args: entry.args,
-      ...(entry.result !== undefined ? { result: entry.result } : {})
-    })}`
-  )
+  console.error(`[tool] ${safeJson(buildStderrRecord(entry, ts))}`)
 
   // 2. DB — best-effort, fire-and-forget.
   if (!DB_SINK_ON) return

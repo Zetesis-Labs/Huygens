@@ -79,9 +79,8 @@ export async function hybridSearchImpl(input: HybridSearchInput): Promise<Hybrid
   const lexicalRank = new Map(lexical.map((h, i) => [h.block_id, i + 1]))
   // Prefer the dense hit object when a block appears in both — content and
   // provenance are identical, and both legs already attached provenance.
-  const byId = new Map<string, SearchHit>()
-  for (const h of lexical) byId.set(h.block_id, h)
-  for (const h of dense) byId.set(h.block_id, h)
+  // Spread order matters: lexical first, dense after, so dense overwrites.
+  const byId = new Map<string, SearchHit>([...lexical, ...dense].map(h => [h.block_id, h]))
 
   const fused = rrfFuse([dense.map(h => h.block_id), lexical.map(h => h.block_id)])
 

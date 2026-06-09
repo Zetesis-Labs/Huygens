@@ -30,7 +30,7 @@ export type SaveQueryInput = z.infer<typeof saveQuerySchema>
 
 export async function saveQueryImpl(input: SaveQueryInput): Promise<{ id: string; updated: boolean }> {
   const db = await getDb()
-  const doc: Record<string, unknown> = { name: input.name, pinned: input.pinned, query: input.query }
+  const doc = { name: input.name, pinned: input.pinned, query: input.query } as const
   if (input.id) {
     // Upsert: a caller-chosen id creates the query if it doesn't exist yet, and
     // updates it if it does — so agents can use a stable, memorable id without a

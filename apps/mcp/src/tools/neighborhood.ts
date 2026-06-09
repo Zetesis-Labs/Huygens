@@ -40,12 +40,12 @@ export type NeighborhoodResult = SubgraphText & { seed: string }
 
 /** Edges (any kind) with at least one endpoint in `frontier`, in one query. */
 async function edgesTouching(db: Surreal, frontier: string[]): Promise<EdgeRow[]> {
-  const f = frontier.map(s => new StringRecordId(s))
+  const frontierIds = frontier.map(s => new StringRecordId(s))
   const [rows] = await db.query<[EdgeRow[]]>(
     `SELECT id, in, out, meta::tb(id) AS kind, action, transformation
      FROM part_of, blocked_by, mentions, about, affects, derived_from
      WHERE in IN $f OR out IN $f`,
-    { f }
+    { f: frontierIds }
   )
   return rows ?? []
 }
@@ -64,9 +64,9 @@ export async function expand(
   let frontier = [...seeds]
   for (let hop = 0; hop < hops && frontier.length > 0 && visited.size < maxNodes; hop++) {
     const next: string[] = []
-    for (const e of await edgesTouching(db, frontier)) {
-      edges.set(idStr(e.id), e)
-      for (const endpoint of [idStr(e.in), idStr(e.out)]) {
+    for (const edge of await edgesTouching(db, frontier)) {
+      edges.set(idStr(edge.id), edge)
+      for (const endpoint of [idStr(edge.in), idStr(edge.out)]) {
         if (endpoint && !visited.has(endpoint) && visited.size < maxNodes) {
           visited.add(endpoint)
           next.push(endpoint)
@@ -85,11 +85,11 @@ export async function expand(
  */
 export async function verbalizeSubgraph(visited: Set<string>, edges: Map<string, EdgeRow>): Promise<SubgraphText> {
   const triples: EdgeTriple[] = []
-  for (const e of edges.values()) {
-    const source = idStr(e.in)
-    const target = idStr(e.out)
+  for (const edge of edges.values()) {
+    const source = idStr(edge.in)
+    const target = idStr(edge.out)
     if (visited.has(source) && visited.has(target)) {
-      triples.push({ source, target, kind: e.kind, qualifier: e.action ?? e.transformation ?? undefined })
+      triples.push({ source, target, kind: edge.kind, qualifier: edge.action ?? edge.transformation ?? undefined })
     }
   }
   const records = await selectByIds<GraphNodeRecord>([...visited])
@@ -109,8 +109,8 @@ export async function verbalizeSubgraph(visited: Set<string>, edges: Map<string,
  * instead of bare, disconnected hits. Read-only.
  */
 export async function neighborhoodImpl(input: NeighborhoodInput): Promise<NeighborhoodResult | null> {
-  const [seedRec] = await selectByIds<GraphNodeRecord>([input.seed_id])
-  if (!seedRec) return null
+  const [seedRecord] = await selectByIds<GraphNodeRecord>([input.seed_id])
+  if (!seedRecord) return null
   const db = await getDb()
   const { visited, edges } = await expand(db, [input.seed_id], input.hops, input.max_nodes)
   return { seed: input.seed_id, ...(await verbalizeSubgraph(visited, edges)) }
@@ -123,11 +123,11 @@ export function registerNeighborhood(server: McpServer): void {
     "Expand the graph around a note/block/raw N hops and return the connected subgraph as subject —predicate→ object triples (plus a node legend). Use it to pull a hit's context as text instead of disconnected results.",
     neighborhoodShape,
     async args => {
-      const r = await neighborhoodImpl(args)
-      if (!r) return { content: [{ type: 'text', text: `Not found: ${args.seed_id}` }] }
-      const legend = r.nodes.map(n => `${n.id}  ${n.label}`).join('\n')
-      const text = `${r.node_count} nodo(s) alrededor de ${r.seed}\n\n${r.triples || '(sin relaciones)'}\n\n— nodos —\n${legend}`
-      return { content: [{ type: 'text', text }, jsonBlock(r)] }
+      const result = await neighborhoodImpl(args)
+      if (!result) return { content: [{ type: 'text', text: `Not found: ${args.seed_id}` }] }
+      const legend = result.nodes.map(n => `${n.id}  ${n.label}`).join('\n')
+      const text = `${result.node_count} nodo(s) alrededor de ${result.seed}\n\n${result.triples || '(sin relaciones)'}\n\n— nodos —\n${legend}`
+      return { content: [{ type: 'text', text }, jsonBlock(result)] }
     }
   )
 }

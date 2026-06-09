@@ -23,13 +23,8 @@ type CountRow = { count: number }
 
 /** Fold `SELECT <field> AS key, count() AS count … GROUP BY <field>` rows into a map + total. */
 function distribution(rows: GroupRow[]): { total: number; by: Record<string, number> } {
-  const by: Record<string, number> = {}
-  let total = 0
-  for (const r of rows) {
-    const key = r.key ?? 'unknown'
-    by[key] = r.count
-    total += r.count
-  }
+  const by = Object.fromEntries(rows.map(r => [r.key ?? 'unknown', r.count]))
+  const total = rows.reduce((sum, r) => sum + r.count, 0)
   return { total, by }
 }
 

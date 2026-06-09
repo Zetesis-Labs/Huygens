@@ -42,8 +42,7 @@ export async function buildGenesisPayload(): Promise<StoredProposalPayload> {
   const [descs] = await db.query<[Array<{ id: unknown; content: string }>]>(
     "SELECT id, content FROM block WHERE block_kind = 'descriptive'"
   )
-  const descContent = new Map<string, string>()
-  for (const d of descs ?? []) descContent.set(String(d.id), d.content)
+  const descContent = new Map<string, string>((descs ?? []).map(d => [String(d.id), d.content] as const))
 
   const note_creates: StoredNoteCreate[] = (notes ?? []).map(n => {
     const meta = n.metadata as Record<string, unknown> | null | undefined

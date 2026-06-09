@@ -7,6 +7,7 @@ import { getDb } from '../surreal'
 import { defineTool } from './define-tool'
 import { idStr } from './graph-records'
 import { provenanceByBlock } from './trace-provenance'
+import { attachProvenance } from './vector-search'
 
 /**
  * LLM-friendly wrapper over vector_search. Returns a compact, deduped list
@@ -87,16 +88,19 @@ export async function findRelatedImpl(input: FindRelatedInput): Promise<FindRela
   const [rows] = await db.query<[Row[]]>(sql, { q: queryVec })
 
   // A note with several matching blocks should appear once with its best
-  // block as the snippet. Iterate in distance-ascending order so the first
-  // hit per note is the best one.
-  const bestByNote = new Map<string, Row>()
-  for (const r of rows) {
-    const noteId = idStr(r.note_id)
-    if (noteId === 'null' || noteId === 'undefined') continue
-    if (!bestByNote.has(noteId)) bestByNote.set(noteId, r)
-  }
+  // block as the snippet. Rows arrive in distance-ascending order, so the first
+  // row seen per note is the best one.
+  const bestByNote = rows
+    .filter(r => {
+      const noteId = idStr(r.note_id)
+      return noteId !== 'null' && noteId !== 'undefined'
+    })
+    .reduce((acc, r) => {
+      const noteId = idStr(r.note_id)
+      return acc.has(noteId) ? acc : acc.set(noteId, r)
+    }, new Map<string, Row>())
 
-  const hits: FindRelatedHit[] = Array.from(bestByNote.values())
+  const hits = Array.from(bestByNote.values())
     .map(r => ({
       note_id: idStr(r.note_id),
       block_id: idStr(r.id),
@@ -107,21 +111,14 @@ export async function findRelatedImpl(input: FindRelatedInput): Promise<FindRela
         r.content.length > SNIPPET_LEN
           ? `${r.content.slice(0, SNIPPET_LEN).replace(/\n/g, ' ')}…`
           : r.content.replace(/\n/g, ' '),
-      score: 1 - r.distance,
-      derived_from: 0,
-      transformation: null
+      score: 1 - r.distance
     }))
     .filter(h => h.score >= threshold)
     .sort((a, b) => b.score - a.score)
     .slice(0, k)
 
   const prov = await provenanceByBlock(hits.map(h => h.block_id))
-  for (const h of hits) {
-    const p = prov.get(h.block_id)
-    h.derived_from = p?.derived_from ?? 0
-    h.transformation = p?.transformation ?? null
-  }
-  return hits
+  return attachProvenance(hits, prov)
 }
 
 function summarize(hits: FindRelatedHit[]): string {

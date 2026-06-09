@@ -7,7 +7,7 @@ import { getDb } from '../surreal'
 import { defineTool } from './define-tool'
 import { idStr } from './graph-records'
 import { provenanceByBlock } from './trace-provenance'
-import type { SearchHit } from './vector-search'
+import { attachProvenance, type SearchHit } from './vector-search'
 
 /**
  * Lexical (BM25) search over `block.content` via the `block_content_fts`
@@ -53,33 +53,32 @@ export function noteFilters(input: { state_in?: string[]; type_slugs?: string[];
   where: string
   bindings: Record<string, unknown>
 } {
-  const clauses: string[] = []
-  const bindings: Record<string, unknown> = {}
-  if (input.state_in?.length) {
-    clauses.push('note_state IN $states')
-    bindings.states = input.state_in
-  } else {
-    // Default: hide tombstones. ARCHIVED notes are dead weight that contaminate
-    // retrieval (84 blocks at last count). A caller who truly wants them must
-    // ask via explicit `state_in`. DONE stays searchable — it's legitimate history.
-    clauses.push("note_state != 'ARCHIVED'")
-  }
-  if (input.type_slugs?.length) {
-    clauses.push('note_type_slug IN $type_slugs')
-    bindings.type_slugs = input.type_slugs
-  }
-  if (input.updated_since) {
-    clauses.push('note_updated_at > $since')
-    bindings.since = new Date(input.updated_since)
-  }
+  // Default: hide tombstones. ARCHIVED notes are dead weight that contaminate
+  // retrieval (84 blocks at last count). A caller who truly wants them must
+  // ask via explicit `state_in`. DONE stays searchable — it's legitimate history.
+  const stateFilter = input.state_in?.length
+    ? { clause: 'note_state IN $states', binding: { states: input.state_in } }
+    : { clause: "note_state != 'ARCHIVED'", binding: {} }
+
+  const candidates = [
+    stateFilter,
+    input.type_slugs?.length
+      ? { clause: 'note_type_slug IN $type_slugs', binding: { type_slugs: input.type_slugs } }
+      : null,
+    input.updated_since
+      ? { clause: 'note_updated_at > $since', binding: { since: new Date(input.updated_since) } }
+      : null
+  ].filter((c): c is { clause: string; binding: Record<string, unknown> } => c !== null)
+
+  const clauses = candidates.map(c => c.clause)
+  const bindings = Object.assign({}, ...candidates.map(c => c.binding)) as Record<string, unknown>
   return { where: clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '', bindings }
 }
 
 export async function lexicalSearchImpl(input: LexicalSearchInput): Promise<SearchHit[]> {
   const db = await getDb()
   const k = input.k ?? 10
-  const { where, bindings } = noteFilters(input)
-  bindings.k = k
+  const { where, bindings: filterBindings } = noteFilters(input)
 
   // OR-tokenise the query. The `@N@` FTS operator is AND over the whole string,
   // so a multi-word natural-language query (the norm coming from hybrid_search)
@@ -88,11 +87,10 @@ export async function lexicalSearchImpl(input: LexicalSearchInput): Promise<Sear
   // predicate `content @N@ $tN`, OR them (any token qualifies a block), and sum
   // their per-token `search::score(N)` (a non-matching predicate scores 0, so the
   // sum naturally rewards blocks hitting more terms — verified on live data).
-  const terms = input.query.split(/\s+/).filter(Boolean).slice(0, 16)
-  if (terms.length === 0) terms.push(input.query)
-  terms.forEach((t, i) => {
-    bindings[`t${i}`] = t
-  })
+  const rawTerms = input.query.split(/\s+/).filter(Boolean).slice(0, 16)
+  const terms = rawTerms.length > 0 ? rawTerms : [input.query]
+  const tokenBindings = Object.fromEntries(terms.map((t, i) => [`t${i}`, t]))
+  const bindings = { ...filterBindings, k, ...tokenBindings }
   const predicates = terms.map((_, i) => `content @${i + 1}@ $t${i}`).join(' OR ')
   const scoreExpr = terms.map((_, i) => `search::score(${i + 1})`).join(' + ')
 
@@ -114,25 +112,17 @@ export async function lexicalSearchImpl(input: LexicalSearchInput): Promise<Sear
 
   const [rows] = await db.query<[Row[]]>(sql, bindings)
 
-  const hits: SearchHit[] = rows.map(r => ({
+  const hits = rows.map(r => ({
     block_id: idStr(r.id),
     block_kind: r.block_kind,
     note_id: r.note_id ? idStr(r.note_id) : null,
     note_title: r.note_title ?? null,
     note_state: r.note_state ?? null,
     content: r.content,
-    score: r.score,
-    derived_from: 0,
-    transformation: null
+    score: r.score
   }))
 
-  const prov = await provenanceByBlock(hits.map(h => h.block_id))
-  for (const h of hits) {
-    const p = prov.get(h.block_id)
-    h.derived_from = p?.derived_from ?? 0
-    h.transformation = p?.transformation ?? null
-  }
-  return hits
+  return attachProvenance(hits, await provenanceByBlock(hits.map(h => h.block_id)))
 }
 
 function summarize(hits: SearchHit[]): string {

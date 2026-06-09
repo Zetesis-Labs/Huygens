@@ -2,10 +2,31 @@ import { getDb } from './surreal'
 
 type DbInfo = { tables?: Record<string, string> }
 type TableInfo = { fields?: Record<string, string>; indexes?: Record<string, string> }
+type TableSnapshot = { define: string; tinfo: TableInfo | undefined }
 
 /** Drop the trailing `PERMISSIONS …` clause so each DEFINE stays compact. */
 function stripPermissions(define: string): string {
   return define.replace(/\s+PERMISSIONS\b.*$/is, '').trim()
+}
+
+const SNAPSHOT_HEADER = (ns: string, dbName: string): string[] => [
+  `# Huygens — live database schema (ns=${ns}, db=${dbName})`,
+  '',
+  'The real schema, introspected from SurrealDB at startup. Use it to write',
+  'correct read-only SurrealQL through `query_query` / `run_query`: edges are',
+  'RELATION tables traversed with `->edge->` / `<-edge<-`, and field `ASSERT`',
+  'clauses list the allowed enum values. Restart the MCP after `db:apply` to',
+  'refresh this snapshot.',
+  ''
+]
+
+/** Pure render of a single table block: DEFINE TABLE, fields, indexes, blank line. */
+function renderTable({ define, tinfo }: TableSnapshot): string[] {
+  const fieldLines = Object.entries(tinfo?.fields ?? {})
+    .filter(([name]) => !name.includes('.')) // skip array-element sub-fields (e.g. block_order.*)
+    .map(([, def]) => `  ${stripPermissions(def)}`)
+  const indexLines = Object.values(tinfo?.indexes ?? {}).map(def => `  ${stripPermissions(def)}`)
+  return [stripPermissions(define), ...fieldLines, ...indexLines, '']
 }
 
 /**
@@ -26,37 +47,23 @@ export async function loadSchemaSnapshot(): Promise<string> {
   const [info] = await db.query<[DbInfo]>('INFO FOR DB')
   const tables = Object.keys(info?.tables ?? {}).sort()
 
-  const out: string[] = [
-    `# Huygens — live database schema (ns=${ns}, db=${dbName})`,
-    '',
-    'The real schema, introspected from SurrealDB at startup. Use it to write',
-    'correct read-only SurrealQL through `query_query` / `run_query`: edges are',
-    'RELATION tables traversed with `->edge->` / `<-edge<-`, and field `ASSERT`',
-    'clauses list the allowed enum values. Restart the MCP after `db:apply` to',
-    'refresh this snapshot.',
-    ''
-  ]
-
-  for (const table of tables) {
+  // I/O at the border: `INFO FOR TABLE` is fetched sequentially, one per table,
+  // before the pure render step composes the snapshot.
+  const fetchTableSnapshot = async (table: string): Promise<TableSnapshot> => {
     const define = info?.tables?.[table] ?? `DEFINE TABLE ${table}`
-    out.push(stripPermissions(define))
-
-    let tinfo: TableInfo | undefined
     try {
-      ;[tinfo] = await db.query<[TableInfo]>(`INFO FOR TABLE \`${table}\``)
+      const [tinfo] = await db.query<[TableInfo]>(`INFO FOR TABLE \`${table}\``)
+      return { define, tinfo }
     } catch {
-      tinfo = undefined
+      return { define, tinfo: undefined }
     }
-
-    for (const [name, def] of Object.entries(tinfo?.fields ?? {})) {
-      if (name.includes('.')) continue // skip array-element sub-fields (e.g. block_order.*)
-      out.push(`  ${stripPermissions(def)}`)
-    }
-    for (const def of Object.values(tinfo?.indexes ?? {})) {
-      out.push(`  ${stripPermissions(def)}`)
-    }
-    out.push('')
   }
 
-  return out.join('\n').trimEnd()
+  const snapshots = await tables.reduce<Promise<TableSnapshot[]>>(
+    async (acc, table) => [...(await acc), await fetchTableSnapshot(table)],
+    Promise.resolve([])
+  )
+
+  const lines = [...SNAPSHOT_HEADER(ns, dbName), ...snapshots.flatMap(renderTable)]
+  return lines.join('\n').trimEnd()
 }

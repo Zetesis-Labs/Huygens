@@ -63,19 +63,21 @@ type IdRow = { id: { toString(): string } }
 
 type Db = Awaited<ReturnType<typeof getDb>>
 
+type RetractableTable = (typeof RETRACTABLE)[number]
+
+/** Pure validation: returns the retractable table of an id, or throws if it is not retractable. */
+function assertRetractable(id: string): RetractableTable {
+  const table = id.split(':')[0]
+  if (table === 'raw_capture' || table === 'note' || table === 'block') return table
+  throw new QueryError(`cannot retract "${id}": only ${RETRACTABLE.join(' / ')} are retractable`, { id })
+}
+
 /** Bucket explicit ids by table, rejecting anything that is not retractable. */
 function partitionIds(ids: string[]): { raws: Set<string>; notes: Set<string>; blocks: Set<string> } {
-  const raws = new Set<string>()
-  const notes = new Set<string>()
-  const blocks = new Set<string>()
-  for (const id of ids) {
-    const table = id.split(':')[0]
-    if (table === 'raw_capture') raws.add(id)
-    else if (table === 'note') notes.add(id)
-    else if (table === 'block') blocks.add(id)
-    else throw new QueryError(`cannot retract "${id}": only ${RETRACTABLE.join(' / ')} are retractable`, { id })
-  }
-  return { raws, notes, blocks }
+  const classified = ids.map(id => [assertRetractable(id), id] as const)
+  const idsOfTable = (table: RetractableTable): Set<string> =>
+    new Set(classified.filter(([t]) => t === table).map(([, id]) => id))
+  return { raws: idsOfTable('raw_capture'), notes: idsOfTable('note'), blocks: idsOfTable('block') }
 }
 
 /** raw_capture ids matching the source_kind / source_ref selectors (empty if none given). */
@@ -115,25 +117,27 @@ async function resolve(input: RetractInput): Promise<RetractResult> {
   }
 
   const { raws: rawSet, notes: noteSet, blocks: blockSet } = partitionIds(input.ids ?? [])
-  for (const id of await rawsBySource(db, input)) rawSet.add(id)
+  const allRaws = new Set([...rawSet, ...(await rawsBySource(db, input))])
 
   // Cascade: descriptive blocks owned by the targeted notes.
-  if (noteSet.size > 0) {
+  const ownedBlockIds = await (async (): Promise<string[]> => {
+    if (noteSet.size === 0) return []
     const [owned] = await db.query<[IdRow[]]>('SELECT id FROM block WHERE note IN $ids', {
       ids: [...noteSet].map(rid)
     })
-    for (const r of owned) blockSet.add(r.id.toString())
-  }
+    return owned.map(r => r.id.toString())
+  })()
+  const allBlocks = new Set([...blockSet, ...ownedBlockIds])
 
   // Keep only records that actually exist, so the preview is honest.
   const [existNotes] = await db.query<[IdRow[]]>('SELECT id FROM note WHERE id IN $ids', {
     ids: [...noteSet].map(rid)
   })
   const [existBlocks] = await db.query<[IdRow[]]>('SELECT id FROM block WHERE id IN $ids', {
-    ids: [...blockSet].map(rid)
+    ids: [...allBlocks].map(rid)
   })
   const [existRaws] = await db.query<[IdRow[]]>('SELECT id FROM raw_capture WHERE id IN $ids', {
-    ids: [...rawSet].map(rid)
+    ids: [...allRaws].map(rid)
   })
   const notes = existNotes.map(r => r.id.toString())
   const blocks = existBlocks.map(r => r.id.toString())

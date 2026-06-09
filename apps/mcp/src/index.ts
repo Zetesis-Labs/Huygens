@@ -1,15 +1,10 @@
-import { createServer as createHttpServer, type IncomingMessage } from 'node:http'
+import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { buildInstructions } from './instructions'
 import { createServer } from './server'
 import { assertSchemaReady } from './surreal'
 
 const PORT = Number(process.env.MCP_PORT ?? 3030)
-
-// Computed once at startup (see main) and injected as the MCP server's
-// `instructions`, so every connecting agent sees the SurrealQL cookbook + the
-// live DB schema.
-let serverInstructions: string | undefined
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = []
@@ -18,54 +13,65 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'))
 }
 
-const httpServer = createHttpServer(async (req, res) => {
-  if (req.url === '/healthz') {
-    res.statusCode = 200
-    res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ ok: true }))
-    return
-  }
-
-  if (!req.url?.startsWith('/mcp')) {
-    res.statusCode = 404
-    res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ error: 'not_found' }))
-    return
-  }
-
-  try {
-    const body = req.method === 'POST' ? await readJsonBody(req) : undefined
-    const mcp = createServer(serverInstructions)
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
-
-    res.on('close', () => {
-      transport.close().catch(err => console.error('[huygens-mcp] transport close error:', err))
-      mcp.close().catch(err => console.error('[huygens-mcp] server close error:', err))
-    })
-
-    await mcp.connect(transport)
-    await transport.handleRequest(req, res, body)
-  } catch (err) {
-    console.error('[huygens-mcp] request error:', err)
-    if (!res.headersSent) {
-      res.statusCode = 500
+// The `instructions` (SurrealQL cookbook + live DB schema) are computed once at
+// startup and closed over here, so every connecting agent sees them without the
+// handler reading mutable module state.
+function createRequestHandler(instructions: string | undefined) {
+  return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    if (req.url === '/healthz') {
+      res.statusCode = 200
       res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ error: 'internal_error' }))
+      res.end(JSON.stringify({ ok: true }))
+      return
+    }
+
+    if (!req.url?.startsWith('/mcp')) {
+      res.statusCode = 404
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ error: 'not_found' }))
+      return
+    }
+
+    try {
+      const body = req.method === 'POST' ? await readJsonBody(req) : undefined
+      const mcp = createServer(instructions)
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
+
+      res.on('close', () => {
+        transport.close().catch(err => console.error('[huygens-mcp] transport close error:', err))
+        mcp.close().catch(err => console.error('[huygens-mcp] server close error:', err))
+      })
+
+      await mcp.connect(transport)
+      await transport.handleRequest(req, res, body)
+    } catch (err) {
+      console.error('[huygens-mcp] request error:', err)
+      if (!res.headersSent) {
+        res.statusCode = 500
+        res.setHeader('content-type', 'application/json')
+        res.end(JSON.stringify({ error: 'internal_error' }))
+      }
     }
   }
-})
+}
+
+async function buildServerInstructions(): Promise<string | undefined> {
+  try {
+    return await buildInstructions()
+  } catch (err) {
+    // Instructions (cookbook + schema) are best-effort context for agents;
+    // never let them block startup. Tools still work without them.
+    console.error('[huygens-mcp] could not build server instructions:', err instanceof Error ? err.message : err)
+    return undefined
+  }
+}
 
 async function main(): Promise<void> {
   // Fail fast and legibly if the schema isn't applied, instead of opaque errors
   // surfacing later inside a tool.
   await assertSchemaReady()
-  try {
-    serverInstructions = await buildInstructions()
-  } catch (err) {
-    // Instructions (cookbook + schema) are best-effort context for agents;
-    // never let them block startup. Tools still work without them.
-    console.error('[huygens-mcp] could not build server instructions:', err instanceof Error ? err.message : err)
-  }
+  const serverInstructions = await buildServerInstructions()
+  const httpServer = createHttpServer(createRequestHandler(serverInstructions))
   httpServer.listen(PORT, () => {
     console.error(`[huygens-mcp] listening on http://0.0.0.0:${PORT}/mcp`)
   })

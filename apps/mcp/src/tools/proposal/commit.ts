@@ -19,6 +19,11 @@ function toDayUtcMidnight(value: string): Date {
   return new Date(`${value.slice(0, 10)}T00:00:00.000Z`)
 }
 
+/** Split items into fixed-size batches, preserving order. Pure. */
+function chunk<T>(items: T[], size: number): T[][] {
+  return Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, i * size + size))
+}
+
 function buildNoteCreateData(note: StoredNoteCreate): Record<string, unknown> {
   const data: Record<string, unknown> = {
     title: note.title,
@@ -43,19 +48,24 @@ function buildNoteCreateData(note: StoredNoteCreate): Record<string, unknown> {
  * 3.0.5). Empirically reliable (verified 8/8). Returns the u64 as a string, or
  * null if nothing surfaced (then the changeset isn't changefeed-anchorable).
  */
+type ChangefeedRow = { versionstamp: unknown; changes: Array<{ update?: { id?: unknown } }> }
+
+/** Pure scan: the versionstamp of the changefeed row whose changes contain an
+ * update of `id`, or null if none surfaced in this batch. */
+function versionstampInRows(rows: ChangefeedRow[], id: string): string | null {
+  const row = rows.find(
+    r => r.versionstamp != null && (r.changes ?? []).some(change => change.update && String(change.update.id) === id)
+  )
+  return row ? String(row.versionstamp) : null
+}
+
 async function versionstampForProposal(proposalId: RecordId, since: string): Promise<string | null> {
   const db = await getDb()
   const id = String(proposalId)
   for (let attempt = 0; attempt < 5; attempt++) {
-    const [rows] = await db.query<[Array<{ versionstamp: unknown; changes: Array<{ update?: { id?: unknown } }> }>]>(
-      `SHOW CHANGES FOR TABLE proposal SINCE d"${since}"`
-    )
-    for (const row of rows ?? []) {
-      if (row.versionstamp == null) continue
-      for (const change of row.changes ?? []) {
-        if (change.update && String(change.update.id) === id) return String(row.versionstamp)
-      }
-    }
+    const [rows] = await db.query<[ChangefeedRow[]]>(`SHOW CHANGES FOR TABLE proposal SINCE d"${since}"`)
+    const versionstamp = versionstampInRows(rows ?? [], id)
+    if (versionstamp != null) return versionstamp
     await new Promise(resolve => setTimeout(resolve, 150))
   }
   return null
@@ -72,7 +82,7 @@ async function versionstampForProposal(proposalId: RecordId, since: string): Pro
 class CommitTx {
   readonly params: Record<string, unknown> = {}
   readonly lines: string[] = ['BEGIN;']
-  private pc = 0
+  private paramCount = 0
   /** True when this commit is a review_day ritual: its note_updates are the day's
    * dispositions, so we stamp last_reviewed_at on them (closing the day = reviewing
    * those notes). Set in build(); replay leaves it false. */
@@ -84,14 +94,14 @@ class CommitTx {
    * approved proposal. Set in build()/buildReplay(). */
   private proposalId = ''
 
-  private p(value: unknown): string {
-    const name = `v${this.pc++}`
+  private addParam(value: unknown): string {
+    const name = `v${this.paramCount++}`
     this.params[name] = value
     return `$${name}`
   }
   /** Param holding a real record id. */
-  private rid(id: string): string {
-    return this.p(new StringRecordId(id))
+  private addRecordIdParam(id: string): string {
+    return this.addParam(new StringRecordId(id))
   }
   /** A CONTENT object param that always carries edge provenance (`via_proposal`),
    * merged with any edge-specific fields (reason, action, transformation, …). */
@@ -103,7 +113,7 @@ class CommitTx {
     if (!this.proposalId) {
       throw new Error('commit invariant violated: every edge must carry via_proposal, but proposalId was not set')
     }
-    return this.p({ ...extra, via_proposal: new StringRecordId(this.proposalId) })
+    return this.addParam({ ...extra, via_proposal: new StringRecordId(this.proposalId) })
   }
 
   private appendBlocks(noteId: string, blocks: { id?: string; content: string }[]): void {
@@ -113,40 +123,57 @@ class CommitTx {
       // Use the id pre-assigned at create_proposal (stable across replay). Fall
       // back to a fresh id only for legacy payloads committed before descriptive
       // ids were stored (those still drift on replay; backfilled separately).
-      const bid = block.id ?? `block:${uuidv7().replace(/-/g, '')}`
+      const blockId = block.id ?? `block:${uuidv7().replace(/-/g, '')}`
       this.lines.push(
-        `CREATE ${this.rid(bid)} SET note = ${this.rid(noteId)}, block_kind = 'descriptive', content = ${this.p(block.content)} RETURN NONE;`
+        `CREATE ${this.addRecordIdParam(blockId)} SET note = ${this.addRecordIdParam(noteId)}, block_kind = 'descriptive', content = ${this.addParam(block.content)} RETURN NONE;`
       )
-      ids.push(bid)
-      this.descriptiveIds.push(bid)
+      ids.push(blockId)
+      this.descriptiveIds.push(blockId)
     }
-    this.lines.push(`UPDATE ${this.rid(noteId)} SET block_order += ${this.p(ids.map(id => new StringRecordId(id)))};`)
+    this.lines.push(
+      `UPDATE ${this.addRecordIdParam(noteId)} SET block_order += ${this.addParam(ids.map(id => new StringRecordId(id)))};`
+    )
   }
 
   private creates(payload: StoredProposalPayload): void {
     for (const note of payload.note_creates) {
-      this.lines.push(`CREATE ${this.rid(note.id)} CONTENT ${this.p(buildNoteCreateData(note))} RETURN NONE;`)
+      this.lines.push(
+        `CREATE ${this.addRecordIdParam(note.id)} CONTENT ${this.addParam(buildNoteCreateData(note))} RETURN NONE;`
+      )
       this.appendBlocks(note.id, note.descriptive_blocks)
     }
   }
 
-  private updates(payload: StoredProposalPayload): void {
-    for (const note of payload.note_updates) {
-      const sets: string[] = []
-      if (note.title != null) sets.push(`title = ${this.p(note.title)}`)
-      if (note.state != null) sets.push(`state = ${this.p(note.state)}`)
+  /** The SET clauses for one note_update, in stable order: title, state, the three
+   * day-granular fields (null clears via NONE, a value sets UTC midnight, undefined
+   * is skipped), the metadata merge, then the review-ritual stamp. Param-allocation
+   * order matches this clause order. */
+  private updateSetClauses(note: StoredProposalPayload['note_updates'][number]): string[] {
+    const dayFields = ['mit_for', 'due_at', 'defer_until'] as const
+    return [
+      note.title != null && `title = ${this.addParam(note.title)}`,
+      note.state != null && `state = ${this.addParam(note.state)}`,
       // Day-granular fields: null clears (SET NONE), a value sets UTC midnight.
-      for (const field of ['mit_for', 'due_at', 'defer_until'] as const) {
-        const v = note[field]
-        if (v === null) sets.push(`${field} = NONE`)
-        else if (v != null) sets.push(`${field} = ${this.p(toDayUtcMidnight(v))}`)
-      }
-      if (note.metadata_merge != null)
-        sets.push(`metadata = object::extend(metadata ?? {}, ${this.p(note.metadata_merge)})`)
+      ...dayFields.map(field => {
+        const value = note[field]
+        if (value === null) return `${field} = NONE`
+        if (value != null) return `${field} = ${this.addParam(toDayUtcMidnight(value))}`
+        return false
+      }),
+      note.metadata_merge != null &&
+        `metadata = object::extend(metadata ?? {}, ${this.addParam(note.metadata_merge)})`,
       // A review_day disposition reviews the note → stamp it (closes apuesta B,
       // makes the "never reviewed" radar actually work).
-      if (this.reviewRitual) sets.push('last_reviewed_at = time::now()')
-      if (sets.length > 0) this.lines.push(`UPDATE ${this.rid(note.id)} SET ${sets.join(', ')} RETURN NONE;`)
+      this.reviewRitual && 'last_reviewed_at = time::now()'
+    ].filter((clause): clause is string => Boolean(clause))
+  }
+
+  private updates(payload: StoredProposalPayload): void {
+    for (const note of payload.note_updates) {
+      const sets = this.updateSetClauses(note)
+      if (sets.length > 0) {
+        this.lines.push(`UPDATE ${this.addRecordIdParam(note.id)} SET ${sets.join(', ')} RETURN NONE;`)
+      }
       this.appendBlocks(note.id, note.descriptive_blocks_append)
     }
   }
@@ -156,13 +183,13 @@ class CommitTx {
       // Materialize the ritual `kind` on the block itself (plan_day/review_day…),
       // so the block is self-describing and replay/genesis preserve it. Absent for
       // a normal process informe.
-      const kindSet = block.kind ? `, kind = ${this.p(block.kind)}` : ''
+      const kindSet = block.kind ? `, kind = ${this.addParam(block.kind)}` : ''
       this.lines.push(
-        `CREATE ${this.rid(block.id)} SET block_kind = 'narrative', content = ${this.p(block.content)}, topologized_at = time::now()${kindSet} RETURN NONE;`
+        `CREATE ${this.addRecordIdParam(block.id)} SET block_kind = 'narrative', content = ${this.addParam(block.content)}, topologized_at = time::now()${kindSet} RETURN NONE;`
       )
       for (const rawId of block.raw_ids) {
         this.lines.push(
-          `RELATE ${this.rid(block.id)}->derived_from->${this.rid(rawId)} CONTENT ${this.edgeContent({ transformation: 'summarized' })} RETURN NONE;`
+          `RELATE ${this.addRecordIdParam(block.id)}->derived_from->${this.addRecordIdParam(rawId)} CONTENT ${this.edgeContent({ transformation: 'summarized' })} RETURN NONE;`
         )
       }
     }
@@ -171,14 +198,14 @@ class CommitTx {
   private topology(payload: StoredProposalPayload): void {
     for (const link of payload.about) {
       this.lines.push(
-        `RELATE ${this.rid(link.block_id)}->about->${this.rid(link.note_id)} CONTENT ${this.edgeContent()} RETURN NONE;`
+        `RELATE ${this.addRecordIdParam(link.block_id)}->about->${this.addRecordIdParam(link.note_id)} CONTENT ${this.edgeContent()} RETURN NONE;`
       )
     }
     for (const affect of payload.affects) {
       const content: Record<string, unknown> = { action: affect.action }
       if (affect.summary != null) content.summary = affect.summary
       this.lines.push(
-        `RELATE ${this.rid(affect.block_id)}->affects->${this.rid(affect.note_id)} CONTENT ${this.edgeContent(content)} RETURN NONE;`
+        `RELATE ${this.addRecordIdParam(affect.block_id)}->affects->${this.addRecordIdParam(affect.note_id)} CONTENT ${this.edgeContent(content)} RETURN NONE;`
       )
     }
   }
@@ -188,15 +215,15 @@ class CommitTx {
   private removeEdges(payload: StoredProposalPayload): void {
     for (const edge of payload.edges_remove) {
       this.lines.push(
-        `DELETE ${edge.kind} WHERE in = ${this.rid(edge.from)} AND out = ${this.rid(edge.to)} RETURN NONE;`
+        `DELETE ${edge.kind} WHERE in = ${this.addRecordIdParam(edge.from)} AND out = ${this.addRecordIdParam(edge.to)} RETURN NONE;`
       )
     }
   }
 
   private edges(payload: StoredProposalPayload): void {
     for (const edge of payload.edges) {
-      const from = this.rid(edge.from)
-      const to = this.rid(edge.to)
+      const from = this.addRecordIdParam(edge.from)
+      const to = this.addRecordIdParam(edge.to)
       // part_of is single-parent (UNIQUE in): reparenting is a replace — drop the
       // child's prior parent (if different) in the same tx so the RELATE below
       // doesn't collide with the index. Engine-verified safe on 3.0.5.
@@ -213,11 +240,11 @@ class CommitTx {
 
   private finalize(payload: StoredProposalPayload, proposalId: RecordId): void {
     this.lines.push(
-      `UPDATE raw_capture SET status = 'processed', processed_at = time::now() WHERE id IN ${this.p(payload.raw_ids.map(id => new StringRecordId(id)))};`
+      `UPDATE raw_capture SET status = 'processed', processed_at = time::now() WHERE id IN ${this.addParam(payload.raw_ids.map(id => new StringRecordId(id)))};`
     )
     // The anchor only: versionstamp (filled in afterwards) + committed_at.
     this.lines.push(
-      `UPDATE ${this.p(proposalId)} SET status = 'committed', result = { versionstamp: NONE, committed_at: time::now() };`
+      `UPDATE ${this.addParam(proposalId)} SET status = 'committed', result = { versionstamp: NONE, committed_at: time::now() };`
     )
     this.lines.push('COMMIT;')
   }
@@ -282,7 +309,9 @@ export function buildReplayTx(
  * close of the day is rejected.
  */
 async function assertRitualCommitAllowed(payload: StoredProposalPayload, input: CommitProposalInput): Promise<void> {
-  const ritualKinds = [...new Set(payload.narrative_blocks.map(b => b.kind).filter((k): k is string => Boolean(k)))]
+  const ritualKinds = [
+    ...new Set(payload.narrative_blocks.map(block => block.kind).filter((kind): kind is string => Boolean(kind)))
+  ]
   if (ritualKinds.length === 0) return // not a ritual commit — no gate
 
   // (1) explicit approval
@@ -301,13 +330,15 @@ async function assertRitualCommitAllowed(payload: StoredProposalPayload, input: 
        AND time::format(created_at + 2h, '%Y-%m-%d') = time::format(time::now() + 2h, '%Y-%m-%d')
        AND count(payload.narrative_blocks[WHERE kind IS NOT NONE]) > 0`
   )
-  const candidates = (rows ?? []).flatMap(r => r.kinded ?? [])
+  const candidates = (rows ?? []).flatMap(row => row.kinded ?? [])
   if (candidates.length > 0) {
-    const ids = candidates.map(c => new StringRecordId(String(c.id)))
+    const ids = candidates.map(candidate => new StringRecordId(String(candidate.id)))
     const [liveRows] = await db.query<[unknown[]]>('SELECT VALUE id FROM block WHERE id IN $ids', { ids })
     const live = new Set((liveRows ?? []).map(String))
-    const liveKindsToday = new Set(candidates.filter(c => live.has(String(c.id))).map(c => c.kind))
-    const dup = ritualKinds.find(k => liveKindsToday.has(k))
+    const liveKindsToday = new Set(
+      candidates.filter(candidate => live.has(String(candidate.id))).map(candidate => candidate.kind)
+    )
+    const dup = ritualKinds.find(kind => liveKindsToday.has(kind))
     if (dup) {
       throw new QueryError(
         `a ${dup} informe already exists for today (Madrid) — only one per day. If you are correcting it, retract the previous ritual block first, then commit.`
@@ -351,9 +382,9 @@ export async function commitProposalImpl(input: CommitProposalInput): Promise<Co
   // must never fail or roll back the commit. Chunked to the embedder's 64 limit.
   const newBlockIds = [...payload.narrative_blocks.map(b => b.id), ...descriptiveIds]
   if (process.env.DEEPINFRA_API_KEY && newBlockIds.length > 0) {
-    for (let i = 0; i < newBlockIds.length; i += 64) {
+    for (const batch of chunk(newBlockIds, 64)) {
       try {
-        await indexBlockImpl({ block_ids: newBlockIds.slice(i, i + 64) })
+        await indexBlockImpl({ block_ids: batch })
       } catch (err) {
         console.error(
           `[commit] post-commit embed failed; block(s) left un-indexed: ${err instanceof Error ? err.message : String(err)}`

@@ -74,9 +74,9 @@ export function edgeLabel(kind: string): string {
  */
 export function blockEmbeddingContext(subjects: GraphNodeRecord[], parents: GraphNodeRecord[]): string {
   if (subjects.length === 0) return ''
-  const lines = subjects.map(nodeLabel)
-  if (parents.length > 0) lines.push(`parte de: ${parents.map(nodeLabel).join(' ▸ ')}`)
-  return lines.join('\n')
+  const subjectLines = subjects.map(nodeLabel)
+  const parentLine = parents.length > 0 ? [`parte de: ${parents.map(nodeLabel).join(' ▸ ')}`] : []
+  return [...subjectLines, ...parentLine].join('\n')
 }
 
 /** A graph edge as a subject–predicate–object triple. `qualifier` carries edge

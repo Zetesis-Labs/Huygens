@@ -17,6 +17,36 @@ import { defineTool, jsonBlock } from './define-tool'
 type HierNode = { id: string; title: string; type: string; state: string }
 type HierEdge = { in: string; out: string }
 
+// Adjacency: parent id -> child ids (edges whose `out` is the parent).
+function childrenByParent(allEdges: HierEdge[]): Map<string, string[]> {
+  return allEdges.reduce((adjacency, edge) => {
+    const siblings = adjacency.get(edge.out) ?? []
+    return adjacency.set(edge.out, [...siblings, edge.in])
+  }, new Map<string, string[]>())
+}
+
+// Descendants of root: walk children breadth/depth-first from the adjacency map.
+function computeSubtree(allEdges: HierEdge[], root: string): { nodeIds: Set<string>; edges: HierEdge[] } {
+  const childrenOf = childrenByParent(allEdges)
+  const nodeIds = new Set([root])
+  const stack = [root]
+  while (stack.length > 0) {
+    const current = stack.pop() as string
+    for (const childId of childrenOf.get(current) ?? []) {
+      if (!nodeIds.has(childId)) {
+        nodeIds.add(childId)
+        stack.push(childId)
+      }
+    }
+  }
+  const edges = allEdges.filter(edge => nodeIds.has(edge.in) && nodeIds.has(edge.out))
+  return { nodeIds, edges }
+}
+
+function selectForest(allEdges: HierEdge[]): { nodeIds: Set<string>; edges: HierEdge[] } {
+  return { nodeIds: new Set(allEdges.flatMap(edge => [edge.in, edge.out])), edges: allEdges }
+}
+
 export async function getHierarchyImpl(root?: string): Promise<{
   root: string | null
   nodes: HierNode[]
@@ -27,45 +57,20 @@ export async function getHierarchyImpl(root?: string): Promise<{
   const db = await getDb()
   // part_of is child->parent (in=child, out=parent). Pull the full forest once.
   const [edgeRows] = await db.query<[Array<{ in: unknown; out: unknown }>]>('SELECT in, out FROM part_of')
-  const allEdges: HierEdge[] = (edgeRows ?? []).map(e => ({ in: String(e.in), out: String(e.out) }))
+  const allEdges: HierEdge[] = (edgeRows ?? []).map(edge => ({ in: String(edge.in), out: String(edge.out) }))
 
-  let nodeIds: Set<string>
-  let edges: HierEdge[]
-  if (root) {
-    // descendants of root: walk children (edges whose `out` is the current node)
-    const childrenOf = new Map<string, string[]>()
-    for (const e of allEdges) {
-      const arr = childrenOf.get(e.out)
-      if (arr) arr.push(e.in)
-      else childrenOf.set(e.out, [e.in])
-    }
-    nodeIds = new Set([root])
-    const stack = [root]
-    while (stack.length > 0) {
-      const n = stack.pop() as string
-      for (const c of childrenOf.get(n) ?? []) {
-        if (!nodeIds.has(c)) {
-          nodeIds.add(c)
-          stack.push(c)
-        }
-      }
-    }
-    edges = allEdges.filter(e => nodeIds.has(e.in) && nodeIds.has(e.out))
-  } else {
-    nodeIds = new Set(allEdges.flatMap(e => [e.in, e.out]))
-    edges = allEdges
-  }
+  const { nodeIds, edges } = root ? computeSubtree(allEdges, root) : selectForest(allEdges)
 
   const ids = [...nodeIds]
   const [noteRows] = await db.query<[Array<{ id: unknown; title: string; type: string; state: string }>]>(
     'SELECT id, title, type.slug AS type, state FROM note WHERE id IN $ids',
     { ids: ids.map(id => new StringRecordId(id)) }
   )
-  const nodes: HierNode[] = (noteRows ?? []).map(n => ({
-    id: String(n.id),
-    title: n.title,
-    type: n.type,
-    state: n.state
+  const nodes: HierNode[] = (noteRows ?? []).map(noteRow => ({
+    id: String(noteRow.id),
+    title: noteRow.title,
+    type: noteRow.type,
+    state: noteRow.state
   }))
   return { root: root ?? null, nodes, edges, node_count: nodes.length, edge_count: edges.length }
 }
@@ -178,20 +183,27 @@ export async function mitHistoryImpl(noteId?: string): Promise<{
      ORDER BY committed_at`
   )
 
-  // Flatten to per-note event lists, in commit order.
-  const byNote = new Map<string, Array<Omit<MitEvent, 'action'> & { mit_for: string | null }>>()
-  for (const r of rows ?? []) {
-    const committed_at = r.committed_at != null ? String(r.committed_at) : ''
-    const proposal_id = String(r.proposal_id)
-    const push = (id: string, mit_for: string | null, source: 'create' | 'update') => {
-      if (noteId && id !== noteId) return
-      const arr = byNote.get(id) ?? []
-      arr.push({ committed_at, proposal_id, mit_for, source })
-      byNote.set(id, arr)
-    }
-    for (const c of r.cre ?? []) push(String(c.id), c.mit_for ?? null, 'create')
-    for (const u of r.upd ?? []) push(String(u.id), u.mit_for ?? null, 'update')
-  }
+  // Flatten to per-note event lists, in commit order. Keep create-before-update
+  // ordering within a row, since that ordering feeds the assigned/moved classify.
+  const flatEvents = (rows ?? []).flatMap(proposalRow => {
+    const committed_at = proposalRow.committed_at != null ? String(proposalRow.committed_at) : ''
+    const proposal_id = String(proposalRow.proposal_id)
+    const creates = (proposalRow.cre ?? []).map(createWrite => ({
+      noteId: String(createWrite.id),
+      event: { committed_at, proposal_id, mit_for: createWrite.mit_for ?? null, source: 'create' as const }
+    }))
+    const updates = (proposalRow.upd ?? []).map(updateWrite => ({
+      noteId: String(updateWrite.id),
+      event: { committed_at, proposal_id, mit_for: updateWrite.mit_for ?? null, source: 'update' as const }
+    }))
+    return [...creates, ...updates]
+  })
+  const byNote = flatEvents
+    .filter(({ noteId: eventNoteId }) => !noteId || eventNoteId === noteId)
+    .reduce((grouped, { noteId: eventNoteId, event }) => {
+      const events = grouped.get(eventNoteId) ?? []
+      return grouped.set(eventNoteId, [...events, event])
+    }, new Map<string, Array<Omit<MitEvent, 'action'> & { mit_for: string | null }>>())
 
   if (byNote.size === 0) return { note_id: noteId ?? null, note_count: 0, event_count: 0, timeline: [] }
 
@@ -202,45 +214,50 @@ export async function mitHistoryImpl(noteId?: string): Promise<{
     { ids: ids.map(id => new StringRecordId(id)) }
   )
   const meta = new Map(
-    (noteRows ?? []).map(n => [
-      String(n.id),
-      { title: n.title ?? null, state: n.state ?? null, mit_for: n.mit_for != null ? String(n.mit_for) : null }
+    (noteRows ?? []).map(noteRow => [
+      String(noteRow.id),
+      {
+        title: noteRow.title ?? null,
+        state: noteRow.state ?? null,
+        mit_for: noteRow.mit_for != null ? String(noteRow.mit_for) : null
+      }
     ])
   )
 
-  let event_count = 0
+  // Classify each write relative to the previous non-null value in this note's
+  // own timeline: first date = assigned, a later (different) date = moved, null
+  // = cleared. A consciously soltado MIT is exactly the `cleared` row. The reduce
+  // threads `prev` through the accumulator so the map stays pure.
+  const classifyHistory = (events: Array<Omit<MitEvent, 'action'> & { mit_for: string | null }>): MitEvent[] =>
+    events.reduce<{ prev: string | null; history: MitEvent[] }>(
+      ({ prev, history }, mitEvent) => {
+        const action: MitEvent['action'] =
+          mitEvent.mit_for == null ? 'cleared' : prev == null ? 'assigned' : 'moved'
+        return { prev: mitEvent.mit_for, history: [...history, { ...mitEvent, action }] }
+      },
+      { prev: null, history: [] }
+    ).history
+
   const timeline: MitTimeline[] = ids.map(id => {
-    const events = byNote.get(id) ?? []
-    // Classify each write relative to the previous non-null value in this note's
-    // own timeline: first date = assigned, a later (different) date = moved, null
-    // = cleared. A consciously soltado MIT is exactly the `cleared` row.
-    let prev: string | null = null
-    const history: MitEvent[] = events.map(e => {
-      let action: MitEvent['action']
-      if (e.mit_for == null) action = 'cleared'
-      else if (prev == null) action = 'assigned'
-      else action = 'moved'
-      prev = e.mit_for
-      return { ...e, action }
-    })
-    event_count += history.length
-    const m = meta.get(id)
+    const history = classifyHistory(byNote.get(id) ?? [])
+    const noteMeta = meta.get(id)
     return {
       note_id: id,
-      note_title: m?.title ?? null,
-      note_state: m?.state ?? null,
-      current_mit_for: m?.mit_for ?? null,
+      note_title: noteMeta?.title ?? null,
+      note_state: noteMeta?.state ?? null,
+      current_mit_for: noteMeta?.mit_for ?? null,
       history
     }
   })
+  const event_count = timeline.reduce((total, entry) => total + entry.history.length, 0)
   // Most-recently-active timelines first.
-  timeline.sort((a, b) => {
-    const la = a.history[a.history.length - 1]?.committed_at ?? ''
-    const lb = b.history[b.history.length - 1]?.committed_at ?? ''
-    return lb.localeCompare(la)
+  const sortedTimeline = [...timeline].sort((a, b) => {
+    const lastA = a.history[a.history.length - 1]?.committed_at ?? ''
+    const lastB = b.history[b.history.length - 1]?.committed_at ?? ''
+    return lastB.localeCompare(lastA)
   })
 
-  return { note_id: noteId ?? null, note_count: timeline.length, event_count, timeline }
+  return { note_id: noteId ?? null, note_count: sortedTimeline.length, event_count, timeline: sortedTimeline }
 }
 
 export function registerViews(server: McpServer): void {

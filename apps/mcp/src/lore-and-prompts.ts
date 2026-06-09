@@ -68,21 +68,21 @@ function readDoc(relativePath: string): string {
   return readFileSync(new URL(`./${relativePath}`, import.meta.url), 'utf8')
 }
 
-export function registerLoreAndPrompts(server: McpServer): void {
-  for (const entry of LORE_ENTRIES) {
-    server.resource(
-      entry.name,
-      entry.uri,
-      { description: entry.description, mimeType: 'text/markdown' },
-      async uri => ({
-        contents: [{ uri: uri.href, mimeType: 'text/markdown', text: readDoc(entry.path) }]
-      })
-    )
-  }
+function registerLoreResource(server: McpServer, entry: LoreEntry): void {
+  server.resource(
+    entry.name,
+    entry.uri,
+    { description: entry.description, mimeType: 'text/markdown' },
+    async uri => ({
+      contents: [{ uri: uri.href, mimeType: 'text/markdown', text: readDoc(entry.path) }]
+    })
+  )
+}
 
-  // Live schema, introspected on each read (INFO FOR DB + INFO FOR TABLE). Exposed
-  // as a resource — not only in the server `instructions` — so clients that consume
-  // resources but ignore `instructions` (e.g. hermes) still get the real schema.
+// Live schema, introspected on each read (INFO FOR DB + INFO FOR TABLE). Exposed
+// as a resource — not only in the server `instructions` — so clients that consume
+// resources but ignore `instructions` (e.g. hermes) still get the real schema.
+function registerSchemaResource(server: McpServer): void {
   server.resource(
     'schema',
     'huygens://lore/schema',
@@ -94,12 +94,18 @@ export function registerLoreAndPrompts(server: McpServer): void {
       contents: [{ uri: uri.href, mimeType: 'text/markdown', text: await loadSchemaSnapshot() }]
     })
   )
+}
 
-  for (const entry of PROMPT_ENTRIES) {
-    server.prompt(entry.name, entry.description, async () => ({
-      messages: [{ role: 'user', content: { type: 'text', text: readDoc(entry.path) } }]
-    }))
-  }
+function registerPromptEntry(server: McpServer, entry: PromptEntry): void {
+  server.prompt(entry.name, entry.description, async () => ({
+    messages: [{ role: 'user', content: { type: 'text', text: readDoc(entry.path) } }]
+  }))
+}
+
+export function registerLoreAndPrompts(server: McpServer): void {
+  LORE_ENTRIES.map(entry => registerLoreResource(server, entry))
+  registerSchemaResource(server)
+  PROMPT_ENTRIES.map(entry => registerPromptEntry(server, entry))
 }
 
 export { LORE_ENTRIES, PROMPT_ENTRIES }

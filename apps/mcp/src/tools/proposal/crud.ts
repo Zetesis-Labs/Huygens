@@ -29,9 +29,10 @@ function newId(table: 'note' | 'block'): string {
  * real ids pass through untouched.
  */
 export function realizePayload(input: ProposalPayload): StoredProposalPayload {
-  const map = new Map<string, string>()
-  for (const n of input.note_creates) map.set(n.temp_id, newId('note'))
-  for (const b of input.narrative_blocks) map.set(b.temp_id, newId('block'))
+  const map = new Map<string, string>([
+    ...input.note_creates.map(n => [n.temp_id, newId('note')] as const),
+    ...input.narrative_blocks.map(b => [b.temp_id, newId('block')] as const)
+  ])
   const real = (ref: string): string => map.get(ref) ?? ref
 
   return {
@@ -88,7 +89,7 @@ export async function createProposalImpl(input: CreateProposalInput): Promise<Pr
   const db = await getDb()
   const input2 = validatePayload(input.raw_ids, proposalPayloadSchema.parse(input.payload))
   await assertRawCapturesExist(input2.raw_ids)
-  const payload = realizePayload(input2) // ids reales en todo; sin temp_id persistido
+  const payload = realizePayload(input2)
 
   const data = {
     status: 'draft',

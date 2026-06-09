@@ -74,23 +74,20 @@ async function traceFromBlock(db: Surreal, ref: StringRecordId): Promise<Gathere
   const [affects] = await db.query<[EdgeRow[]]>('SELECT in, out, action, summary FROM affects WHERE in = $id', {
     id: ref
   })
-  const needLabels = new Set<string>()
-  const sources = (derived ?? []).map(r => {
+  const sources: ProvenanceSource[] = (derived ?? []).map(r => {
     const id = idStr(r.out)
-    needLabels.add(id)
     return { id, label: id, transformation: r.transformation ?? 'inferred' }
   })
-  const links: ProvenanceLink[] = []
-  for (const r of about ?? []) {
+  const aboutLinks: ProvenanceLink[] = (about ?? []).map(r => {
     const id = idStr(r.out)
-    needLabels.add(id)
-    links.push({ relation: 'about', id, label: id })
-  }
-  for (const r of affects ?? []) {
+    return { relation: 'about', id, label: id }
+  })
+  const affectsLinks: ProvenanceLink[] = (affects ?? []).map(r => {
     const id = idStr(r.out)
-    needLabels.add(id)
-    links.push({ relation: 'affects', id, label: id, action: r.action, summary: r.summary })
-  }
+    return { relation: 'affects', id, label: id, action: r.action, summary: r.summary }
+  })
+  const links = [...aboutLinks, ...affectsLinks]
+  const needLabels = new Set([...sources, ...links].map(x => x.id))
   return { sources, links, needLabels }
 }
 

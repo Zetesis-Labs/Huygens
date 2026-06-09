@@ -17,24 +17,23 @@ function assertRawIdsMatch(inputRawIds: string[], payloadRawIds: string[]): void
 }
 
 function assertUniqueTempIds(payload: ProposalPayload): void {
-  const tempIds = new Set<string>()
-  for (const note of payload.note_creates) {
-    if (tempIds.has(note.temp_id)) throw new Error(`duplicate temp_id: ${note.temp_id}`)
-    tempIds.add(note.temp_id)
-  }
-  for (const block of payload.narrative_blocks) {
-    if (tempIds.has(block.temp_id)) throw new Error(`duplicate temp_id: ${block.temp_id}`)
-    tempIds.add(block.temp_id)
-  }
+  // Order (note_creates then narrative_blocks) is preserved so the duplicate
+  // reported is the same one the imperative scan would have caught.
+  const allTempIds = [
+    ...payload.note_creates.map(note => note.temp_id),
+    ...payload.narrative_blocks.map(block => block.temp_id)
+  ]
+  const duplicate = allTempIds.find((id, index) => allTempIds.indexOf(id) !== index)
+  if (duplicate != null) throw new Error(`duplicate temp_id: ${duplicate}`)
 }
 
 function assertNarrativeRawIdsAreDeclared(payload: ProposalPayload): void {
   const declared = new Set(payload.raw_ids)
-  for (const block of payload.narrative_blocks) {
-    for (const rawId of block.raw_ids) {
-      if (!declared.has(rawId))
-        throw new Error(`narrative block ${block.temp_id} references undeclared raw_id ${rawId}`)
-    }
+  const offender = payload.narrative_blocks
+    .flatMap(block => block.raw_ids.map(rawId => ({ block: block.temp_id, rawId })))
+    .find(({ rawId }) => !declared.has(rawId))
+  if (offender) {
+    throw new Error(`narrative block ${offender.block} references undeclared raw_id ${offender.rawId}`)
   }
 }
 
@@ -116,37 +115,47 @@ function nodeKind(id: string): 'note' | 'block' {
 export async function assertProposalRefs(payload: StoredProposalPayload): Promise<void> {
   const createdNotes = new Set(payload.note_creates.map(n => n.id))
   const createdBlocks = new Set(payload.narrative_blocks.map(b => b.id))
-  const needNotes = new Set<string>()
-  const needBlocks = new Set<string>()
-  const needNote = (id: string): void => {
-    if (!createdNotes.has(id)) needNotes.add(id)
-  }
-  const needBlock = (id: string): void => {
-    if (!createdBlocks.has(id)) needBlocks.add(id)
-  }
 
-  for (const update of payload.note_updates) needNotes.add(update.id)
-  for (const a of payload.about) {
-    if (nodeKind(a.block_id) !== 'block') throw new Error(`about.block_id must be a block: ${a.block_id}`)
-    needBlock(a.block_id)
-    needNote(a.note_id)
-  }
-  for (const a of payload.affects) {
-    if (nodeKind(a.block_id) !== 'block') throw new Error(`affects.block_id must be a block: ${a.block_id}`)
-    needBlock(a.block_id)
-    needNote(a.note_id)
-  }
+  // about/affects: the block_id endpoint must be a block; surface the first offender
+  // with the same message the imperative scan produced.
+  const badAbout = payload.about.find(a => nodeKind(a.block_id) !== 'block')
+  if (badAbout) throw new Error(`about.block_id must be a block: ${badAbout.block_id}`)
+  const badAffect = payload.affects.find(a => nodeKind(a.block_id) !== 'block')
+  if (badAffect) throw new Error(`affects.block_id must be a block: ${badAffect.block_id}`)
 
   assertSingleParentPerChild(payload.edges)
+  // Per edge (in order): both endpoints must be known refs (nodeKind throws on an
+  // unknown one), and part_of/blocked_by additionally require both to be notes.
   for (const edge of [...payload.edges, ...payload.edges_remove]) {
     const fromKind = nodeKind(edge.from)
     const toKind = nodeKind(edge.to)
     if ((edge.kind === 'part_of' || edge.kind === 'blocked_by') && (fromKind !== 'note' || toKind !== 'note')) {
       throw new Error(`${edge.kind} requires note refs`)
     }
-    fromKind === 'note' ? needNote(edge.from) : needBlock(edge.from)
-    toKind === 'note' ? needNote(edge.to) : needBlock(edge.to)
   }
+
+  // Required refs, derived declaratively. about/affects need their block + note
+  // endpoints; each edge endpoint is needed as a note or a block according to its
+  // own kind. These are filtered to the records this proposal does not itself
+  // create (mirroring the old needNote/needBlock helpers).
+  const edgeEndpoints = [...payload.edges, ...payload.edges_remove].flatMap(edge => [edge.from, edge.to])
+  const linkedNoteIds = [
+    ...payload.about.map(a => a.note_id),
+    ...payload.affects.map(a => a.note_id),
+    ...edgeEndpoints.filter(id => nodeKind(id) === 'note')
+  ]
+  const linkedBlockIds = [
+    ...payload.about.map(a => a.block_id),
+    ...payload.affects.map(a => a.block_id),
+    ...edgeEndpoints.filter(id => nodeKind(id) === 'block')
+  ]
+  // note_updates always target an existing note, so their ids are needed even when
+  // they would otherwise be created — unconditional, unlike the linked refs.
+  const needNotes = new Set([
+    ...payload.note_updates.map(update => update.id),
+    ...linkedNoteIds.filter(id => !createdNotes.has(id))
+  ])
+  const needBlocks = new Set(linkedBlockIds.filter(id => !createdBlocks.has(id)))
 
   await assertExistingRecordRefs(needNotes, needBlocks)
 }
@@ -173,18 +182,22 @@ const TEMPORAL_LEAK_KEYS = new Set([
   'deferuntil'
 ])
 
+// Normalize a metadata key for leak detection: lowercase and strip everything
+// but [a-z0-9], so `due_at`, `Due-Date`, `dueDate` all collapse onto the same
+// canonical key checked against TEMPORAL_LEAK_KEYS.
+const normalizeKey = (key: string): string => key.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+function scanMetadata(meta: Record<string, unknown> | undefined, where: string): string[] {
+  return Object.keys(meta ?? {})
+    .filter(key => TEMPORAL_LEAK_KEYS.has(normalizeKey(key)))
+    .map(key => `${where}.metadata.${key}`)
+}
+
 function assertNoTemporalLeakInMetadata(payload: ProposalPayload): void {
-  const offenders: string[] = []
-  const scan = (meta: Record<string, unknown> | undefined, where: string): void => {
-    if (!meta) return
-    for (const key of Object.keys(meta)) {
-      if (TEMPORAL_LEAK_KEYS.has(key.toLowerCase().replace(/[^a-z0-9]/g, ''))) {
-        offenders.push(`${where}.metadata.${key}`)
-      }
-    }
-  }
-  for (const note of payload.note_creates) scan(note.metadata, note.temp_id)
-  for (const note of payload.note_updates) scan(note.metadata_merge, note.id)
+  const offenders = [
+    ...payload.note_creates.flatMap(note => scanMetadata(note.metadata, note.temp_id)),
+    ...payload.note_updates.flatMap(note => scanMetadata(note.metadata_merge, note.id))
+  ]
   if (offenders.length > 0) {
     throw new Error(
       `deadline/date fields must not live in metadata (${offenders.join(', ')}): use the top-level due_at ` +

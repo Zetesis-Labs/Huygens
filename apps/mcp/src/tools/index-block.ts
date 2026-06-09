@@ -38,43 +38,39 @@ function headerForBlock(
   noteRec: Map<string, GraphNodeRecord>
 ): string {
   if (row.block_kind === 'narrative') {
-    const subjects: GraphNodeRecord[] = []
-    for (const n of aboutByBlock.get(idStr(row.id)) ?? []) {
-      const rec = noteRec.get(n)
-      if (rec) subjects.push(rec)
-    }
+    const subjects = (aboutByBlock.get(idStr(row.id)) ?? [])
+      .map(n => noteRec.get(n))
+      .filter((rec): rec is GraphNodeRecord => rec != null)
     return blockEmbeddingContext(subjects, [])
   }
   if (!row.note) return ''
   const owner = ownerMap.get(idStr(row.note))
   if (!owner) return ''
-  const parents: GraphNodeRecord[] = []
-  if (owner.parentId) {
-    const p = noteRec.get(owner.parentId)
-    if (p) parents.push(p)
-  }
+  const parents = (owner.parentId ? [noteRec.get(owner.parentId)] : []).filter(
+    (rec): rec is GraphNodeRecord => rec != null
+  )
   return blockEmbeddingContext([owner.rec], parents)
 }
 
 // Owner notes (for descriptive blocks) + the id of their single part_of parent.
 async function fetchOwners(db: Surreal, ownerIds: Set<string>): Promise<Map<string, OwnerInfo>> {
-  const map = new Map<string, OwnerInfo>()
-  if (ownerIds.size === 0) return map
+  if (ownerIds.size === 0) return new Map<string, OwnerInfo>()
   const refs = [...ownerIds].map(s => new StringRecordId(s))
   const [owners] = await db.query<[(GraphNodeRecord & { parents?: RecordIdish[] })[]]>(
     'SELECT id, title, type, state, ->part_of->note AS parents FROM note WHERE id IN $ids',
     { ids: refs }
   )
-  for (const o of owners ?? []) {
-    map.set(idStr(o.id), { rec: o, parentId: o.parents?.[0] ? idStr(o.parents[0]) : undefined })
-  }
-  return map
+  return new Map<string, OwnerInfo>(
+    (owners ?? []).map(o => [
+      idStr(o.id),
+      { rec: o, parentId: o.parents?.[0] ? idStr(o.parents[0]) : undefined }
+    ])
+  )
 }
 
 // Notes each narrative block is `about`.
 async function fetchAboutByBlock(db: Surreal, narrativeIds: string[]): Promise<Map<string, string[]>> {
-  const map = new Map<string, string[]>()
-  if (narrativeIds.length === 0) return map
+  if (narrativeIds.length === 0) return new Map<string, string[]>()
   const refs = narrativeIds.map(s => new StringRecordId(s))
   const [rows] = await db.query<[{ in: RecordIdish; out: RecordIdish }[]]>(
     'SELECT in, out FROM about WHERE in IN $ids',
@@ -82,11 +78,10 @@ async function fetchAboutByBlock(db: Surreal, narrativeIds: string[]): Promise<M
       ids: refs
     }
   )
-  for (const a of rows ?? []) {
+  return (rows ?? []).reduce((byBlock, a) => {
     const block = idStr(a.in)
-    map.set(block, [...(map.get(block) ?? []), idStr(a.out)])
-  }
-  return map
+    return byBlock.set(block, [...(byBlock.get(block) ?? []), idStr(a.out)])
+  }, new Map<string, string[]>())
 }
 
 /**
