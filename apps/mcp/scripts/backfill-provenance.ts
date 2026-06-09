@@ -1,4 +1,4 @@
-import { StringRecordId } from 'surrealdb'
+import { type RecordId, StringRecordId } from 'surrealdb'
 import { closeDb, getDb } from '../src/surreal'
 
 /**
@@ -26,7 +26,17 @@ const db = await getDb()
 const origin = new Map<string, string>()
 const key = (kind: string, a: string, b: string): string => `${kind}|${a}|${b}`
 
-const [proposals] = await db.query<[Array<{ id: unknown; payload: Record<string, any> }>]>(
+// The slice of the stored payload this backfill reads. Looser than
+// StoredProposalPayload on purpose: legacy payloads may miss fields. Stored
+// payloads speak string record ids (ADR-0028); the row id is a live RecordId.
+type ProvenancePayload = {
+  edges?: Array<{ kind: string; from: string; to: string }>
+  about?: Array<{ block_id: string; note_id: string }>
+  affects?: Array<{ block_id: string; note_id: string }>
+  narrative_blocks?: Array<{ id: string; raw_ids?: string[] }>
+}
+
+const [proposals] = await db.query<[Array<{ id: RecordId; payload: ProvenancePayload }>]>(
   "SELECT id, payload, result.committed_at AS _ca FROM proposal WHERE status = 'committed' ORDER BY _ca ASC"
 )
 for (const p of proposals ?? []) {

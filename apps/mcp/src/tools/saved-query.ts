@@ -28,16 +28,26 @@ const saveQueryShape = {
 const saveQuerySchema = z.object(saveQueryShape)
 export type SaveQueryInput = z.infer<typeof saveQuerySchema>
 
+/** Pure: shape the persisted document from the save input. */
+function buildSavedQueryDoc(input: SaveQueryInput): { name: string; pinned: boolean; query: string } {
+  return { name: input.name, pinned: input.pinned, query: input.query }
+}
+
+/** Pure: does an existence-check row set indicate the query already existed? */
+function existsFromRows(rows: { id: RecordIdish }[] | undefined): boolean {
+  return (rows?.length ?? 0) > 0
+}
+
 export async function saveQueryImpl(input: SaveQueryInput): Promise<{ id: string; updated: boolean }> {
   const db = await getDb()
-  const doc: Record<string, unknown> = { name: input.name, pinned: input.pinned, query: input.query }
+  const doc = buildSavedQueryDoc(input)
   if (input.id) {
     // Upsert: a caller-chosen id creates the query if it doesn't exist yet, and
     // updates it if it does — so agents can use a stable, memorable id without a
     // separate "does it exist?" dance.
     const id = new StringRecordId(input.id)
     const [existing] = await db.query<[{ id: RecordIdish }[]]>('SELECT id FROM $id', { id })
-    const updated = (existing?.length ?? 0) > 0
+    const updated = existsFromRows(existing)
     const [rows] = await db.query<[{ id: RecordIdish }[]]>('UPSERT $id MERGE $doc RETURN id', { id, doc })
     if (!rows?.[0]) throw new QueryError(`failed to save query: ${input.id}`)
     return { id: idStr(rows[0].id), updated }
@@ -64,27 +74,38 @@ export interface SavedQuerySummary {
   updated_at: string | null
 }
 
+type SavedQueryRow = {
+  id: RecordIdish
+  name: string
+  query?: string
+  pinned?: boolean
+  updated_at?: Date | string
+}
+
+/** Pure: normalize a raw saved_query row into the public summary shape. */
+function toSavedQuerySummary(row: SavedQueryRow): SavedQuerySummary {
+  return {
+    id: idStr(row.id),
+    name: row.name,
+    query: row.query ?? null,
+    pinned: Boolean(row.pinned),
+    updated_at: row.updated_at ? isoString(row.updated_at) : null
+  }
+}
+
+/** Pure: build the optional WHERE fragment filtering by pinned. */
+function buildPinnedWhereClause(pinned: boolean | undefined): string {
+  return pinned !== undefined ? ' WHERE pinned = $pinned' : ''
+}
+
 export async function listQueriesImpl(input: ListQueriesInput): Promise<SavedQuerySummary[]> {
   const db = await getReadOnlyDb()
-  const where = input.pinned !== undefined ? ' WHERE pinned = $pinned' : ''
-  type Row = {
-    id: RecordIdish
-    name: string
-    query?: string
-    pinned?: boolean
-    updated_at?: Date | string
-  }
-  const [rows] = await db.query<[Row[]]>(`SELECT * FROM saved_query${where} ORDER BY updated_at DESC LIMIT $limit`, {
-    pinned: input.pinned,
-    limit: input.limit
-  })
-  return (rows ?? []).map(r => ({
-    id: idStr(r.id),
-    name: r.name,
-    query: r.query ?? null,
-    pinned: Boolean(r.pinned),
-    updated_at: r.updated_at ? isoString(r.updated_at) : null
-  }))
+  const where = buildPinnedWhereClause(input.pinned)
+  const [rows] = await db.query<[SavedQueryRow[]]>(
+    `SELECT * FROM saved_query${where} ORDER BY updated_at DESC LIMIT $limit`,
+    { pinned: input.pinned, limit: input.limit }
+  )
+  return (rows ?? []).map(toSavedQuerySummary)
 }
 
 // ── run_query ──────────────────────────────────────────────────────────────
@@ -93,14 +114,20 @@ const runQueryShape = { id: QUERY_ID }
 const runQuerySchema = z.object(runQueryShape)
 export type RunQueryInput = z.infer<typeof runQuerySchema>
 
+/** Pure: pick the saved query text from rows, or throw not-found. */
+function extractSavedQueryText(rows: { query?: string }[] | undefined, id: string): string {
+  const query = rows?.[0]?.query
+  if (!query) throw new QueryError(`saved query not found: ${id}`)
+  return query
+}
+
 /** Load a saved query and execute it read-only. Returns the raw SurrealQL result. */
 export async function runQueryImpl(input: RunQueryInput): Promise<unknown[]> {
   const db = await getReadOnlyDb()
   const [rows] = await db.query<[{ query?: string }[]]>('SELECT * FROM $id', {
     id: new StringRecordId(input.id)
   })
-  const query = rows?.[0]?.query
-  if (!query) throw new QueryError(`saved query not found: ${input.id}`)
+  const query = extractSavedQueryText(rows, input.id)
   return queryQueryImpl({ query })
 }
 
@@ -109,6 +136,13 @@ export async function runQueryImpl(input: RunQueryInput): Promise<unknown[]> {
 const deleteQueryShape = { id: QUERY_ID }
 
 // ── registration ────────────────────────────────────────────────────────
+
+/** Pure: render the human-readable summary of a saved-query list. */
+function formatSavedQueryList(queries: SavedQuerySummary[]): string {
+  return queries.length === 0
+    ? 'No saved queries.'
+    : queries.map(q => `- ${q.pinned ? '★ ' : ''}${q.name} — ${q.id}`).join('\n')
+}
 
 export function registerSavedQuery(server: McpServer): void {
   defineTool(
@@ -134,10 +168,7 @@ export function registerSavedQuery(server: McpServer): void {
     listQueriesShape,
     async args => {
       const queries = await listQueriesImpl(args)
-      const text =
-        queries.length === 0
-          ? 'No saved queries.'
-          : queries.map(q => `- ${q.pinned ? '★ ' : ''}${q.name} — ${q.id}`).join('\n')
+      const text = formatSavedQueryList(queries)
       return { content: [{ type: 'text', text }, jsonBlock(queries)] }
     }
   )

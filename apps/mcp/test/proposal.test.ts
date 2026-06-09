@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { captureImpl } from '../src/tools/capture'
 import {
-  commitProposalImpl,
   createProposalImpl,
   discardProposalImpl,
   getProposalChangesImpl,
@@ -10,7 +9,7 @@ import {
   updateProposalImpl
 } from '../src/tools/proposal'
 import { setRawStatusImpl } from '../src/tools/set-raw-status'
-import { type TestDb, withFreshDb } from './_fixtures'
+import { commitPreviewed, type TestDb, withFreshDb } from './_fixtures'
 
 function payload(rawIds: string[], overrides: Partial<ProposalPayload> = {}): ProposalPayload {
   return {
@@ -35,7 +34,7 @@ function payload(rawIds: string[], overrides: Partial<ProposalPayload> = {}): Pr
     ],
     note_updates: [],
     edges: [
-      { kind: 'part_of', from: 'task1', to: 'project1' },
+      { kind: 'part_of', from: 'task1', to: 'project1', anchored: true },
       { kind: 'mentions', from: 'narrative1', to: 'task1' }
     ],
     about: [{ block_temp_id: 'narrative1', note_ref: 'task1' }],
@@ -109,7 +108,7 @@ describe('proposal v2.1-lite flow', () => {
     const rawIds = await captureMany(['raw one', 'raw two', 'raw three'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
 
-    const result = await commitProposalImpl({ proposal_id: created.id })
+    const result = await commitPreviewed({ proposal_id: created.id })
 
     expect(result.raw_ids_processed).toEqual(rawIds)
     expect(result.narrative_blocks_created).toHaveLength(1)
@@ -148,7 +147,7 @@ describe('proposal v2.1-lite flow', () => {
     const rawIds = await captureMany(['raw one', 'raw two', 'raw three'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
 
-    await commitProposalImpl({ proposal_id: created.id })
+    await commitPreviewed({ proposal_id: created.id })
 
     const committed = await getProposalImpl({ proposal_id: created.id })
     const result = committed?.result
@@ -163,7 +162,7 @@ describe('proposal v2.1-lite flow', () => {
   test('get_proposal_changes derives the delta from the payload (SSOT, no changefeed)', async () => {
     const rawIds = await captureMany(['raw one', 'raw two', 'raw three'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
-    await commitProposalImpl({ proposal_id: created.id })
+    await commitPreviewed({ proposal_id: created.id })
 
     const changes = await getProposalChangesImpl({ proposal_id: created.id })
     expect(changes.status).toBe('committed')
@@ -194,7 +193,7 @@ describe('proposal v2.1-lite flow', () => {
   test('get_proposal_changes output is JSON-serializable', async () => {
     const rawIds = await captureMany(['raw one', 'raw two', 'raw three'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
-    await commitProposalImpl({ proposal_id: created.id })
+    await commitPreviewed({ proposal_id: created.id })
 
     const changes = await getProposalChangesImpl({ proposal_id: created.id })
     expect(() => JSON.stringify(changes)).not.toThrow()
@@ -224,7 +223,7 @@ describe('proposal v2.1-lite flow', () => {
         ]
       })
     })
-    await commitProposalImpl({ proposal_id: created.id })
+    await commitPreviewed({ proposal_id: created.id })
 
     const [mits26] = await ctx.db.query<[{ title: string }[]]>(
       "SELECT title FROM note WHERE mit_for >= d'2026-05-26' AND mit_for < d'2026-05-27'"
@@ -247,7 +246,7 @@ describe('proposal v2.1-lite flow', () => {
     for (const id of noteIds) expect(id).toMatch(/^note:/)
     expect(created.payload.narrative_blocks[0]?.id).toMatch(/^block:/)
 
-    await commitProposalImpl({ proposal_id: created.id })
+    await commitPreviewed({ proposal_id: created.id })
 
     // the records now exist, created at exactly the pre-assigned ids
     const [notes] = await ctx.db.query<[{ count: number }[]]>('SELECT count() AS count FROM note GROUP ALL')
@@ -261,7 +260,7 @@ describe('proposal v2.1-lite flow', () => {
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
     await discardProposalImpl({ proposal_id: created.id })
 
-    await expect(commitProposalImpl({ proposal_id: created.id })).rejects.toThrow('proposal is not draft')
+    await expect(commitPreviewed({ proposal_id: created.id })).rejects.toThrow('proposal is not draft')
   })
 
   test('commit_proposal rejects raws that are already closed', async () => {
@@ -269,7 +268,7 @@ describe('proposal v2.1-lite flow', () => {
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
     await setRawStatusImpl({ raw_ids: rawIds, status: 'ignored' })
 
-    await expect(commitProposalImpl({ proposal_id: created.id })).rejects.toThrow('raw_capture not committable')
+    await expect(commitPreviewed({ proposal_id: created.id })).rejects.toThrow('raw_capture not committable')
   })
 
   test('commit_proposal rejects an unresolved ref before mutating the graph', async () => {
@@ -282,7 +281,7 @@ describe('proposal v2.1-lite flow', () => {
       payload: payload(rawIds, { about: [{ block_temp_id: 'missingBlock', note_ref: 'task1' }] })
     })
 
-    await expect(commitProposalImpl({ proposal_id: created.id })).rejects.toThrow('unknown node ref')
+    await expect(commitPreviewed({ proposal_id: created.id })).rejects.toThrow('unknown node ref')
 
     const [notes] = await ctx.db.query<[{ count: number }[]]>('SELECT count() AS count FROM note GROUP ALL')
     expect(notes[0]?.count ?? 0).toBe(0)

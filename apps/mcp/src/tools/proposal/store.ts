@@ -56,9 +56,14 @@ export async function fetchProposal(proposalId: string): Promise<ProposalRow | n
   return rows[0] ?? null
 }
 
-export async function requireDraftProposal(proposalId: string): Promise<ProposalRow> {
-  const proposal = await fetchProposal(proposalId)
+/** Draft-state precondition as a pure guard: the proposal must exist and be a
+ * draft. Testable without a DB. */
+export function assertDraft(proposal: ProposalRow | null, proposalId: string): ProposalRow {
   if (!proposal) throw new Error(`proposal not found: ${proposalId}`)
   if (proposal.status !== 'draft') throw new Error(`proposal is not draft: ${proposal.status}`)
   return proposal
+}
+
+export async function requireDraftProposal(proposalId: string): Promise<ProposalRow> {
+  return assertDraft(await fetchProposal(proposalId), proposalId)
 }

@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { StringRecordId } from 'surrealdb'
 import { captureImpl } from '../src/tools/capture'
 import {
-  commitProposalImpl,
   createProposalImpl,
   discardProposalImpl,
   getProposalChangesImpl,
@@ -11,7 +10,7 @@ import {
   updateProposalImpl
 } from '../src/tools/proposal'
 import { setRawStatusImpl } from '../src/tools/set-raw-status'
-import { insertNote, type TestDb, withFreshDb } from './_fixtures'
+import { commitPreviewed, insertNote, type TestDb, withFreshDb } from './_fixtures'
 
 /**
  * Lifecycle / validation coverage for proposals & commit. Companion to
@@ -153,7 +152,7 @@ describe('assertProposalRefs (at commit, after a draft is stored)', () => {
         about: [{ block_temp_id: 'narrative1', note_ref: 'note:ghost' }]
       })
     })
-    await expect(commitProposalImpl({ proposal_id: created.id })).rejects.toThrow('note not found: note:ghost')
+    await expect(commitPreviewed({ proposal_id: created.id })).rejects.toThrow('note not found: note:ghost')
     expect(await noteCount(ctx)).toBe(0)
     expect(await rawStatuses(ctx)).toEqual(['pending'])
   })
@@ -169,7 +168,7 @@ describe('assertProposalRefs (at commit, after a draft is stored)', () => {
         affects: [{ block_temp_id: 'narrative1', note_ref: 'note:ghost', action: 'linked' }]
       })
     })
-    await expect(commitProposalImpl({ proposal_id: created.id })).rejects.toThrow('note not found: note:ghost')
+    await expect(commitPreviewed({ proposal_id: created.id })).rejects.toThrow('note not found: note:ghost')
     expect(await blockCount(ctx)).toBe(0)
   })
 
@@ -186,7 +185,7 @@ describe('assertProposalRefs (at commit, after a draft is stored)', () => {
         edges: [{ kind: 'part_of', from: real.note_id, to: 'note:ghost', anchored: true }]
       })
     })
-    await expect(commitProposalImpl({ proposal_id: created.id })).rejects.toThrow('note not found: note:ghost')
+    await expect(commitPreviewed({ proposal_id: created.id })).rejects.toThrow('note not found: note:ghost')
   })
 
   test('commit rejects an edge referencing a nonexistent block record id', async () => {
@@ -201,7 +200,7 @@ describe('assertProposalRefs (at commit, after a draft is stored)', () => {
         edges: [{ kind: 'mentions', from: 'block:ghost', to: real.note_id }]
       })
     })
-    await expect(commitProposalImpl({ proposal_id: created.id })).rejects.toThrow('block not found: block:ghost')
+    await expect(commitPreviewed({ proposal_id: created.id })).rejects.toThrow('block not found: block:ghost')
   })
 })
 
@@ -219,9 +218,9 @@ describe('committability guards', () => {
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
     await setRawStatusImpl({ raw_ids: rawIds, status: 'processed' })
 
-    await expect(commitProposalImpl({ proposal_id: created.id })).rejects.toThrow('raw_capture not committable')
+    await expect(commitPreviewed({ proposal_id: created.id })).rejects.toThrow('raw_capture not committable')
     // status string is surfaced in the error
-    await expect(commitProposalImpl({ proposal_id: created.id })).rejects.toThrow(/status=processed/)
+    await expect(commitPreviewed({ proposal_id: created.id })).rejects.toThrow(/status=processed/)
     expect(await noteCount(ctx)).toBe(0)
   })
 
@@ -230,7 +229,7 @@ describe('committability guards', () => {
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
     await setRawStatusImpl({ raw_ids: rawIds, status: 'deferred' })
 
-    const result = await commitProposalImpl({ proposal_id: created.id })
+    const result = await commitPreviewed({ proposal_id: created.id })
     expect(result.notes_created).toHaveLength(2)
     expect(await rawStatuses(ctx)).toEqual(['processed'])
   })
@@ -248,9 +247,9 @@ describe('lifecycle guards: double-commit and post-commit mutation', () => {
   test('commit_proposal rejects a proposal already committed (anti double-commit)', async () => {
     const rawIds = await captureMany(['a'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
-    await commitProposalImpl({ proposal_id: created.id })
+    await commitPreviewed({ proposal_id: created.id })
 
-    await expect(commitProposalImpl({ proposal_id: created.id })).rejects.toThrow('proposal is not draft: committed')
+    await expect(commitPreviewed({ proposal_id: created.id })).rejects.toThrow('proposal is not draft: committed')
     // exactly one set of notes/blocks exists: the second commit did not re-materialize
     expect(await noteCount(ctx)).toBe(2)
   })
@@ -258,7 +257,7 @@ describe('lifecycle guards: double-commit and post-commit mutation', () => {
   test('update_proposal rejects a committed proposal', async () => {
     const rawIds = await captureMany(['a'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
-    await commitProposalImpl({ proposal_id: created.id })
+    await commitPreviewed({ proposal_id: created.id })
 
     await expect(updateProposalImpl({ proposal_id: created.id, payload: payload(rawIds) })).rejects.toThrow(
       'proposal is not draft: committed'
@@ -268,7 +267,7 @@ describe('lifecycle guards: double-commit and post-commit mutation', () => {
   test('discard_proposal rejects a committed proposal', async () => {
     const rawIds = await captureMany(['a'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
-    await commitProposalImpl({ proposal_id: created.id })
+    await commitPreviewed({ proposal_id: created.id })
 
     await expect(discardProposalImpl({ proposal_id: created.id })).rejects.toThrow('proposal is not draft: committed')
     const after = await getProposalImpl({ proposal_id: created.id })
@@ -313,7 +312,7 @@ describe('part_of single-parent enforcement at commit', () => {
       })
     })
 
-    await expect(commitProposalImpl({ proposal_id: created.id })).rejects.toThrow()
+    await expect(commitPreviewed({ proposal_id: created.id })).rejects.toThrow()
 
     // Atomic rollback: nothing materialized, raws still pending, proposal still draft.
     expect(await noteCount(ctx)).toBe(0)
@@ -348,7 +347,7 @@ describe('part_of single-parent enforcement at commit', () => {
       })
     })
 
-    await commitProposalImpl({ proposal_id: created.id })
+    await commitPreviewed({ proposal_id: created.id })
 
     // child now has exactly one parent — the new one — and the old edge is gone.
     const [newParent] = await ctx.db.query<[{ id: unknown }[]]>('SELECT id FROM note WHERE title = "New parent"')
@@ -370,7 +369,7 @@ describe('part_of single-parent enforcement at commit', () => {
         ]
       })
     })
-    await commitProposalImpl({ proposal_id: created.id })
+    await commitPreviewed({ proposal_id: created.id })
 
     const [bb] = await ctx.db.query<[{ reason: string | null }[]]>('SELECT reason FROM blocked_by')
     expect(bb).toHaveLength(1)
@@ -397,7 +396,7 @@ describe('commit result mapping & materialized changes', () => {
     expect(taskId).toMatch(/^note:/)
     expect(narrativeId).toMatch(/^block:/)
 
-    await commitProposalImpl({ proposal_id: created.id })
+    await commitPreviewed({ proposal_id: created.id })
 
     // about edge: narrative block -> the created task note.
     const [about] = await ctx.db.query<[{ in: string; out: string }[]]>('SELECT in, out FROM about')
@@ -414,7 +413,7 @@ describe('commit result mapping & materialized changes', () => {
   test('raws end up processed with a processed_at after commit', async () => {
     const rawIds = await captureMany(['a', 'b'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
-    await commitProposalImpl({ proposal_id: created.id })
+    await commitPreviewed({ proposal_id: created.id })
 
     const [rows] = await ctx.db.query<[{ status: string; processed_at: Date | null; created_at: Date }[]]>(
       'SELECT status, processed_at, created_at FROM raw_capture ORDER BY created_at'
@@ -426,7 +425,7 @@ describe('commit result mapping & materialized changes', () => {
   test('get_proposal_changes derives a real-id delta from the payload', async () => {
     const rawIds = await captureMany(['a', 'b'])
     const created = await createProposalImpl({ raw_ids: rawIds, payload: payload(rawIds) })
-    await commitProposalImpl({ proposal_id: created.id })
+    await commitPreviewed({ proposal_id: created.id })
 
     const changes = await getProposalChangesImpl({ proposal_id: created.id })
     expect(changes.status).toBe('committed')

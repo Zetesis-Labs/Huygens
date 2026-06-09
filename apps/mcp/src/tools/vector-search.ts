@@ -7,6 +7,8 @@ import { nodeLine } from '../serialize'
 import { getDb } from '../surreal'
 import { defineTool } from './define-tool'
 import { idStr } from './graph-records'
+import { noteFilters } from './lexical-search'
+import type { BlockProvenance } from './trace-provenance'
 import { provenanceByBlock } from './trace-provenance'
 
 export const vectorSearchShape = {
@@ -28,7 +30,7 @@ export const vectorSearchShape = {
   state_in: z
     .array(NoteStateSchema)
     .optional()
-    .describe('Filter by parent note state. Omit to search across all states.'),
+    .describe('Filter by parent note state. Omit to search all non-archived states (ARCHIVED is hidden by default).'),
   type_slugs: z.array(z.string()).optional().describe('Filter by parent note type slug (e.g. ["task","project"])'),
   updated_since: z
     .string()
@@ -54,41 +56,46 @@ export type SearchHit = {
   transformation: string | null
 }
 
-type Row = {
+type Row = HitRow & { distance: number }
+
+/** A SurrealDB row carrying the columns shared by the vector and lexical legs. */
+export type HitRow = {
   id: RecordId
   content: string
   block_kind: string
-  distance: number
   note_id: RecordId | null
   note_title: string | null
   note_state: string | null
 }
 
-export async function vectorSearchImpl(input: VectorSearchInput): Promise<SearchHit[]> {
-  const db = await getDb()
-  const k = input.k ?? 10
-  const ef = input.ef ?? 40
-  const { embeddings } = await embedTexts([input.query])
-  const queryVec = embeddings[0]
+/** Pure: project a SurrealDB row to a SearchHit. `scoreOf` adapts the per-leg
+ * score column (1 - distance for vector, raw score for lexical). Provenance
+ * fields are placeholders here and get filled in by `attachProvenance`. */
+export function rowToHit<R extends HitRow>(row: R, scoreOf: (row: R) => number): SearchHit {
+  return {
+    block_id: idStr(row.id),
+    block_kind: row.block_kind,
+    note_id: row.note_id ? idStr(row.note_id) : null,
+    note_title: row.note_title ?? null,
+    note_state: row.note_state ?? null,
+    content: row.content,
+    score: scoreOf(row),
+    derived_from: 0,
+    transformation: null
+  }
+}
+
+/** Pure: take an embedTexts result and return its first vector, or throw. */
+export function firstVectorOrThrow(result: { embeddings: number[][] }): number[] {
+  const [queryVec] = result.embeddings
   if (!queryVec) throw new Error('embed_text returned no vector')
+  return queryVec
+}
 
-  const filters: string[] = []
-  const bindings: Record<string, unknown> = { q: queryVec }
-  if (input.state_in?.length) {
-    filters.push('note_state IN $states')
-    bindings.states = input.state_in
-  }
-  if (input.type_slugs?.length) {
-    filters.push('note_type_slug IN $type_slugs')
-    bindings.type_slugs = input.type_slugs
-  }
-  if (input.updated_since) {
-    filters.push('note_updated_at > $since')
-    bindings.since = new Date(input.updated_since)
-  }
-  const outerWhere = filters.length > 0 ? ` WHERE ${filters.join(' AND ')}` : ''
-
-  const sql = `SELECT * FROM (
+/** Pure: build the HNSW KNN SQL for the vector leg. `where` is the outer
+ * parent-note filter (from noteFilters); `$q` is bound separately. */
+export function buildVectorSql(k: number, ef: number, where: string): string {
+  return `SELECT * FROM (
     SELECT
       id,
       content,
@@ -101,45 +108,65 @@ export async function vectorSearchImpl(input: VectorSearchInput): Promise<Search
       vector::distance::knn() AS distance
     FROM block
     WHERE embedding <|${k},${ef}|> $q
-  )${outerWhere} ORDER BY distance ASC`
+  )${where} ORDER BY distance ASC`
+}
 
-  const [rows] = await db.query<[Row[]]>(sql, bindings)
-
-  const hits: SearchHit[] = rows.map(r => ({
-    block_id: idStr(r.id),
-    block_kind: r.block_kind,
-    note_id: r.note_id ? idStr(r.note_id) : null,
-    note_title: r.note_title ?? null,
-    note_state: r.note_state ?? null,
-    content: r.content,
-    score: 1 - r.distance,
-    derived_from: 0,
-    transformation: null
+/** Pure: attach per-block provenance signals onto search hits, without mutation. */
+export function attachProvenance<T extends { block_id: string }>(
+  hits: T[],
+  prov: Map<string, BlockProvenance>
+): (T & { derived_from: number; transformation: string | null })[] {
+  return hits.map(h => ({
+    ...h,
+    derived_from: prov.get(h.block_id)?.derived_from ?? 0,
+    transformation: prov.get(h.block_id)?.transformation ?? null
   }))
+}
 
+export async function vectorSearchImpl(input: VectorSearchInput): Promise<SearchHit[]> {
+  const db = await getDb()
+  const k = input.k ?? 10
+  const ef = input.ef ?? 40
+  const queryVec = firstVectorOrThrow(await embedTexts([input.query]))
+
+  const { where, bindings: filterBindings } = noteFilters(input)
+  const sql = buildVectorSql(k, ef, where)
+  const [rows] = await db.query<[Row[]]>(sql, { ...filterBindings, q: queryVec })
+
+  const hits = rows.map(r => rowToHit(r, row => 1 - row.distance))
   const filtered = input.threshold != null ? hits.filter(h => h.score >= (input.threshold ?? 0)) : hits
   const prov = await provenanceByBlock(filtered.map(h => h.block_id))
-  for (const h of filtered) {
-    const p = prov.get(h.block_id)
-    h.derived_from = p?.derived_from ?? 0
-    h.transformation = p?.transformation ?? null
-  }
-  return filtered
+  return attachProvenance(filtered, prov)
+}
+
+/** Pure: the head of a hit line — the note line if backed by a note, else the
+ * bare block kind/id. */
+export function hitHead(hit: SearchHit): string {
+  return hit.note_id
+    ? nodeLine({ id: hit.note_id, title: hit.note_title ?? hit.note_id, state: hit.note_state ?? undefined })
+    : `${hit.block_kind} — ${hit.block_id}`
+}
+
+/** Pure: the content snippet, truncated to 100 chars with newlines flattened. */
+export function hitSnippet(hit: SearchHit): string {
+  return `${hit.content.slice(0, 100).replace(/\n/g, ' ')}${hit.content.length > 100 ? '…' : ''}`
+}
+
+/** Pure: the provenance suffix (⟵ N raw …) when the hit derives from captures. */
+export function hitProv(hit: SearchHit): string {
+  return hit.derived_from > 0
+    ? `  ⟵ ${hit.derived_from} raw${hit.transformation ? ` (${hit.transformation})` : ''}`
+    : ''
+}
+
+/** Pure: one summary line for a hit, prefixed by a leg-specific score tag. */
+export function formatHitLine(hit: SearchHit, scoreTag: string): string {
+  return `- ${scoreTag} ${hitHead(hit)} :: ${hitSnippet(hit)}${hitProv(hit)}`
 }
 
 function summarize(hits: SearchHit[]): string {
   if (hits.length === 0) return 'No matches.'
-  return hits
-    .map(h => {
-      const head = h.note_id
-        ? nodeLine({ id: h.note_id, title: h.note_title ?? h.note_id, state: h.note_state ?? undefined })
-        : `${h.block_kind} — ${h.block_id}`
-      const snippet = `${h.content.slice(0, 100).replace(/\n/g, ' ')}${h.content.length > 100 ? '…' : ''}`
-      const prov =
-        h.derived_from > 0 ? `  ⟵ ${h.derived_from} raw${h.transformation ? ` (${h.transformation})` : ''}` : ''
-      return `- [${h.score.toFixed(3)}] ${head} :: ${snippet}${prov}`
-    })
-    .join('\n')
+  return hits.map(h => formatHitLine(h, `[${h.score.toFixed(3)}]`)).join('\n')
 }
 
 export function registerVectorSearch(server: McpServer): void {

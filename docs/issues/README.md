@@ -16,3 +16,5 @@ Cada documento tiene IDs estables (`ARCH-NNN`, `BUG-NNN`, etc.) referenciables d
 | Fecha | Documento | Issues |
 |---|---|---|
 | 2026-05-21 | [Architecture review](./2026-05-21-architecture-review.md) | ARCH-001 → ARCH-013 |
+| 2026-06-09 | [Doctrina: enforcement sin señalizar y copias con drift](./2026-06-09-doctrine-enforcement-and-drift.md) | DOCT-001 → DOCT-006 |
+| 2026-06-09 | [Modelo de uso: el sistema real ya no es el documentado](./2026-06-09-usage-model-review.md) | USE-001 → USE-005 |

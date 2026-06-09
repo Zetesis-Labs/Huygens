@@ -66,4 +66,13 @@ describe('vectorSearchImpl', () => {
     expect(hits.length).toBeGreaterThan(0)
     expect(hits.every(h => h.note_state === 'ACTIVE')).toBe(true)
   })
+
+  test('hides ARCHIVED notes by default when no state_in is given', async () => {
+    await seed(ctx, 'Active note', 'Functor pattern note.', 'ACTIVE')
+    await seed(ctx, 'Archived note', 'Functor pattern note.', 'ARCHIVED')
+
+    const hits = await vectorSearchImpl({ query: 'functor pattern', k: 5, ef: 40 })
+    expect(hits.length).toBeGreaterThan(0)
+    expect(hits.every(h => h.note_state !== 'ARCHIVED')).toBe(true)
+  })
 })

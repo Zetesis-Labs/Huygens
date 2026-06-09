@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { type RecordId, StringRecordId, Surreal } from 'surrealdb'
 import { setDbOverride, setReadOnlyDbOverride } from '../src/surreal'
+import { commitProposalImpl, getProposalImpl } from '../src/tools/proposal'
 
 const SCHEMA_SQL = readFileSync(new URL('../surreal/schema.surql', import.meta.url), 'utf8')
 const SEED_SQL = readFileSync(new URL('../surreal/seed.surql', import.meta.url), 'utf8')
@@ -153,4 +154,17 @@ export async function insertNote(db: Surreal, input: InsertNoteInput): Promise<I
   await db.query('UPDATE $note SET block_order = $order', { note: note.id, order: blockIds })
 
   return { note_id: String(note.id), block_ids: blockIds.map(String) }
+}
+
+/**
+ * Preview-then-commit, the way a real client satisfies the preview muro:
+ * `get_proposal` stamps `previewed_at`, then `commit_proposal` accepts. Tests
+ * that exercise the muro itself call commitProposalImpl directly instead.
+ */
+export async function commitPreviewed(input: {
+  proposal_id: string
+  approved?: boolean
+}): Promise<Awaited<ReturnType<typeof commitProposalImpl>>> {
+  await getProposalImpl({ proposal_id: input.proposal_id })
+  return commitProposalImpl(input)
 }

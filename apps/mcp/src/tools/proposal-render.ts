@@ -18,10 +18,10 @@ function plural(n: number, singular: string, suffix = 's'): string {
  * (notes the proposal only links/updates) fall back to their id.
  */
 function buildLabels(payload: StoredProposalPayload): Map<string, string> {
-  const labels = new Map<string, string>()
-  for (const note of payload.note_creates) labels.set(note.id, `"${note.title}"`)
-  for (const block of payload.narrative_blocks) labels.set(block.id, '[informe]')
-  return labels
+  return new Map<string, string>([
+    ...payload.note_creates.map(note => [note.id, `"${note.title}"`] as const),
+    ...payload.narrative_blocks.map(block => [block.id, '[informe]'] as const)
+  ])
 }
 
 function labelFor(ref: string, labels: Map<string, string>): string {
@@ -39,95 +39,108 @@ function rawSection(payload: StoredProposalPayload): string[] {
   ]
 }
 
+function createExtras(note: StoredProposalPayload['note_creates'][number]): string[] {
+  const metaKeys = note.metadata ? Object.keys(note.metadata) : []
+  return [
+    note.descriptive_blocks.length > 0 &&
+      `+${note.descriptive_blocks.length} ${plural(note.descriptive_blocks.length, 'descriptive block')}`,
+    note.mit_for && `MIT ${note.mit_for}`,
+    note.due_at && `due ${note.due_at}`,
+    note.defer_until && `defer ${note.defer_until}`,
+    metaKeys.length > 0 && `metadata: ${metaKeys.join(', ')}`
+  ].filter((extra): extra is string => Boolean(extra))
+}
+
+function createLine(note: StoredProposalPayload['note_creates'][number]): string {
+  const extras = createExtras(note)
+  const suffix = extras.length > 0 ? ` · ${extras.join(' · ')}` : ''
+  return `  • "${note.title}"  ${note.type_slug} · ${note.state}${suffix}  (${note.id})`
+}
+
 function createSection(payload: StoredProposalPayload): string[] {
   if (payload.note_creates.length === 0) return []
-  const lines = [`CREATE ${payload.note_creates.length} ${plural(payload.note_creates.length, 'note')}:`]
-  for (const note of payload.note_creates) {
-    const extras: string[] = []
-    if (note.descriptive_blocks.length > 0) {
-      extras.push(`+${note.descriptive_blocks.length} ${plural(note.descriptive_blocks.length, 'descriptive block')}`)
-    }
-    if (note.mit_for) extras.push(`MIT ${note.mit_for}`)
-    if (note.due_at) extras.push(`due ${note.due_at}`)
-    if (note.defer_until) extras.push(`defer ${note.defer_until}`)
-    const metaKeys = note.metadata ? Object.keys(note.metadata) : []
-    if (metaKeys.length > 0) extras.push(`metadata: ${metaKeys.join(', ')}`)
-    const suffix = extras.length > 0 ? ` · ${extras.join(' · ')}` : ''
-    lines.push(`  • "${note.title}"  ${note.type_slug} · ${note.state}${suffix}  (${note.id})`)
-  }
-  return lines
+  const header = `CREATE ${payload.note_creates.length} ${plural(payload.note_creates.length, 'note')}:`
+  return [header, ...payload.note_creates.map(createLine)]
+}
+
+/** Render a day-granular field change: `null` is an explicit clear, a value is a
+ * set, `undefined` (field absent from the update) yields no change line. */
+function tristate(value: string | null | undefined, label: string): string | null {
+  if (value === null) return `${label} → cleared`
+  if (value != null) return `${label} → ${value}`
+  return null
+}
+
+function isNotNull(value: string | null): value is string {
+  return value != null
 }
 
 function updateChanges(note: StoredProposalPayload['note_updates'][number]): string {
-  const changes: string[] = []
-  if (note.title != null) changes.push(`title → "${note.title}"`)
-  if (note.state != null) changes.push(`state → ${note.state}`)
-  if (note.mit_for === null) changes.push('MIT → cleared')
-  else if (note.mit_for != null) changes.push(`MIT → ${note.mit_for}`)
-  if (note.due_at === null) changes.push('due → cleared')
-  else if (note.due_at != null) changes.push(`due → ${note.due_at}`)
-  if (note.defer_until === null) changes.push('defer → cleared')
-  else if (note.defer_until != null) changes.push(`defer → ${note.defer_until}`)
   const mergeKeys = note.metadata_merge ? Object.keys(note.metadata_merge) : []
-  if (mergeKeys.length > 0) changes.push(`metadata: ${mergeKeys.join(', ')}`)
-  if (note.descriptive_blocks_append.length > 0) {
-    changes.push(
-      `+${note.descriptive_blocks_append.length} ${plural(note.descriptive_blocks_append.length, 'descriptive block')}`
-    )
-  }
+  const changes = [
+    note.title != null ? `title → "${note.title}"` : null,
+    note.state != null ? `state → ${note.state}` : null,
+    tristate(note.mit_for, 'MIT'),
+    tristate(note.due_at, 'due'),
+    tristate(note.defer_until, 'defer'),
+    mergeKeys.length > 0 ? `metadata: ${mergeKeys.join(', ')}` : null,
+    note.descriptive_blocks_append.length > 0
+      ? `+${note.descriptive_blocks_append.length} ${plural(note.descriptive_blocks_append.length, 'descriptive block')}`
+      : null
+  ].filter(isNotNull)
   return changes.length > 0 ? changes.join(' · ') : 'no field changes'
 }
 
 function updateSection(payload: StoredProposalPayload): string[] {
   if (payload.note_updates.length === 0) return []
-  const lines = [`UPDATE ${payload.note_updates.length} ${plural(payload.note_updates.length, 'note')}:`]
-  for (const note of payload.note_updates) lines.push(`  • ${note.id}  ${updateChanges(note)}`)
-  return lines
+  const header = `UPDATE ${payload.note_updates.length} ${plural(payload.note_updates.length, 'note')}:`
+  return [header, ...payload.note_updates.map(note => `  • ${note.id}  ${updateChanges(note)}`)]
 }
 
 function narrativeSection(payload: StoredProposalPayload): string[] {
   if (payload.narrative_blocks.length === 0) return []
-  const lines = [
-    `CREATE ${payload.narrative_blocks.length} ${plural(payload.narrative_blocks.length, 'narrative block')}:`
+  const header = `CREATE ${payload.narrative_blocks.length} ${plural(payload.narrative_blocks.length, 'narrative block')}:`
+  return [
+    header,
+    ...payload.narrative_blocks.map(block => `  • "${oneLine(block.content)}"  ← from ${block.raw_ids.join(', ')}`)
   ]
-  for (const block of payload.narrative_blocks) {
-    lines.push(`  • "${oneLine(block.content)}"  ← from ${block.raw_ids.join(', ')}`)
-  }
-  return lines
 }
 
 function edgeSection(payload: StoredProposalPayload, labels: Map<string, string>, createdNotes: Set<string>): string[] {
   if (payload.edges.length === 0) return []
-  const lines = [`Graph edges (${payload.edges.length}):`]
-  for (const edge of payload.edges) {
-    const reason = edge.reason ? `  (${oneLine(edge.reason)})` : ''
-    // part_of onto a pre-existing note is a replace: the commit drops the prior parent.
-    const replace = edge.kind === 'part_of' && !createdNotes.has(edge.from) ? '  (reemplaza padre anterior)' : ''
-    lines.push(`  • ${labelFor(edge.from, labels)} —${edge.kind}→ ${labelFor(edge.to, labels)}${reason}${replace}`)
-  }
-  return lines
+  const header = `Graph edges (${payload.edges.length}):`
+  return [
+    header,
+    ...payload.edges.map(edge => {
+      const reason = edge.reason ? `  (${oneLine(edge.reason)})` : ''
+      // part_of onto a pre-existing note is a replace: the commit drops the prior parent.
+      const replace = edge.kind === 'part_of' && !createdNotes.has(edge.from) ? '  (reemplaza padre anterior)' : ''
+      return `  • ${labelFor(edge.from, labels)} —${edge.kind}→ ${labelFor(edge.to, labels)}${reason}${replace}`
+    })
+  ]
 }
 
 function edgesRemovedSection(payload: StoredProposalPayload, labels: Map<string, string>): string[] {
   if (payload.edges_remove.length === 0) return []
-  const lines = [`Edges removed (${payload.edges_remove.length}):`]
-  for (const edge of payload.edges_remove) {
-    lines.push(`  • ${labelFor(edge.from, labels)} —${edge.kind}✕→ ${labelFor(edge.to, labels)}`)
-  }
-  return lines
+  const header = `Edges removed (${payload.edges_remove.length}):`
+  return [
+    header,
+    ...payload.edges_remove.map(
+      edge => `  • ${labelFor(edge.from, labels)} —${edge.kind}✕→ ${labelFor(edge.to, labels)}`
+    )
+  ]
 }
 
 function topologySection(payload: StoredProposalPayload, labels: Map<string, string>): string[] {
   if (payload.about.length === 0 && payload.affects.length === 0) return []
-  const lines = ['Topology:']
-  for (const a of payload.about) {
-    lines.push(`  • about:   ${labelFor(a.block_id, labels)} → ${labelFor(a.note_id, labels)}`)
-  }
-  for (const a of payload.affects) {
-    const summary = a.summary ? ` "${oneLine(a.summary)}"` : ''
-    lines.push(`  • affects: ${labelFor(a.block_id, labels)} → ${labelFor(a.note_id, labels)}  (${a.action})${summary}`)
-  }
-  return lines
+  return [
+    'Topology:',
+    ...payload.about.map(a => `  • about:   ${labelFor(a.block_id, labels)} → ${labelFor(a.note_id, labels)}`),
+    ...payload.affects.map(a => {
+      const summary = a.summary ? ` "${oneLine(a.summary)}"` : ''
+      return `  • affects: ${labelFor(a.block_id, labels)} → ${labelFor(a.note_id, labels)}  (${a.action})${summary}`
+    })
+  ]
 }
 
 /** Counts computed deterministically from the payload. */

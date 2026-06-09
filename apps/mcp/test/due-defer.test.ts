@@ -1,12 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { captureImpl } from '../src/tools/capture'
-import {
-  commitProposalImpl,
-  createProposalImpl,
-  getProposalChangesImpl,
-  type ProposalPayload
-} from '../src/tools/proposal'
-import { type TestDb, withFreshDb } from './_fixtures'
+import { createProposalImpl, getProposalChangesImpl, type ProposalPayload } from '../src/tools/proposal'
+import { commitPreviewed, type TestDb, withFreshDb } from './_fixtures'
 
 /**
  * Coverage for the temporal axes due_at / defer_until: write + UTC-midnight
@@ -45,7 +40,7 @@ describe('due_at / defer_until', () => {
   async function commitTaskAndRead(note: Record<string, unknown>): Promise<{ due_at: unknown; defer_until: unknown }> {
     const raw = await capture('a task with temporal fields')
     const proposal = await createProposalImpl({ raw_ids: [raw], payload: taskPayload([raw], note) })
-    await commitProposalImpl({ proposal_id: proposal.id })
+    await commitPreviewed({ proposal_id: proposal.id })
     const [rows] = await ctx.db.query<[Array<{ due_at: unknown; defer_until: unknown }>]>(
       "SELECT due_at, defer_until FROM note WHERE type.slug = 'task' AND title = 'Temporal task'"
     )
@@ -75,7 +70,7 @@ describe('due_at / defer_until', () => {
       raw_ids: [raw],
       payload: taskPayload([raw], { due_at: '2026-06-10', defer_until: '2026-06-12' })
     })
-    await commitProposalImpl({ proposal_id: proposal.id })
+    await commitPreviewed({ proposal_id: proposal.id })
     const changes = await getProposalChangesImpl({ proposal_id: proposal.id })
     const created = changes?.changes.notes_created[0]
     expect(created?.due_at).toBe('2026-06-10')
@@ -88,7 +83,7 @@ describe('due_at / defer_until', () => {
       raw_ids: [raw],
       payload: taskPayload([raw], { due_at: '2026-06-10', defer_until: '2026-06-12' })
     })
-    await commitProposalImpl({ proposal_id: proposal.id })
+    await commitPreviewed({ proposal_id: proposal.id })
     const [created] = await ctx.db.query<[Array<{ id: string }>]>(
       "SELECT meta::id(id) AS id FROM note WHERE title = 'Temporal task'"
     )
@@ -107,7 +102,7 @@ describe('due_at / defer_until', () => {
         affects: []
       } as unknown as ProposalPayload
     })
-    await commitProposalImpl({ proposal_id: clear.id })
+    await commitPreviewed({ proposal_id: clear.id })
     const [rows] = await ctx.db.query<[Array<{ due_at: unknown; defer_until: unknown }>]>(
       'SELECT due_at, defer_until FROM note WHERE title = $t',
       { t: 'Temporal task' }
@@ -133,7 +128,7 @@ describe('due_at / defer_until', () => {
         affects: []
       } as unknown as ProposalPayload
     })
-    await commitProposalImpl({ proposal_id: dormant.id })
+    await commitPreviewed({ proposal_id: dormant.id })
 
     const liveRaw = await capture('live task')
     const live = await createProposalImpl({
@@ -148,7 +143,7 @@ describe('due_at / defer_until', () => {
         affects: []
       } as unknown as ProposalPayload
     })
-    await commitProposalImpl({ proposal_id: live.id })
+    await commitPreviewed({ proposal_id: live.id })
 
     const [radar] = await ctx.db.query<[Array<{ title: string }>]>(
       `SELECT title FROM note

@@ -83,7 +83,7 @@ export function registerProposalTools(server: McpServer): void {
     getProposalChangesShape,
     async args => {
       const changes = await getProposalChangesImpl(args)
-      return { content: [{ type: 'text', text: JSON.stringify(changes, null, 2) }] }
+      return { content: [jsonBlock(changes)] }
     }
   )
 

@@ -30,14 +30,19 @@ export type ProposalChanges = {
 }
 
 function updatedFields(u: StoredProposalPayload['note_updates'][number]): string[] {
-  const f: string[] = []
-  if (u.title != null) f.push('title')
-  if (u.state != null) f.push('state')
-  if (u.mit_for !== undefined) f.push('mit_for')
-  if (u.due_at !== undefined) f.push('due_at')
-  if (u.defer_until !== undefined) f.push('defer_until')
-  if (u.metadata_merge != null) f.push('metadata')
-  return f
+  // The null/undefined asymmetry is intentional and part of the output contract:
+  // title/state/metadata report on presence (!= null), while the day-granular
+  // mit_for/due_at/defer_until report on any key presence (!== undefined) because
+  // null there means "clear the field" and must still count as a change.
+  const FIELD_CHECKS = [
+    ['title', u.title != null],
+    ['state', u.state != null],
+    ['mit_for', u.mit_for !== undefined],
+    ['due_at', u.due_at !== undefined],
+    ['defer_until', u.defer_until !== undefined],
+    ['metadata', u.metadata_merge != null]
+  ] as const
+  return FIELD_CHECKS.filter(([, present]) => present).map(([name]) => name)
 }
 
 function summarize(payload: StoredProposalPayload): ProposalChanges['changes'] {
@@ -74,6 +79,13 @@ function summarize(payload: StoredProposalPayload): ProposalChanges['changes'] {
   }
 }
 
+/** Normalize a commit anchor for transport: null passes through, a Date becomes
+ * ISO, anything else is stringified. Pure. */
+function normalizeCommittedAt(value: unknown): string | null {
+  if (value == null) return null
+  return value instanceof Date ? value.toISOString() : String(value)
+}
+
 /**
  * The delta a proposal applies, read straight from its payload — the SSOT. The
  * stored payload (real ids) IS the set of mutations: notes created/updated, blocks,
@@ -84,11 +96,10 @@ function summarize(payload: StoredProposalPayload): ProposalChanges['changes'] {
 export async function getProposalChangesImpl(input: GetProposalInput): Promise<ProposalChanges> {
   const proposal = await fetchProposal(input.proposal_id)
   if (!proposal) throw new Error(`proposal not found: ${input.proposal_id}`)
-  const ca: unknown = proposal.result?.committed_at
   return {
     proposal_id: idStr(proposal.id),
     status: proposal.status,
-    committed_at: ca == null ? null : ca instanceof Date ? ca.toISOString() : String(ca),
+    committed_at: normalizeCommittedAt(proposal.result?.committed_at),
     source: 'payload',
     changes: summarize(proposal.payload)
   }

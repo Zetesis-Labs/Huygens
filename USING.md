@@ -1,34 +1,14 @@
 # Using Huygens
 
-Huygens is a personal memory MCP. The conceptual model lives in
-[`docs/MODEL.md`](./docs/MODEL.md); agent operating rules live in the **operating
-doctrine**, served by the MCP as the `huygens://lore/operating-doctrine` resource
-([`apps/mcp/src/lore/operating-doctrine.md`](./apps/mcp/src/lore/operating-doctrine.md)).
-(`docs/CONVENTIONS.md` is now a stub redirecting there.)
-
-Target direction:
-
-```text
-capture during the day
-  -> raw_capture inbox
-  -> deliberate processing session
-  -> one or more approved narrative blocks
-  -> visible mutation proposal
-  -> graph commit
-```
-
-## Current State
-
-The v2.1-lite path is implemented in schema and MCP tools:
-
-- `raw_capture.status` drives the inbox.
-- `proposal` stores visible drafts.
-- `commit_proposal` is the approval/commit boundary.
-- `block.block_kind='narrative'` represents the approved informe-block.
-
-The legacy `raw -> clarify -> notes` path has been removed. There is no
-`commit_clarify`, no persistent `generate_report`, and no autonomous inbox
-worker.
+Huygens is a personal structured memory: you talk to a conversational agent,
+the agent uses the MCP, the MCP persists in SurrealDB. The conceptual model
+lives in [`docs/MODEL.md`](./docs/MODEL.md); how an agent must behave lives in
+the **operating doctrine** ([`apps/mcp/src/lore/operating-doctrine.md`](./apps/mcp/src/lore/operating-doctrine.md),
+served as the `huygens://lore/operating-doctrine` resource); the physical
+contract (entities, edges, proposal lifecycle, **tools surface**) lives in
+[`apps/mcp/src/lore/data-model.md`](./apps/mcp/src/lore/data-model.md). This
+file is the human-facing *how to run and use it* — it does not duplicate those
+contracts (copies drift; see `docs/issues/2026-06-09`).
 
 ## Boot
 
@@ -36,33 +16,28 @@ worker.
 docker compose -f .devcontainer/docker-compose.yml up -d
 ```
 
-The compose stack includes:
-
 | Service | What |
 |---|---|
-| `surrealdb` | SurrealDB with graph/document/vector storage |
+| `surrealdb` | SurrealDB (graph/document/vector storage) |
 | `huygens-mcp` | TS MCP server at `http://localhost:3030/mcp` |
-| `huygens-worker` | Python MCP shell for future specialized workers, excluded by default via profile |
+| `huygens-dashboard` | Astro+React dashboard at `http://localhost:4321` — graph canvas, MITs, Bitácora, inbox, proposal commit UI. SSR reads SurrealDB as the read-only reader |
+| `huygens-worker` | Dashboard chat agent (Agno + OpenAI) over AG-UI on the internal network; **starts by default** (`WORKER_ENABLED:-true`). Its toolset **excludes `commit_proposal`** — committing stays human |
 | `surrealdb-init` | One-shot volume preparation |
 | `app` | Devcontainer shell/runtime |
 
 First-time setup needs API keys:
 
 ```text
-apps/mcp/.env                 DEEPINFRA_API_KEY
-backend/huygens-worker/.env   optional MCP worker shell config
+apps/mcp/.env                 DEEPINFRA_API_KEY   (embeddings, BGE-M3)
+backend/huygens-worker/.env   OPENAI_API_KEY      (dashboard chat agent)
 ```
 
-Verify:
+Verify with `docker compose -f .devcontainer/docker-compose.yml ps`.
 
-```bash
-docker compose -f .devcontainer/docker-compose.yml ps
-```
+## Connecting an agent
 
-## Connecting An Agent
-
-Add Huygens to an MCP-capable client such as Claude Code, Codex, Hermes,
-Cursor or Claude Desktop.
+Add Huygens to any MCP-capable client (Claude Code, Codex, Hermes, Cursor,
+Claude Desktop):
 
 ```json
 {
@@ -75,154 +50,109 @@ Cursor or Claude Desktop.
 }
 ```
 
-The user talks to the agent. The agent uses the MCP. The MCP persists in
-SurrealDB.
+The MCP injects the doctrine + SurrealQL cookbook + live schema as server
+`instructions` on connect, and serves the same content as `huygens://lore/*`
+resources for clients that ignore instructions.
 
-## Intended Day-To-Day Flow
+## Two conversational surfaces
 
-### Capture
+| | Full MCP client (Claude Code, …) | Dashboard chat (worker) |
+|---|---|---|
+| Can commit proposals | yes (after your approval) | **no** — it drafts; you commit from the proposal UI |
+| Best for | processing sessions, rituals, anything end-to-end | consulting the graph, visual exploration (canvas), quick captures and corrections |
+| Doctrine delivery | MCP `instructions` / resources | fetched from the MCP at startup; the worker **refuses to start** without it (`ALLOW_DEGRADED_DOCTRINE=true` to override) |
 
-User:
+## The daily loop (the primary usage pattern)
 
-```text
-Guarda que Govoy sigue bloqueado por Stripe y mañana tengo que escribirles.
-```
+Huygens is not just an archive — the day-to-day surface is a loop around **one
+daily ritual, la jornada** (`day` prompt). There is deliberately no plan/review
+split: a jornada **settles what was left pending and orients the day** in a
+single narrative, usually at the start of the day. If yesterday wasn't
+concluded, it gets concluded at the start of the next one.
 
-Agent action:
+1. **La jornada** (usually morning): overdue MITs and deadlines get a
+   disposition (done / still on / move / drop), then you optionally pick MITs
+   for today (1–3 by convention — a convention, not a wall). The whole thing is
+   committed as ONE `kind: day` informe-block, shown in the **Bitácora**. The
+   narrative can be as chaotic as you like — the structure lives in the
+   accompanying mutations, not in the text.
+2. **During the day**: capture freely (`capture` — cheap, no ceremony, no
+   interpretation), and apply corrections as they happen ("eso ya está hecho",
+   "X pasa a WAITING") — those are *normal* minimal proposals, no `kind`, no
+   re-asking. Deadlines and snoozes live on the note: `due_at` (hard
+   commitment) and `defer_until` (tickler — hidden from the radar until that
+   day). The agent may *suggest* them; you decide.
+3. **La semana** (`week` prompt, weekly): the maintenance review — WAITING,
+   resurfacing deferred tasks, incoming deadlines, SOMEDAY promotions, never-
+   reviewed notes, the deferred inbox. One `kind: week` informe per ISO week.
 
-```text
-capture(content, source_kind="chat")
-```
+Rituals require your explicit OK (`approved: true` is only passed after it),
+are unique per Madrid day / ISO week (server-enforced, DST-correct), and the
+dashboard nudges you when today has no jornada. A mid-afternoon status change
+is **not** a jornada — it's a normal correction. The old `plan_day`/`review_day`
+kinds are legacy: historic entries keep rendering, new ones are rejected.
 
-Result: a `raw_capture` exists with `status='pending'`. No topology decision
-has been made yet.
+## Processing the inbox (the deliberate session)
 
-### Process Inbox
-
-When the user says:
+Capture and interpretation are decoupled on purpose: raws pile up in the inbox
+(`status='pending'`) and you process them when you decide to — typically a few
+times a week, via the `process_inbox` prompt:
 
 ```text
 Procesemos el inbox.
 ```
 
-The agent should inspect pending raws, usually via `list_inbox`, then discuss
-them with the user. Several raws can become one narrative block if they are
-about the same matter.
+The agent lists pending raws, groups the ones that belong to the same matter,
+and discusses an interpretation with you. Several raws can become one
+narrative informe-block. Raws that should not become topology are dispatched
+with `set_raw_status` (`ignored` / `deferred` / `processed`).
 
-Example inbox:
+## Propose → commit
 
-```text
-raw 1: Govoy sigue bloqueado por Stripe.
-raw 2: Mañana tengo que escribirles.
-raw 3: No quiero que Govoy se quede parado por esto.
-```
+The agent persists a **visible draft** with `create_proposal` (real record ids
+are assigned at create time; the stored payload is the SSOT of the change).
+You review the diff (`get_proposal`), ask for edits (`update_proposal`),
+discard (`discard_proposal`) or approve.
 
-### Propose
+Only after approval does `commit_proposal` run — one atomic SurrealDB
+transaction (all-or-nothing) that creates the narrative block(s), notes,
+edges, marks the raws `processed`, and stamps the proposal with the
+changefeed `versionstamp`. New blocks are **auto-embedded post-commit**
+(best-effort; a failed embed never rolls back the commit — `db:reindex`
+backfills). `get_proposal_changes` returns the exact delta, read from the
+stored payload; the graphical view lives in the dashboard.
 
-The agent proposes:
+## Asking questions (grounding)
 
-```text
-Raws:
-- raw 1
-- raw 2
-- raw 3
+Use Huygens as the source the agent *cites*, not only the place it writes to.
+The doctrine instructs agents to answer from the graph: retrieve connected
+context (`expand_context` / `neighborhood`), verify claims against the graph
+before asserting them (`check_claim`), and cite the literal evidence behind an
+interpretation (`trace_provenance`). If an answer about your projects doesn't
+survive `check_claim`, it's a guess — and the agent must say so.
 
-Narrative block:
-Govoy esta bloqueado por Stripe; Rubén quiere convertir el seguimiento a
-Stripe en una task explicita.
+## Tools
 
-Notes:
-- Project "Govoy"
-- Task "Escribir a Stripe"
-
-Edges:
-- block derived_from raw 1
-- block derived_from raw 2
-- block derived_from raw 3
-- block about Project "Govoy"
-- block affects Task "Escribir a Stripe"
-- Task "Escribir a Stripe" part_of Project "Govoy"
-```
-
-The agent persists the visible draft with `create_proposal` or updates it with
-`update_proposal`. The user approves, edits or discards the proposal.
-
-`mit_for` is a first-class field in `note_creates` and `note_updates` inside
-the proposal payload. It accepts a calendar date (`YYYY-MM-DD`) or a full ISO
-datetime; a date-only value lands at that day's UTC midnight. On commit the
-value is written to the top-level indexed `note.mit_for` field, queryable with
-`mit_for >= start AND mit_for < end`.
-
-### Commit
-
-Only after approval should the agent call `commit_proposal`. The operation
-runs as a single atomic SurrealDB transaction (`BEGIN…COMMIT`): if anything
-fails the whole commit is rolled back. On success it:
-
-- Creates the narrative block(s), note creates/updates, `derived_from`,
-  `about`, `affects`, and minimal semantic edges.
-- Marks the raws as `processed`.
-- Stores just the anchor on the proposal `result`: `versionstamp` and
-  `committed_at`. The stored payload already speaks real ids (assigned at
-  create_proposal), so it IS the set of mutations — no `temp_ids` map, no
-  materialized id-lists. The changefeed is the history.
-
-After commit, call `get_proposal_changes` to see the full delta, read straight
-from the proposal payload (`source: 'payload'`, no changefeed dependency).
-Graphical visualization of the change lives in the dashboard.
-
-Raws that should not become topology can be handled with `set_raw_status`:
-
-```text
-ignored   no action needed
-deferred  keep for a later processing session
-processed manually closed as handled
-```
-
-## Worker Shell
-
-The worker is disabled by default. If explicitly enabled with `--profile worker`
-and `WORKER_ENABLED=true`, it connects to the MCP, logs available tools, and
-idles. It does not poll the inbox or topologize autonomously.
-
-```bash
-WORKER_ENABLED=true docker compose -f .devcontainer/docker-compose.yml --profile worker up -d huygens-worker
-docker compose -f .devcontainer/docker-compose.yml --profile worker logs -f huygens-worker
-```
-
-## Useful MCP Interactions Today
-
-```text
-capture              persist a raw_capture
-list_inbox           list raws by status, default pending
-set_raw_status       mark raws ignored/deferred/processed without topology
-create_proposal      persist a visible draft without graph mutation
-update_proposal      update a draft proposal
-get_proposal         human-readable preview of the commit + raw JSON
-get_proposal_changes exact changes a committed proposal produced: JSON read from the proposal payload (SSOT, source:'payload', no changefeed); graphical view in the dashboard
-discard_proposal     discard a draft proposal
-commit_proposal      atomic graph commit (BEGIN…COMMIT, all-or-nothing); returns real ids + counts. Ritual informes (kind plan_day/review_day) require approved:true and reject a 2nd of the day
-find_related         find existing notes related to a concept (vector, deduped by note)
-vector_search        search indexed blocks via HNSW (BGE-M3, cosine)
-lexical_search       BM25 full-text over block content (exact terms, names, IDs, acronyms)
-hybrid_search        fuse semantic + lexical retrieval via Reciprocal Rank Fusion (highest recall)
-index_block          embed 1..64 blocks and persist embeddings for vector search
-query_query          read-only SurrealQL against the graph (VIEWER role)
-retract              auditably delete records + their edges (atomic; dry_run previews by default)
-collection_stats     graph health: counts by status/state + embedded vs unembedded blocks
-chunk_markdown       split markdown into heading-aware chunks (pure, no DB)
-embed_text           embed 1..64 strings with BGE-M3 (1024 dims)
-```
+The complete, current tools surface (with one-line purposes) is the
+**Tools surface** table in
+[`apps/mcp/src/lore/data-model.md`](./apps/mcp/src/lore/data-model.md) —
+kept in sync by `apps/mcp/test/data-model-drift.test.ts`. Not duplicated here.
 
 ## Troubleshooting
 
-**MCP unhealthy**: check `docker compose logs huygens-mcp`.
+**MCP unhealthy**: `docker compose -f .devcontainer/docker-compose.yml logs huygens-mcp`.
 
-**Vector search misses fresh content**: call `index_block` on blocks that should
-participate in vector search. `commit_proposal` persists graph changes; indexing
-is still explicit.
+**Worker won't start**: it fails fast if it can't fetch the doctrine from the
+MCP (by design). Check `huygens-mcp` is healthy; `ALLOW_DEGRADED_DOCTRINE=true`
+only as a conscious override.
 
-**Wipe dev data**:
+**Vector search misses fresh content**: commit auto-embeds new blocks when
+`DEEPINFRA_API_KEY` is set; if embedding failed (no key / provider down), run
+`bun run db:reindex` in `apps/mcp` to backfill, or `index_block` on specific
+blocks.
+
+**Wipe dev data** (destroys the graph — there is no backup strategy yet, see
+`docs/issues/2026-06-09`):
 
 ```bash
 docker compose -f .devcontainer/docker-compose.yml down -v

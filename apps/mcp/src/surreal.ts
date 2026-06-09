@@ -149,11 +149,14 @@ export async function getReadOnlyDb(): Promise<Surreal> {
  * (`SELECT a,b FROM $ids`) makes SurrealDB reject the query with "Specify a
  * database to use". Callers pick the fields they need from the typed result.
  */
+function toRecordIds(ids: string[]): StringRecordId[] {
+  return ids.map(id => new StringRecordId(id))
+}
+
 export async function selectByIds<T>(ids: string[]): Promise<T[]> {
   if (ids.length === 0) return []
   const db = await getDb()
-  const refs = ids.map(id => new StringRecordId(id))
-  const [rows] = await db.query<[T[]]>('SELECT * FROM $ids', { ids: refs })
+  const [rows] = await db.query<[T[]]>('SELECT * FROM $ids', { ids: toRecordIds(ids) })
   return rows ?? []
 }
 
@@ -180,11 +183,15 @@ const EXPECTED_TABLES = [
  * DB lets `capture` "work" (implicit tables) while `commit_proposal`/`find_related`
  * blow up later with an opaque error. Throws a clear, actionable message instead.
  */
+function findMissingTables(present: Iterable<string>, expected: readonly string[]): string[] {
+  const presentSet = new Set(present)
+  return expected.filter(table => !presentSet.has(table))
+}
+
 export async function assertSchemaReady(): Promise<void> {
   const db = await getDb()
   const [info] = await db.query<[{ tables?: Record<string, unknown> }]>('INFO FOR DB')
-  const present = new Set(Object.keys(info?.tables ?? {}))
-  const missing = EXPECTED_TABLES.filter(t => !present.has(t))
+  const missing = findMissingTables(Object.keys(info?.tables ?? {}), EXPECTED_TABLES)
   if (missing.length > 0) {
     throw new Error(`schema not initialised — missing tables: ${missing.join(', ')}. Run \`bun run db:apply\`.`)
   }

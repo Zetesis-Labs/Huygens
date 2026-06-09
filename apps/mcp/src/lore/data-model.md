@@ -47,6 +47,8 @@ block {
   id,
   note? → note,
   block_kind: descriptive | narrative,
+  kind?: day | week,         ← ritual tag (la jornada / weekly review) → Bitácora;
+                               legacy values on historic blocks only
   content: string (markdown),
   embedding?: float[1024],   ← BGE-M3, HNSW cosine indexed (EFC=150 M=12 M0=24)
   embedding_model?, dimensions?,
@@ -123,8 +125,8 @@ Structural mutation must go through persisted proposals. `commit_proposal` is th
 
 ```
 create_proposal (status=draft)
-  → update_proposal (replaces payload; draft only)
-  → get_proposal (readable diff + JSON)
+  → update_proposal (replaces payload; draft only; clears previewed_at)
+  → get_proposal (readable diff + JSON; stamps previewed_at on a draft)
   → discard_proposal (status=discarded; no graph mutation)
   → commit_proposal (atomic tx: status=committed; creates blocks, notes, edges; marks raws processed)
   → get_proposal_changes (reads proposal.result + changefeed delta)
@@ -137,6 +139,12 @@ the live projection. It is currently the most common status by count (a one-off 
 artifact), so a reader of the lifecycle should expect it even though no tool transitions *into*
 it at runtime.
 
+Server-enforced gates on `commit_proposal`: the proposal must have been
+**previewed** (`get_proposal` after the last payload change — nothing structural
+is committed sight-unseen); `part_of` must stay **acyclic**; a ritual informe
+(kind `day`/`week`) requires `approved: true` and is unique per Madrid day /
+ISO week (DST-correct).
+
 **`commit_proposal`** returns `CommitProposalResult`:
 ```
 {
@@ -144,11 +152,16 @@ it at runtime.
   narrative_blocks_created: string[],
   notes_created: string[], notes_updated: string[],
   descriptive_blocks_created: string[],
-  derived_from_created, about_created, affects_created, semantic_edges_created,
-  temp_ids: { notes: {temp_id → real_id}, blocks: {temp_id → real_id} }
+  derived_from_created, about_created, affects_created,
+  semantic_edges_created, semantic_edges_removed
 }
 ```
-Use `temp_ids` to act on a just-created record without re-querying.
+No temp_ids map: real record ids are assigned at `create_proposal` (the stored
+payload speaks real ids — ADR-0028), so the id lists above ARE the real ids.
+The proposal's stored `result` keeps only the anchor (`versionstamp`,
+`committed_at`). Post-commit, the new blocks are auto-embedded best-effort
+(when an embedding key is configured); a failed embed never rolls back the
+commit — `db:reindex` backfills.
 
 **`get_proposal_changes`** (read-only, committed proposals only): the delta read
 straight from the proposal's stored `payload` (the SSOT, real ids) — `source:
@@ -166,9 +179,13 @@ and raws processed. Visual rendering of the change graph lives in the dashboard
     temp_id: string,              // local name used to cross-reference below
     content: string,
     raw_ids: string[],            // raws this block summarizes (≥ 1)
-    kind?: plan_day|review_day|plan_week|review_week  // ritual tag → Bitácora.
-                                  // Set ONLY by the plan_day/review_day rituals.
-                                  // A normal process informe has NO kind.
+    kind?: day|week               // ritual tag → Bitácora. `day` = la jornada (the
+                                  // single daily ritual: settle pending + orient the
+                                  // day, no plan/review split); `week` = weekly
+                                  // maintenance review. Set ONLY inside those rituals;
+                                  // a normal process informe has NO kind. Legacy kinds
+                                  // (plan_day|review_day|plan_week|review_week) remain
+                                  // valid on historic blocks, rejected in new proposals.
   }],
   note_creates: [{
     temp_id: string,
@@ -217,6 +234,17 @@ and raws processed. Visual rendering of the change graph lives in the dashboard
 | `vector_search` | K-nearest blocks via HNSW (cosine, BGE-M3). Optional filters by note state, type slug, updated-since. |
 | `lexical_search` | BM25 full-text over block content (analyzer `huygens_text`). For literal terms — names, IDs, acronyms — that semantic search misses. Score is BM25, not cosine. |
 | `hybrid_search` | Fuse `vector_search` (semantic) + `lexical_search` (BM25) via Reciprocal Rank Fusion. Highest-recall default search; same parent-note filters. |
+| `expand_context` | Hybrid retrieval: vector-match notes for a free-form query, then expand their connected subgraph into subject—predicate→object triples (with node legend). Default way to pull relevant context as text. |
+| `get_hierarchy` | The `part_of` hierarchy as structured { nodes, edges } — areas → projects → tasks. Pass `root` for a subtree; omit for the whole forest. Read-only. |
+| `daily_radar` | The live operational radar: ACTIVE/WAITING/CLARIFIED notes not deferred (the active surface), with parent and temporal axes. Read-only. |
+| `count_notes` | Count notes from count() (never eyeballed), filterable by type/states, with a by-(type,state) breakdown. Read-only. |
+| `mit_history` | The MIT timeline derived from the commit log (assigned → moved → cleared per note, with proposal + timestamp). Survives `mit_for: null`. Source of truth for streaks. Read-only. |
+| `neighborhood` | Expand the graph around a note/block/raw N hops; returns the connected subgraph as triples plus a node legend. |
+| `trace_provenance` | Trace where a note/block comes from: its `derived_from` raws (with transformation) and `about`/`affects` links. Use to cite sources and separate what the user said from what was inferred. |
+| `check_claim` | Faithfulness check: decompose a claim into triples and verify each as supported/contradicted/unsupported against the graph. Use before asserting topology or status to the user. |
+| `changes_between` | Aggregated change graph of everything committed between two dates (fuses committed proposals; per-day tally). Read-only. |
+| `save_query` / `list_queries` / `run_query` / `delete_query` | Persist, list, run and delete named read-only SurrealQL queries (stable ids; `run_query` executes as VIEWER). |
+| `save_conversation` / `get_conversation` / `list_conversations` / `delete_conversation` | Persist and manage dashboard chat threads (messages + canvas state). |
 | `index_block` | Embed 1..64 blocks with BGE-M3 and persist embedding on each block. |
 | `chunk_markdown` | Split markdown into heading-aware chunks. Pure function, no DB. |
 | `embed_text` | Embed 1..64 strings with BGE-M3 (1024 dims, normalized). No DB. |
@@ -224,9 +252,17 @@ and raws processed. Visual rendering of the change graph lives in the dashboard
 | `retract` | Auditable delete of records + incident edges (atomic, `dry_run` default). The only delete path: mistaken ingest, correction, "forget this". Note→owned blocks cascade; emits a `retracted` agent_event. |
 | `collection_stats` | Graph health: counts of raw_captures/notes/blocks/edges/proposals, and embedded vs unembedded blocks (the index-coverage signal). Read-only. |
 
+Perimeter note: `capture`/`set_raw_status` mutate Plane 1 directly by design;
+`save_query` and the `*_conversation` tools write auxiliary dashboard state
+outside the proposal cycle (not graph topology). Everything structural goes
+through `commit_proposal`. This file is guarded against drift by
+`test/data-model-drift.test.ts` (live schema + registered tools ⊆ this doc).
+
 ## Audit
 
 - `agent_event` records every agent decision (kind, actor, session_id, subject, payload, reasoning_summary, model, tokens_used, duration_ms). Append-only.
+- `mcp_tool_call` logs every MCP tool invocation (tool, ok, duration, args, result). Append-only.
+- Auxiliary (schemaless, dashboard state, outside the proposal cycle): `saved_query`, `conversation`. Seed table: `note_type`.
 - CHANGEFEED 10y on every critical table (`raw_capture`, `note`, `block`, all edge tables, `proposal`) → time-travel via `SHOW CHANGES FOR TABLE x SINCE $vs`.
 
 The system never silently mutates. Either an agent_event was emitted (intent), or CHANGEFEED has the diff (state), or both.

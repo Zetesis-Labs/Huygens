@@ -45,14 +45,23 @@ export const TraceEdgeKindSchema = z.enum(TRACE_EDGE_KINDS)
 /** Every edge (RELATION) table in the schema. The graph's full edge vocabulary. */
 export const ALL_EDGE_TABLES = [...EDGE_KINDS, ...TRACE_EDGE_KINDS] as const
 
-/** Planning/review informe-blocks. When a narrative block is the output of a
- * planning or review ritual (plan_day / review_day / plan_week / review_week),
- * it carries one of these as `kind` so the dashboard can surface it as a
- * first-class plan/review (the Bitácora) rather than a generic informe. A plain
- * processing informe (process_inbox) has no kind. */
-export const INFORME_KINDS = ['plan_day', 'review_day', 'plan_week', 'review_week'] as const
+/** Ritual informe-blocks. When a narrative block is the output of a ritual it
+ * carries one of these as `kind` so the dashboard can surface it in the
+ * Bitácora rather than as a generic informe. A plain processing informe
+ * (process_inbox) has no kind.
+ *
+ * `day` is the single daily ritual (la jornada): one narrative that settles
+ * what was left pending and orients the day — planning and closing are NOT
+ * distinguished structurally (the structure lives in the accompanying
+ * note_updates/affects/mit_for, not in the narrative's taxonomy). `week` is
+ * the weekly maintenance review. The old split kinds (plan_day / review_day /
+ * plan_week / review_week) are legacy: still valid on historic blocks and
+ * stored payloads, rejected for new proposals. */
+export const INFORME_KINDS = ['day', 'week'] as const
 export type InformeKind = (typeof INFORME_KINDS)[number]
 export const InformeKindSchema = z.enum(INFORME_KINDS)
+/** Retired ritual kinds, kept readable on historic data (blocks, stored payloads, Bitácora). */
+export const LEGACY_INFORME_KINDS = ['plan_day', 'review_day', 'plan_week', 'review_week'] as const
 
 export const AFFECT_ACTIONS = ['created', 'updated', 'state_changed', 'linked', 'archived'] as const
 export type AffectAction = (typeof AFFECT_ACTIONS)[number]

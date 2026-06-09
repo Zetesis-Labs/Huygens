@@ -45,21 +45,21 @@ const PROMPT_ENTRIES: PromptEntry[] = [
     path: 'prompts/inbox-processing.md'
   },
   {
-    name: 'plan_day',
+    name: 'day',
     description:
-      'Ritual de planificación diaria: elegir 1-3 MITs (Most Important Tasks) del día como informe-block prospectivo + mutaciones mit_for propuestas y aprobadas.',
-    path: 'prompts/plan-day.md'
+      'La jornada — ritual diario único: asentar lo pendiente (disposiciones de MITs vencidas y deadlines) y orientar el día (1-3 MITs sugeridas, el usuario elige), en UN informe-block kind:day. Cierra y planifica sin distinguirlos. Sustituye a los antiguos plan_day/review_day.',
+    path: 'prompts/day.md'
   },
   {
-    name: 'review_day',
+    name: 'week',
     description:
-      'Ritual de cierre del día: repasar los MITs de hoy y los vencidos y darles disposición (hecho / mover / soltar) como informe-block retrospectivo + mutaciones state/mit_for propuestas y aprobadas.',
-    path: 'prompts/review-day.md'
+      'La semana — revisión semanal de mantenimiento: WAITING, dormidas que resurgen, deadlines entrantes, SOMEDAY, lo nunca revisado y el inbox diferido, en UN informe-block kind:week. Uno por semana ISO (Madrid).',
+    path: 'prompts/week.md'
   },
   {
     name: 'decompose_project',
     description:
-      'Coaching: convertir un proyecto vivo sin tareas accionables en su próxima acción física concreta (una task ACTIVE colgada del proyecto). Desbloquea plan_day, que muere sin candidatas. Enseña a descomponer; no descompone por el usuario.',
+      'Coaching: convertir un proyecto vivo sin tareas accionables en su próxima acción física concreta (una task ACTIVE colgada del proyecto). Desbloquea la jornada (day), que muere sin candidatas a MIT. Enseña a descomponer; no descompone por el usuario.',
     path: 'prompts/decompose-project.md'
   }
 ]
@@ -68,21 +68,16 @@ function readDoc(relativePath: string): string {
   return readFileSync(new URL(`./${relativePath}`, import.meta.url), 'utf8')
 }
 
-export function registerLoreAndPrompts(server: McpServer): void {
-  for (const entry of LORE_ENTRIES) {
-    server.resource(
-      entry.name,
-      entry.uri,
-      { description: entry.description, mimeType: 'text/markdown' },
-      async uri => ({
-        contents: [{ uri: uri.href, mimeType: 'text/markdown', text: readDoc(entry.path) }]
-      })
-    )
-  }
+function registerLoreResource(server: McpServer, entry: LoreEntry): void {
+  server.resource(entry.name, entry.uri, { description: entry.description, mimeType: 'text/markdown' }, async uri => ({
+    contents: [{ uri: uri.href, mimeType: 'text/markdown', text: readDoc(entry.path) }]
+  }))
+}
 
-  // Live schema, introspected on each read (INFO FOR DB + INFO FOR TABLE). Exposed
-  // as a resource — not only in the server `instructions` — so clients that consume
-  // resources but ignore `instructions` (e.g. hermes) still get the real schema.
+// Live schema, introspected on each read (INFO FOR DB + INFO FOR TABLE). Exposed
+// as a resource — not only in the server `instructions` — so clients that consume
+// resources but ignore `instructions` (e.g. hermes) still get the real schema.
+function registerSchemaResource(server: McpServer): void {
   server.resource(
     'schema',
     'huygens://lore/schema',
@@ -94,12 +89,26 @@ export function registerLoreAndPrompts(server: McpServer): void {
       contents: [{ uri: uri.href, mimeType: 'text/markdown', text: await loadSchemaSnapshot() }]
     })
   )
+}
 
-  for (const entry of PROMPT_ENTRIES) {
-    server.prompt(entry.name, entry.description, async () => ({
-      messages: [{ role: 'user', content: { type: 'text', text: readDoc(entry.path) } }]
-    }))
-  }
+function registerPromptEntry(server: McpServer, entry: PromptEntry): void {
+  server.prompt(entry.name, entry.description, async () => ({
+    messages: [{ role: 'user', content: { type: 'text', text: readDoc(entry.path) } }]
+  }))
+}
+
+function registerLoreResources(server: McpServer): void {
+  LORE_ENTRIES.map(entry => registerLoreResource(server, entry))
+}
+
+function registerPrompts(server: McpServer): void {
+  PROMPT_ENTRIES.map(entry => registerPromptEntry(server, entry))
+}
+
+export function registerLoreAndPrompts(server: McpServer): void {
+  registerLoreResources(server)
+  registerSchemaResource(server)
+  registerPrompts(server)
 }
 
 export { LORE_ENTRIES, PROMPT_ENTRIES }

@@ -50,33 +50,50 @@ export type Aggregate = {
  * the dashboard uses); the per-day tally, raw count and "touched by N proposals"
  * map are reductions over the windowed proposals. Pure.
  */
+type DayTally = { proposals: number; creates: number; updates: number; edges: number }
+
+/** Sum one day's proposals into a single tally. Pure. */
+function tallyForDay(proposals: CommittedInput[]): DayTally {
+  return proposals.reduce(
+    (tally, p) => ({
+      proposals: tally.proposals + 1,
+      creates: tally.creates + p.payload.note_creates.length,
+      updates: tally.updates + p.payload.note_updates.length,
+      edges: tally.edges + p.payload.edges.length
+    }),
+    { proposals: 0, creates: 0, updates: 0, edges: 0 }
+  )
+}
+
 export function aggregateChanges(proposals: CommittedInput[], from: string, to: string): Aggregate {
   const inWindow = proposals
     .filter(p => p.landedAt >= from && p.landedAt <= to)
     .sort((a, b) => a.landedAt.localeCompare(b.landedAt))
 
-  const items: FuseItem[] = []
-  const updatedCounts: Record<string, number> = {}
-  const byDay = new Map<string, { proposals: number; creates: number; updates: number; edges: number }>()
-  let raws = 0
+  const items: FuseItem[] = inWindow.map(p => ({ payload: p.payload, tempMap: p.tempMap }))
 
-  for (const p of inWindow) {
-    items.push({ payload: p.payload, tempMap: p.tempMap })
+  const raws = inWindow.reduce((sum, p) => sum + p.payload.raw_ids.length, 0)
 
-    const day = p.landedAt.slice(0, 10)
-    const bucket = byDay.get(day) ?? { proposals: 0, creates: 0, updates: 0, edges: 0 }
-    bucket.proposals++
-    bucket.creates += p.payload.note_creates.length
-    bucket.updates += p.payload.note_updates.length
-    bucket.edges += p.payload.edges.length
-    byDay.set(day, bucket)
-    raws += p.payload.raw_ids.length
-
-    for (const n of p.payload.note_updates) {
+  // Local accumulator mutation (not spread-per-item, which is O(n²)); the
+  // result object is still freshly built and never escapes mid-fold.
+  const updatedCounts = inWindow
+    .flatMap(p => p.payload.note_updates)
+    .reduce<Record<string, number>>((acc, n) => {
       const id = idStr(n.id as RecordIdish)
-      updatedCounts[id] = (updatedCounts[id] ?? 0) + 1
-    }
-  }
+      acc[id] = (acc[id] ?? 0) + 1
+      return acc
+    }, {})
+
+  const dayGroups = inWindow.reduce<Record<string, CommittedInput[]>>((acc, p) => {
+    const day = p.landedAt.slice(0, 10)
+    const group = acc[day] ?? []
+    group.push(p)
+    acc[day] = group
+    return acc
+  }, {})
+  const byDay = Object.entries(dayGroups)
+    .map(([day, dayProposals]) => ({ day, ...tallyForDay(dayProposals) }))
+    .sort((a, b) => b.day.localeCompare(a.day))
 
   return {
     from,
@@ -85,7 +102,7 @@ export function aggregateChanges(proposals: CommittedInput[], from: string, to: 
     raws,
     graph: fuseProposals(items),
     updatedCounts,
-    byDay: [...byDay.entries()].map(([day, v]) => ({ day, ...v })).sort((a, b) => b.day.localeCompare(a.day))
+    byDay
   }
 }
 
@@ -101,67 +118,93 @@ export function renderAggregate(agg: Aggregate): string {
     return n && n.data.status !== 'context' ? `"${n.data.title}"` : id
   }
 
-  const sections: string[][] = []
-
   const dayCount = agg.byDay.length
-  sections.push([
+  const summarySection = [
     `Aggregated changes ${agg.from} → ${agg.to} (UTC)`,
     agg.proposalCount === 0
       ? 'Nothing committed in this window.'
       : `${agg.proposalCount} ${plural(agg.proposalCount, 'proposal')} committed across ${dayCount} ${plural(dayCount, 'day')} · ` +
         `+${created.length} notes · ${updated.length} updated · ${graph.edges.length} edges · ${agg.raws} raw`
-  ])
+  ]
 
-  if (created.length > 0) {
-    const lines = [`CREATE ${created.length} ${plural(created.length, 'note')}:`]
-    for (const n of created) {
-      const attrs = n.data.lines.length > 0 ? ` · ${n.data.lines.join(' · ')}` : ''
-      lines.push(`  • "${n.data.title}"  ${n.data.type}${attrs}`)
-    }
-    sections.push(lines)
-  }
-  if (updated.length > 0) {
-    const lines = [`UPDATE ${updated.length} ${plural(updated.length, 'note')}:`]
-    for (const n of updated) {
-      const count = agg.updatedCounts[n.id] ?? 1
-      const times = count > 1 ? `  (${count} proposals)` : ''
-      lines.push(`  • ${n.id}${times}`)
-    }
-    sections.push(lines)
-  }
-  if (graph.edges.length > 0) {
-    const lines = [`Topology (${graph.edges.length} ${plural(graph.edges.length, 'edge')}):`]
-    for (const e of graph.edges) lines.push(`  • ${labelFor(e.source)} —${e.label}→ ${labelFor(e.target)}`)
-    sections.push(lines)
-  }
-  if (agg.byDay.length > 0) {
-    const lines = ['By day:']
-    for (const d of agg.byDay) {
-      lines.push(
-        `  • ${d.day}  ${d.proposals} ${plural(d.proposals, 'proposal')} · +${d.creates} notes · ${d.updates} upd · ${d.edges} edges`
-      )
-    }
-    sections.push(lines)
-  }
+  const createdSection =
+    created.length > 0
+      ? [
+          `CREATE ${created.length} ${plural(created.length, 'note')}:`,
+          ...created.map(n => {
+            const attrs = n.data.lines.length > 0 ? ` · ${n.data.lines.join(' · ')}` : ''
+            return `  • "${n.data.title}"  ${n.data.type}${attrs}`
+          })
+        ]
+      : null
 
-  return sections.map(s => s.join('\n')).join('\n\n')
+  const updatedSection =
+    updated.length > 0
+      ? [
+          `UPDATE ${updated.length} ${plural(updated.length, 'note')}:`,
+          ...updated.map(n => {
+            const count = agg.updatedCounts[n.id] ?? 1
+            const times = count > 1 ? `  (${count} proposals)` : ''
+            return `  • ${n.id}${times}`
+          })
+        ]
+      : null
+
+  const topologySection =
+    graph.edges.length > 0
+      ? [
+          `Topology (${graph.edges.length} ${plural(graph.edges.length, 'edge')}):`,
+          ...graph.edges.map(e => `  • ${labelFor(e.source)} —${e.label}→ ${labelFor(e.target)}`)
+        ]
+      : null
+
+  const byDaySection =
+    agg.byDay.length > 0
+      ? [
+          'By day:',
+          ...agg.byDay.map(
+            d =>
+              `  • ${d.day}  ${d.proposals} ${plural(d.proposals, 'proposal')} · +${d.creates} notes · ${d.updates} upd · ${d.edges} edges`
+          )
+        ]
+      : null
+
+  return [summarySection, createdSection, updatedSection, topologySection, byDaySection]
+    .filter((s): s is string[] => s !== null)
+    .map(s => s.join('\n'))
+    .join('\n\n')
+}
+
+/** One row of the committed-proposal query. */
+type CommittedRow = {
+  id: unknown
+  payload: StoredProposalPayload
+  result?: { committed_at?: unknown; temp_ids?: { notes?: Record<string, RecordIdish> } } | null
+  updated_at: unknown
+}
+
+/** temp note id → real `note:` id, with every value normalized to a string. Pure. */
+function normalizeTempMap(notes: Record<string, RecordIdish>): Record<string, string> {
+  return Object.fromEntries(Object.entries(notes).map(([k, v]) => [k, idStr(v)]))
+}
+
+/** A committed-proposal row reduced to what the aggregation fuses over. Pure. */
+function toCommittedInput(row: CommittedRow): CommittedInput {
+  const committedAt = row.result?.committed_at
+  return {
+    id: String(row.id),
+    // `committed_at` is absent on pre-result commits → coalesce to `updated_at`.
+    landedAt: committedAt != null ? toIso(committedAt) : toIso(row.updated_at),
+    payload: row.payload,
+    tempMap: normalizeTempMap(row.result?.temp_ids?.notes ?? {})
+  }
 }
 
 /** Every committed proposal, reduced for aggregation. Read-only. */
 async function fetchCommitted(from: string, to: string): Promise<CommittedInput[]> {
   const db = await getDb()
   // The window is filtered in SurrealDB so only in-range payloads cross the wire.
-  // `committed_at` is absent on pre-result commits → coalesce to `updated_at`.
-  const [rows] = await db.query<
-    [
-      Array<{
-        id: unknown
-        payload: StoredProposalPayload
-        result?: { committed_at?: unknown; temp_ids?: { notes?: Record<string, RecordIdish> } } | null
-        updated_at: unknown
-      }>
-    ]
-  >(
+  const [rows] = await db.query<[CommittedRow[]]>(
     `SELECT meta::id(id) AS id, payload, result, updated_at
      FROM proposal
      WHERE status = 'committed'
@@ -169,18 +212,7 @@ async function fetchCommitted(from: string, to: string): Promise<CommittedInput[
        AND (result.committed_at ?? updated_at) <= type::datetime($to)`,
     { from, to }
   )
-  return (rows ?? []).map(r => {
-    const ca = r.result?.committed_at
-    const notes = r.result?.temp_ids?.notes ?? {}
-    const tempMap: Record<string, string> = {}
-    for (const [k, v] of Object.entries(notes)) tempMap[k] = idStr(v)
-    return {
-      id: String(r.id),
-      landedAt: ca != null ? toIso(ca) : toIso(r.updated_at),
-      payload: r.payload,
-      tempMap
-    }
-  })
+  return (rows ?? []).map(toCommittedInput)
 }
 
 const shape = {

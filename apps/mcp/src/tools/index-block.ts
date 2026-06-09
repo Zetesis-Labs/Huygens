@@ -38,43 +38,36 @@ function headerForBlock(
   noteRec: Map<string, GraphNodeRecord>
 ): string {
   if (row.block_kind === 'narrative') {
-    const subjects: GraphNodeRecord[] = []
-    for (const n of aboutByBlock.get(idStr(row.id)) ?? []) {
-      const rec = noteRec.get(n)
-      if (rec) subjects.push(rec)
-    }
+    const subjects = (aboutByBlock.get(idStr(row.id)) ?? [])
+      .map(n => noteRec.get(n))
+      .filter((rec): rec is GraphNodeRecord => rec != null)
     return blockEmbeddingContext(subjects, [])
   }
   if (!row.note) return ''
   const owner = ownerMap.get(idStr(row.note))
   if (!owner) return ''
-  const parents: GraphNodeRecord[] = []
-  if (owner.parentId) {
-    const p = noteRec.get(owner.parentId)
-    if (p) parents.push(p)
-  }
+  const parents = (owner.parentId ? [noteRec.get(owner.parentId)] : []).filter(
+    (rec): rec is GraphNodeRecord => rec != null
+  )
   return blockEmbeddingContext([owner.rec], parents)
 }
 
 // Owner notes (for descriptive blocks) + the id of their single part_of parent.
 async function fetchOwners(db: Surreal, ownerIds: Set<string>): Promise<Map<string, OwnerInfo>> {
-  const map = new Map<string, OwnerInfo>()
-  if (ownerIds.size === 0) return map
+  if (ownerIds.size === 0) return new Map<string, OwnerInfo>()
   const refs = [...ownerIds].map(s => new StringRecordId(s))
   const [owners] = await db.query<[(GraphNodeRecord & { parents?: RecordIdish[] })[]]>(
     'SELECT id, title, type, state, ->part_of->note AS parents FROM note WHERE id IN $ids',
     { ids: refs }
   )
-  for (const o of owners ?? []) {
-    map.set(idStr(o.id), { rec: o, parentId: o.parents?.[0] ? idStr(o.parents[0]) : undefined })
-  }
-  return map
+  return new Map<string, OwnerInfo>(
+    (owners ?? []).map(o => [idStr(o.id), { rec: o, parentId: o.parents?.[0] ? idStr(o.parents[0]) : undefined }])
+  )
 }
 
 // Notes each narrative block is `about`.
 async function fetchAboutByBlock(db: Surreal, narrativeIds: string[]): Promise<Map<string, string[]>> {
-  const map = new Map<string, string[]>()
-  if (narrativeIds.length === 0) return map
+  if (narrativeIds.length === 0) return new Map<string, string[]>()
   const refs = narrativeIds.map(s => new StringRecordId(s))
   const [rows] = await db.query<[{ in: RecordIdish; out: RecordIdish }[]]>(
     'SELECT in, out FROM about WHERE in IN $ids',
@@ -82,11 +75,40 @@ async function fetchAboutByBlock(db: Surreal, narrativeIds: string[]): Promise<M
       ids: refs
     }
   )
-  for (const a of rows ?? []) {
+  return (rows ?? []).reduce((byBlock, a) => {
     const block = idStr(a.in)
-    map.set(block, [...(map.get(block) ?? []), idStr(a.out)])
+    return byBlock.set(block, [...(byBlock.get(block) ?? []), idStr(a.out)])
+  }, new Map<string, string[]>())
+}
+
+type PartitionedRows = { ownerIds: Set<string>; narrativeIds: string[] }
+
+function partitionRows(rows: BlockRow[]): PartitionedRows {
+  // Local accumulators (not copy-per-row, which is O(n²)); the function stays
+  // pure from the outside — fresh containers, no shared state touched.
+  const ownerIds = new Set<string>()
+  const narrativeIds: string[] = []
+  for (const row of rows) {
+    if (row.block_kind === 'narrative') narrativeIds.push(idStr(row.id))
+    else if (row.note) ownerIds.add(idStr(row.note))
   }
-  return map
+  return { ownerIds, narrativeIds }
+}
+
+// The referenced notes whose labels we need: part_of parents + about targets.
+function collectNoteIds(ownerMap: Map<string, OwnerInfo>, aboutByBlock: Map<string, string[]>): Set<string> {
+  const parentIds = [...ownerMap.values()].map(owner => owner.parentId).filter((id): id is string => id != null)
+  const aboutIds = [...aboutByBlock.values()].flat()
+  return new Set<string>([...parentIds, ...aboutIds])
+}
+
+function buildContextMap(
+  rows: BlockRow[],
+  ownerMap: Map<string, OwnerInfo>,
+  aboutByBlock: Map<string, string[]>,
+  noteRec: Map<string, GraphNodeRecord>
+): Map<string, string> {
+  return new Map(rows.map(row => [idStr(row.id), headerForBlock(row, ownerMap, aboutByBlock, noteRec)]))
 }
 
 /**
@@ -97,27 +119,18 @@ async function fetchAboutByBlock(db: Surreal, narrativeIds: string[]): Promise<M
  * parent for now; deepening the breadcrumb is a follow-up.
  */
 async function buildBlockContexts(db: Surreal, rows: BlockRow[]): Promise<Map<string, string>> {
-  const ownerIds = new Set<string>()
-  const narrativeIds: string[] = []
-  for (const r of rows) {
-    if (r.block_kind === 'narrative') narrativeIds.push(idStr(r.id))
-    else if (r.note) ownerIds.add(idStr(r.note))
-  }
+  const { ownerIds, narrativeIds } = partitionRows(rows)
 
   const ownerMap = await fetchOwners(db, ownerIds)
   const aboutByBlock = await fetchAboutByBlock(db, narrativeIds)
 
   // Resolve labels for the referenced notes (parents + about targets).
-  const noteIds = new Set<string>()
-  for (const v of ownerMap.values()) if (v.parentId) noteIds.add(v.parentId)
-  for (const ns of aboutByBlock.values()) for (const n of ns) noteIds.add(n)
+  const noteIds = collectNoteIds(ownerMap, aboutByBlock)
   const noteRec = new Map<string, GraphNodeRecord>(
     (await selectByIds<GraphNodeRecord>([...noteIds])).map(r => [idStr(r.id), r])
   )
 
-  const out = new Map<string, string>()
-  for (const r of rows) out.set(idStr(r.id), headerForBlock(r, ownerMap, aboutByBlock, noteRec))
-  return out
+  return buildContextMap(rows, ownerMap, aboutByBlock, noteRec)
 }
 
 export async function indexBlockImpl(input: IndexBlockInput): Promise<IndexBlockResult> {
@@ -144,14 +157,16 @@ export async function indexBlockImpl(input: IndexBlockInput): Promise<IndexBlock
 
   const result = await embedTexts(orderedTexts)
 
-  for (let i = 0; i < input.block_ids.length; i++) {
-    await db.query('UPDATE $id SET embedding = $emb, embedding_model = $model, dimensions = $dim', {
-      id: refs[i],
-      emb: result.embeddings[i],
-      model: result.model,
-      dim: result.dimensions
-    })
-  }
+  await Promise.all(
+    refs.map((ref, i) =>
+      db.query('UPDATE $id SET embedding = $emb, embedding_model = $model, dimensions = $dim', {
+        id: ref,
+        emb: result.embeddings[i],
+        model: result.model,
+        dim: result.dimensions
+      })
+    )
+  )
 
   return {
     indexed: input.block_ids,

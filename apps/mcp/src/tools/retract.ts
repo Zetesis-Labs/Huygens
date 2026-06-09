@@ -63,49 +63,81 @@ type IdRow = { id: { toString(): string } }
 
 type Db = Awaited<ReturnType<typeof getDb>>
 
+type RetractableTable = (typeof RETRACTABLE)[number]
+
+/** Pure validation: returns the retractable table of an id, or throws if it is not retractable. */
+function assertRetractable(id: string): RetractableTable {
+  const table = id.split(':')[0]
+  if (table === 'raw_capture' || table === 'note' || table === 'block') return table
+  throw new QueryError(`cannot retract "${id}": only ${RETRACTABLE.join(' / ')} are retractable`, { id })
+}
+
 /** Bucket explicit ids by table, rejecting anything that is not retractable. */
 function partitionIds(ids: string[]): { raws: Set<string>; notes: Set<string>; blocks: Set<string> } {
-  const raws = new Set<string>()
-  const notes = new Set<string>()
-  const blocks = new Set<string>()
-  for (const id of ids) {
-    const table = id.split(':')[0]
-    if (table === 'raw_capture') raws.add(id)
-    else if (table === 'note') notes.add(id)
-    else if (table === 'block') blocks.add(id)
-    else throw new QueryError(`cannot retract "${id}": only ${RETRACTABLE.join(' / ')} are retractable`, { id })
-  }
-  return { raws, notes, blocks }
+  const classified = ids.map(id => [assertRetractable(id), id] as const)
+  const idsOfTable = (table: RetractableTable): Set<string> =>
+    new Set(classified.filter(([t]) => t === table).map(([, id]) => id))
+  return { raws: idsOfTable('raw_capture'), notes: idsOfTable('note'), blocks: idsOfTable('block') }
+}
+
+/** Pure: SurrealQL query + bind for the source_kind / source_ref selectors, or null if neither is given. */
+function buildSourceFilter(input: RetractInput): { sql: string; bind: Record<string, unknown> } | null {
+  const selectors: [boolean, string, string, unknown][] = [
+    [Boolean(input.source_kind), 'source_kind = $sk', 'sk', input.source_kind],
+    [Boolean(input.source_ref), 'source_ref = $sr', 'sr', input.source_ref]
+  ]
+  const present = selectors.filter(([isPresent]) => isPresent)
+  if (present.length === 0) return null
+  const sql = `SELECT id FROM raw_capture WHERE ${present.map(([, clause]) => clause).join(' AND ')}`
+  const bind = Object.fromEntries(present.map(([, , paramName, value]) => [paramName, value]))
+  return { sql, bind }
 }
 
 /** raw_capture ids matching the source_kind / source_ref selectors (empty if none given). */
 async function rawsBySource(db: Db, input: RetractInput): Promise<string[]> {
-  if (!input.source_kind && !input.source_ref) return []
-  const clauses: string[] = []
-  const bind: Record<string, unknown> = {}
-  if (input.source_kind) {
-    clauses.push('source_kind = $sk')
-    bind.sk = input.source_kind
-  }
-  if (input.source_ref) {
-    clauses.push('source_ref = $sr')
-    bind.sr = input.source_ref
-  }
-  const [rows] = await db.query<[IdRow[]]>(`SELECT id FROM raw_capture WHERE ${clauses.join(' AND ')}`, bind)
+  const filter = buildSourceFilter(input)
+  if (!filter) return []
+  const [rows] = await db.query<[IdRow[]]>(filter.sql, filter.bind)
   return rows.map(r => r.id.toString())
 }
 
 /** Count incident edges per edge table for the full target set. */
 async function countIncidentEdges(db: Db, all: StringRecordId[]): Promise<Record<string, number>> {
-  const edges_removed: Record<string, number> = {}
-  for (const table of ALL_EDGE_TABLES) {
+  const countOne = async (table: string): Promise<[string, number]> => {
     const [rows] = await db.query<[{ count: number }[]]>(
       `SELECT count() AS count FROM ${table} WHERE in IN $all OR out IN $all GROUP ALL`,
       { all }
     )
-    edges_removed[table] = rows[0]?.count ?? 0
+    return [table, rows[0]?.count ?? 0]
   }
-  return edges_removed
+  // Sequential: one query per edge table, preserving the existing I/O order.
+  const entries = await ALL_EDGE_TABLES.reduce<Promise<[string, number][]>>(
+    async (acc, table) => [...(await acc), await countOne(table)],
+    Promise.resolve([])
+  )
+  return Object.fromEntries(entries)
+}
+
+/** All raw fetch results the retraction plan is built from. */
+type PlanInputs = {
+  dryRun: boolean
+  existingNoteIds: string[]
+  existingBlockIds: string[]
+  existingRawIds: string[]
+  cleanNoteIds: string[]
+  edgesRemoved: Record<string, number>
+}
+
+/** Pure: assemble the final RetractResult shape from the fetched, existence-pruned id sets. */
+function buildPlan(inputs: PlanInputs): RetractResult {
+  return {
+    dry_run: inputs.dryRun,
+    raw_captures: inputs.existingRawIds,
+    notes: inputs.existingNoteIds,
+    blocks: inputs.existingBlockIds,
+    block_order_cleaned: inputs.cleanNoteIds,
+    edges_removed: inputs.edgesRemoved
+  }
 }
 
 async function resolve(input: RetractInput): Promise<RetractResult> {
@@ -115,42 +147,51 @@ async function resolve(input: RetractInput): Promise<RetractResult> {
   }
 
   const { raws: rawSet, notes: noteSet, blocks: blockSet } = partitionIds(input.ids ?? [])
-  for (const id of await rawsBySource(db, input)) rawSet.add(id)
+  const allRaws = new Set([...rawSet, ...(await rawsBySource(db, input))])
 
   // Cascade: descriptive blocks owned by the targeted notes.
-  if (noteSet.size > 0) {
+  const ownedBlockIds = await (async (): Promise<string[]> => {
+    if (noteSet.size === 0) return []
     const [owned] = await db.query<[IdRow[]]>('SELECT id FROM block WHERE note IN $ids', {
       ids: [...noteSet].map(rid)
     })
-    for (const r of owned) blockSet.add(r.id.toString())
-  }
+    return owned.map(r => r.id.toString())
+  })()
+  const allBlocks = new Set([...blockSet, ...ownedBlockIds])
 
   // Keep only records that actually exist, so the preview is honest.
   const [existNotes] = await db.query<[IdRow[]]>('SELECT id FROM note WHERE id IN $ids', {
     ids: [...noteSet].map(rid)
   })
   const [existBlocks] = await db.query<[IdRow[]]>('SELECT id FROM block WHERE id IN $ids', {
-    ids: [...blockSet].map(rid)
+    ids: [...allBlocks].map(rid)
   })
   const [existRaws] = await db.query<[IdRow[]]>('SELECT id FROM raw_capture WHERE id IN $ids', {
-    ids: [...rawSet].map(rid)
+    ids: [...allRaws].map(rid)
   })
   const notes = existNotes.map(r => r.id.toString())
   const blocks = existBlocks.map(r => r.id.toString())
   const raws = existRaws.map(r => r.id.toString())
 
-  const edges_removed = await countIncidentEdges(db, [...notes, ...blocks, ...raws].map(rid))
+  const edgesRemoved = await countIncidentEdges(db, [...notes, ...blocks, ...raws].map(rid))
   const [cleanRows] = await db.query<[IdRow[]]>(
     'SELECT id FROM note WHERE block_order ANYINSIDE $blocks AND id NOT IN $notes',
     { blocks: blocks.map(rid), notes: notes.map(rid) }
   )
-  const block_order_cleaned = cleanRows.map(r => r.id.toString())
+  const cleanNoteIds = cleanRows.map(r => r.id.toString())
 
-  return { dry_run: input.dry_run ?? true, raw_captures: raws, notes, blocks, block_order_cleaned, edges_removed }
+  return buildPlan({
+    dryRun: input.dry_run ?? true,
+    existingNoteIds: notes,
+    existingBlockIds: blocks,
+    existingRawIds: raws,
+    cleanNoteIds,
+    edgesRemoved
+  })
 }
 
-async function execute(plan: RetractResult): Promise<void> {
-  const db = await getDb()
+/** Pure: the atomic transaction script + bound params for a retraction plan. */
+function buildRetractTransaction(plan: RetractResult): { sql: string; params: Record<string, unknown> } {
   const params = {
     all: [...plan.notes, ...plan.blocks, ...plan.raw_captures].map(rid),
     notes: plan.notes.map(rid),
@@ -167,7 +208,13 @@ async function execute(plan: RetractResult): Promise<void> {
     'DELETE raw_capture WHERE id IN $raws;',
     'COMMIT;'
   ]
-  await db.query(lines.join('\n'), params) // atomic: any failure rolls the whole retraction back
+  return { sql: lines.join('\n'), params }
+}
+
+async function execute(plan: RetractResult): Promise<void> {
+  const db = await getDb()
+  const { sql, params } = buildRetractTransaction(plan)
+  await db.query(sql, params) // atomic: any failure rolls the whole retraction back
 
   await emitEvent({
     kind: 'retracted',

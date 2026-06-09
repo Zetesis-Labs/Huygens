@@ -36,6 +36,24 @@ function toRawRef(rawId: string): StringRecordId {
   return new StringRecordId(rawId)
 }
 
+function toRawStatusRow(row: DbRawStatusRow): RawStatusRow {
+  return {
+    id: idStr(row.id),
+    status: row.status,
+    processed_at: isoStringOrNull(row.processed_at)
+  }
+}
+
+function findMissingIds(requested: string[], existing: string[]): string[] {
+  const existingIds = new Set(existing)
+  return requested.filter(id => !existingIds.has(id))
+}
+
+// 'processed' sella processed_at; 'pending' lo suelta a NONE; los demás estados no lo tocan.
+function processedAtClause(status: SetRawStatusInput['status']): string {
+  return status === 'processed' ? ', processed_at = time::now()' : status === 'pending' ? ', processed_at = NONE' : ''
+}
+
 export async function setRawStatusImpl(input: SetRawStatusInput): Promise<RawStatusRow[]> {
   const db = await getDb()
   const refs = input.raw_ids.map(toRawRef)
@@ -43,18 +61,15 @@ export async function setRawStatusImpl(input: SetRawStatusInput): Promise<RawSta
   const [existing] = await db.query<[{ id: RecordId }[]]>('SELECT id FROM raw_capture WHERE id IN $ids', {
     ids: refs
   })
-  const existingIds = new Set(existing.map(row => idStr(row.id)))
-  const missing = input.raw_ids.filter(id => !existingIds.has(id))
+  const missing = findMissingIds(
+    input.raw_ids,
+    existing.map(row => idStr(row.id))
+  )
   if (missing.length > 0) {
     throw new RawNotFoundError(missing.join(', '))
   }
 
-  const setProcessedAt =
-    input.status === 'processed'
-      ? ', processed_at = time::now()'
-      : input.status === 'pending'
-        ? ', processed_at = NONE'
-        : ''
+  const setProcessedAt = processedAtClause(input.status)
 
   const [rows] = await db.query<[DbRawStatusRow[]]>(
     `UPDATE raw_capture SET status = $status${setProcessedAt} WHERE id IN $ids RETURN AFTER`,
@@ -68,11 +83,7 @@ export async function setRawStatusImpl(input: SetRawStatusInput): Promise<RawSta
     payload: { raw_ids: input.raw_ids, status: input.status }
   })
 
-  return rows.map(row => ({
-    id: idStr(row.id),
-    status: row.status,
-    processed_at: isoStringOrNull(row.processed_at)
-  }))
+  return rows.map(toRawStatusRow)
 }
 
 export function registerSetRawStatus(server: McpServer): void {

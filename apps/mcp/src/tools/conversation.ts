@@ -31,22 +31,41 @@ const saveConversationShape = {
 const saveConversationSchema = z.object(saveConversationShape)
 export type SaveConversationInput = z.infer<typeof saveConversationSchema>
 
-export async function saveConversationImpl(input: SaveConversationInput): Promise<{ id: string; updated: boolean }> {
-  const db = await getDb()
-  const doc: Record<string, unknown> = { messages: input.messages }
-  if (input.title !== undefined) doc.title = input.title
-  if (input.state !== undefined) doc.state = input.state
-  if (input.id) {
-    const [rows] = await db.query<[{ id: RecordIdish }[]]>('UPDATE $id MERGE $doc RETURN id', {
-      id: new StringRecordId(input.id),
-      doc
-    })
-    if (!rows?.[0]) throw new QueryError(`conversation not found: ${input.id}`)
-    return { id: idStr(rows[0].id), updated: true }
-  }
+async function updateConversation(
+  db: Awaited<ReturnType<typeof getDb>>,
+  id: string,
+  doc: Record<string, unknown>
+): Promise<{ id: string; updated: boolean }> {
+  const [rows] = await db.query<[{ id: RecordIdish }[]]>('UPDATE $id MERGE $doc RETURN id', {
+    id: new StringRecordId(id),
+    doc
+  })
+  if (!rows?.[0]) throw new QueryError(`conversation not found: ${id}`)
+  return { id: idStr(rows[0].id), updated: true }
+}
+
+async function createConversation(
+  db: Awaited<ReturnType<typeof getDb>>,
+  doc: Record<string, unknown>
+): Promise<{ id: string; updated: boolean }> {
   const [rows] = await db.query<[{ id: RecordIdish }[]]>('CREATE conversation CONTENT $doc RETURN id', { doc })
   if (!rows?.[0]) throw new QueryError('failed to create conversation')
   return { id: idStr(rows[0].id), updated: false }
+}
+
+function buildConversationDoc(input: SaveConversationInput): Record<string, unknown> {
+  return {
+    messages: input.messages,
+    ...(input.title !== undefined ? { title: input.title } : {}),
+    ...(input.state !== undefined ? { state: input.state } : {})
+  }
+}
+
+export async function saveConversationImpl(input: SaveConversationInput): Promise<{ id: string; updated: boolean }> {
+  const db = await getDb()
+  const doc = buildConversationDoc(input)
+  if (input.id) return updateConversation(db, input.id, doc)
+  return createConversation(db, doc)
 }
 
 // ── get_conversation ─────────────────────────────────────────────────────────
@@ -91,6 +110,10 @@ export async function getConversationImpl(input: GetConversationInput): Promise<
   return row ? toDoc(row) : null
 }
 
+function formatConversationHeader(doc: ConversationDoc): string {
+  return `${doc.title ?? doc.id} — ${doc.messages.length} message(s)`
+}
+
 // ── list_conversations ───────────────────────────────────────────────────────
 
 const listConversationsShape = {
@@ -119,6 +142,11 @@ export async function listConversationsImpl(input: ListConversationsInput): Prom
     message_count: r.message_count ?? 0,
     updated_at: r.updated_at ? isoString(r.updated_at) : null
   }))
+}
+
+function formatConversationList(rows: ConversationSummary[]): string {
+  if (rows.length === 0) return 'No conversations.'
+  return rows.map(c => `- ${c.title ?? c.id} (${c.message_count} msg) — ${c.id}`).join('\n')
 }
 
 // ── delete_conversation ──────────────────────────────────────────────────────
@@ -160,8 +188,7 @@ export function registerConversation(server: McpServer): void {
     async args => {
       const doc = await getConversationImpl(args)
       if (!doc) return { content: [{ type: 'text', text: `Not found: ${args.id}` }] }
-      const text = `${doc.title ?? doc.id} — ${doc.messages.length} message(s)`
-      return { content: [{ type: 'text', text }, jsonBlock(doc)] }
+      return { content: [{ type: 'text', text: formatConversationHeader(doc) }, jsonBlock(doc)] }
     }
   )
 
@@ -172,11 +199,7 @@ export function registerConversation(server: McpServer): void {
     listConversationsShape,
     async args => {
       const rows = await listConversationsImpl(args)
-      const text =
-        rows.length === 0
-          ? 'No conversations.'
-          : rows.map(c => `- ${c.title ?? c.id} (${c.message_count} msg) — ${c.id}`).join('\n')
-      return { content: [{ type: 'text', text }, jsonBlock(rows)] }
+      return { content: [{ type: 'text', text: formatConversationList(rows) }, jsonBlock(rows)] }
     }
   )
 

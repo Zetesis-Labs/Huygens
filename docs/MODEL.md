@@ -152,9 +152,10 @@ Se mantiene el slug real `objetivo` durante esta migracion. No renombrarlo a
 por día decididos por el usuario; el agente no los marca autonomamente. Un valor
 fecha-solo (`YYYY-MM-DD`) se persiste a medianoche UTC del día. **No se borra
 automáticamente** al pasar el día: una MIT vencida y no resuelta sigue visible
-(en ámbar) hasta que el usuario la dispone en el cierre (`review_day`).
+(en ámbar) hasta que el usuario la dispone — el punto natural es la siguiente
+**jornada** (`kind: day`), que empieza asentando lo colgado.
 
-> Tensión abierta: el cierre permite *soltar* una MIT con `mit_for: null`, lo que
+> Tensión abierta: la jornada permite *soltar* una MIT con `mit_for: null`, lo que
 > borra el rastro de que *fue* MIT ese día. Si se quiere preservar histórico de
 > MITs, es una decisión de producto pendiente (ligada a due/defer dates). Reglas
 > de comportamiento vivas en `operating-doctrine`.
@@ -236,10 +237,13 @@ automatismo y vocabulario.
 
 **Ya enviado (antes fuera de scope):** el **dashboard** (Astro+React, read-only)
 existe y visualiza grafo, MITs (con vencidos en ámbar) y la **Bitácora**. Y los
-**rituales diarios** `plan_day` / `review_day`: un plan/cierre es un informe-block
-(prospectivo/retrospectivo) etiquetado con `kind`, que reusa el mismo flujo
-captura→propuesta→commit. Las reglas de cuándo y cómo invocarlos viven en
-`operating-doctrine` (no las repitas aquí).
+**rituales**: la **jornada** (`kind: day`) — un único informe-block diario que
+asienta lo pendiente y orienta el día, *sin* separar plan de cierre (decisión
+2026-06-10: la estructura vive en las mutaciones, no en la taxonomía del texto;
+los kinds `plan_day`/`review_day` quedaron legacy) — y la **revisión semanal**
+(`kind: week`). Ambos reusan el mismo flujo captura→propuesta→commit. Las
+reglas de cuándo y cómo invocarlos viven en `operating-doctrine` (no las
+repitas aquí).
 
 ## Ejemplos
 

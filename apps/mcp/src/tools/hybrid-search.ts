@@ -21,7 +21,7 @@ export const hybridSearchShape = {
   state_in: z
     .array(NoteStateSchema)
     .optional()
-    .describe('Filter by parent note state. Omit to search across all states.'),
+    .describe('Filter by parent note state. Omit to search all non-archived states (ARCHIVED is hidden by default).'),
   type_slugs: z.array(z.string()).optional().describe('Filter by parent note type slug (e.g. ["task","project"])'),
   updated_since: z
     .string()
@@ -63,25 +63,18 @@ export function rrfFuse(rankings: string[][], k = RRF_K): Map<string, number> {
   return scores
 }
 
-export async function hybridSearchImpl(input: HybridSearchInput): Promise<HybridHit[]> {
-  const k = input.k ?? 10
-  const pool = Math.min(MAX_POOL, Math.max(MIN_POOL, k * POOL_MULTIPLIER))
-  const filters = { state_in: input.state_in, type_slugs: input.type_slugs, updated_since: input.updated_since }
-
-  // The legs are independent — fire them in parallel. No dense threshold: the
-  // fusion decides relevance, an early floor would starve it of candidates.
-  const [dense, lexical] = await Promise.all([
-    vectorSearchImpl({ query: input.query, k: pool, ef: Math.max(40, pool * 2), ...filters }),
-    lexicalSearchImpl({ query: input.query, k: pool, ...filters })
-  ])
-
+/**
+ * Pure: fuse the two already-fetched legs into ranked HybridHits. Builds the
+ * per-leg rank maps, runs RRF, sorts by fused score, cuts to k, and projects.
+ * Deterministic — unit-testable with fixed arrays, no DB or embeddings.
+ */
+export function fuseLegs(dense: SearchHit[], lexical: SearchHit[], k: number): HybridHit[] {
   const denseRank = new Map(dense.map((h, i) => [h.block_id, i + 1]))
   const lexicalRank = new Map(lexical.map((h, i) => [h.block_id, i + 1]))
   // Prefer the dense hit object when a block appears in both — content and
   // provenance are identical, and both legs already attached provenance.
-  const byId = new Map<string, SearchHit>()
-  for (const h of lexical) byId.set(h.block_id, h)
-  for (const h of dense) byId.set(h.block_id, h)
+  // Spread order matters: lexical first, dense after, so dense overwrites.
+  const byId = new Map<string, SearchHit>([...lexical, ...dense].map(h => [h.block_id, h]))
 
   const fused = rrfFuse([dense.map(h => h.block_id), lexical.map(h => h.block_id)])
 
@@ -98,6 +91,21 @@ export async function hybridSearchImpl(input: HybridSearchInput): Promise<Hybrid
         lexical_rank: lexicalRank.get(blockId) ?? null
       }
     })
+}
+
+export async function hybridSearchImpl(input: HybridSearchInput): Promise<HybridHit[]> {
+  const k = input.k ?? 10
+  const pool = Math.min(MAX_POOL, Math.max(MIN_POOL, k * POOL_MULTIPLIER))
+  const filters = { state_in: input.state_in, type_slugs: input.type_slugs, updated_since: input.updated_since }
+
+  // The legs are independent — fire them in parallel. No dense threshold: the
+  // fusion decides relevance, an early floor would starve it of candidates.
+  const [dense, lexical] = await Promise.all([
+    vectorSearchImpl({ query: input.query, k: pool, ef: Math.max(40, pool * 2), ...filters }),
+    lexicalSearchImpl({ query: input.query, k: pool, ...filters })
+  ])
+
+  return fuseLegs(dense, lexical, k)
 }
 
 function legTag(h: HybridHit): string {

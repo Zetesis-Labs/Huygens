@@ -23,27 +23,20 @@ type CountRow = { count: number }
 
 /** Fold `SELECT <field> AS key, count() AS count … GROUP BY <field>` rows into a map + total. */
 function distribution(rows: GroupRow[]): { total: number; by: Record<string, number> } {
-  const by: Record<string, number> = {}
-  let total = 0
-  for (const r of rows) {
-    const key = r.key ?? 'unknown'
-    by[key] = r.count
-    total += r.count
-  }
+  const by = Object.fromEntries(rows.map(r => [r.key ?? 'unknown', r.count]))
+  const total = rows.reduce((sum, r) => sum + r.count, 0)
   return { total, by }
 }
 
-export async function collectionStatsImpl(): Promise<CollectionStats> {
-  const db = await getDb()
-  const edgeSelects = ALL_EDGE_TABLES.map(t => `SELECT count() AS count FROM ${t} GROUP ALL`).join(';\n')
-  const sql = `SELECT status AS key, count() AS count FROM raw_capture GROUP BY key;
-SELECT state AS key, count() AS count FROM note GROUP BY key;
-SELECT block_kind AS key, count() AS count FROM block GROUP BY key;
-SELECT count() AS count FROM block WHERE embedding != NONE GROUP ALL;
-SELECT status AS key, count() AS count FROM proposal GROUP BY key;
-${edgeSelects}`
+type StatsResults = [GroupRow[], GroupRow[], GroupRow[], CountRow[], GroupRow[], ...CountRow[][]]
 
-  const results = await db.query<[GroupRow[], GroupRow[], GroupRow[], CountRow[], GroupRow[], ...CountRow[][]]>(sql)
+/**
+ * Pure shaping of the already-fetched query tuple into CollectionStats. The
+ * positional contract is fragile: edgeRows is the rest of the tuple and lines
+ * up index-for-index with ALL_EDGE_TABLES because edgeSelects is appended in
+ * that same order. Kept testable without a DB.
+ */
+function assembleCollectionStats(results: StatsResults): CollectionStats {
   const [rawRows, noteRows, blockKindRows, embeddedRows, proposalRows, ...edgeRows] = results
 
   const raw = distribution(rawRows)
@@ -52,10 +45,7 @@ ${edgeSelects}`
   const embedded = embeddedRows[0]?.count ?? 0
   const proposal = distribution(proposalRows)
 
-  const edges: Record<string, number> = {}
-  ALL_EDGE_TABLES.forEach((table, i) => {
-    edges[table] = edgeRows[i]?.[0]?.count ?? 0
-  })
+  const edges = Object.fromEntries(ALL_EDGE_TABLES.map((table, i) => [table, edgeRows[i]?.[0]?.count ?? 0]))
 
   return {
     raw_captures: { total: raw.total, by_status: raw.by },
@@ -69,6 +59,20 @@ ${edgeSelects}`
     edges,
     proposals: { total: proposal.total, by_status: proposal.by }
   }
+}
+
+export async function collectionStatsImpl(): Promise<CollectionStats> {
+  const db = await getDb()
+  const edgeSelects = ALL_EDGE_TABLES.map(t => `SELECT count() AS count FROM ${t} GROUP ALL`).join(';\n')
+  const sql = `SELECT status AS key, count() AS count FROM raw_capture GROUP BY key;
+SELECT state AS key, count() AS count FROM note GROUP BY key;
+SELECT block_kind AS key, count() AS count FROM block GROUP BY key;
+SELECT count() AS count FROM block WHERE embedding != NONE GROUP ALL;
+SELECT status AS key, count() AS count FROM proposal GROUP BY key;
+${edgeSelects}`
+
+  const results = await db.query<StatsResults>(sql)
+  return assembleCollectionStats(results)
 }
 
 function summarize(s: CollectionStats): string {

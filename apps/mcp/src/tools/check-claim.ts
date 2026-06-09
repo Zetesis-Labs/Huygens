@@ -38,10 +38,20 @@ type Claim = { subject: string; predicate: string; object: string }
 export type Verdict = 'supported' | 'contradicted' | 'unsupported'
 export type ClaimResult = Claim & { verdict: Verdict; detail?: string }
 
-/** Verify a relation claim against the graph. `contradicted` is reserved for the
- * single-parent part_of: claiming a parent when a *different* one exists. Other
- * (multi-valued) edges can only be supported or unsupported — absence isn't a
- * contradiction. */
+type EdgeFacts = { hasEdge: boolean; actualParent: string | null }
+
+/** Decide a relation verdict from the fetched edge facts. `contradicted` is
+ * reserved for the single-parent part_of: claiming a parent when a *different*
+ * one exists. Other (multi-valued) edges can only be supported or unsupported —
+ * absence isn't a contradiction. */
+function decideEdge(c: Claim, facts: EdgeFacts): ClaimResult {
+  if (facts.hasEdge) return { ...c, verdict: 'supported' }
+  if (c.predicate === 'part_of' && facts.actualParent && facts.actualParent !== c.object)
+    return { ...c, verdict: 'contradicted', detail: `part_of real: ${facts.actualParent}` }
+  return { ...c, verdict: 'unsupported' }
+}
+
+/** Fetch the edge facts for a relation claim, then decide the verdict purely. */
 async function checkEdge(db: Surreal, c: Claim): Promise<ClaimResult> {
   const s = new StringRecordId(c.subject)
   const o = new StringRecordId(c.object)
@@ -52,24 +62,27 @@ async function checkEdge(db: Surreal, c: Claim): Promise<ClaimResult> {
       o
     }
   )
-  if ((hit ?? []).length > 0) return { ...c, verdict: 'supported' }
-  if (c.predicate === 'part_of') {
-    const [parents] = await db.query<[RecordIdish[]]>('SELECT VALUE out FROM part_of WHERE in = $s', { s })
-    const actual = (parents ?? [])[0]
-    if (actual && idStr(actual) !== c.object)
-      return { ...c, verdict: 'contradicted', detail: `part_of real: ${idStr(actual)}` }
-  }
-  return { ...c, verdict: 'unsupported' }
+  const hasEdge = (hit ?? []).length > 0
+  if (hasEdge || c.predicate !== 'part_of') return decideEdge(c, { hasEdge, actualParent: null })
+  const [parents] = await db.query<[RecordIdish[]]>('SELECT VALUE out FROM part_of WHERE in = $s', { s })
+  const actual = (parents ?? [])[0]
+  return decideEdge(c, { hasEdge, actualParent: actual ? idStr(actual) : null })
 }
 
-/** Verify a note-attribute claim (state | type). */
-async function checkAttr(c: Claim): Promise<ClaimResult> {
+/** Decide a note-attribute verdict from the fetched record (or null). */
+function decideAttr(c: Claim, rec: GraphNodeRecord | undefined): ClaimResult {
   if (tableOf(c.subject) !== 'note') return { ...c, verdict: 'unsupported', detail: 'state/type solo aplican a note:' }
-  const [rec] = await selectByIds<GraphNodeRecord>([c.subject])
   if (!rec) return { ...c, verdict: 'unsupported', detail: 'el sujeto no existe' }
   const actual = c.predicate === 'state' ? (rec.state ?? '') : noteTypeSlug(rec.type)
   if (actual === c.object) return { ...c, verdict: 'supported' }
   return { ...c, verdict: 'contradicted', detail: `valor real: ${actual || '(ninguno)'}` }
+}
+
+/** Fetch the note record for an attribute claim (state | type), then decide. */
+async function checkAttr(c: Claim): Promise<ClaimResult> {
+  if (tableOf(c.subject) !== 'note') return decideAttr(c, undefined)
+  const [rec] = await selectByIds<GraphNodeRecord>([c.subject])
+  return decideAttr(c, rec)
 }
 
 /**
@@ -81,11 +94,13 @@ async function checkAttr(c: Claim): Promise<ClaimResult> {
  */
 export async function checkClaimImpl(input: CheckClaimInput): Promise<ClaimResult[]> {
   const db = await getDb()
-  const results: ClaimResult[] = []
-  for (const c of input.claims) {
-    results.push(EDGE_PREDICATES.has(c.predicate) ? await checkEdge(db, c) : await checkAttr(c))
-  }
-  return results
+  const checkClaim = (c: Claim): Promise<ClaimResult> =>
+    EDGE_PREDICATES.has(c.predicate) ? checkEdge(db, c) : checkAttr(c)
+  // Chained reduce keeps the I/O strictly sequential (wave 4 owns parallelism).
+  return input.claims.reduce<Promise<ClaimResult[]>>(
+    (acc, c) => acc.then(async results => [...results, await checkClaim(c)]),
+    Promise.resolve([])
+  )
 }
 
 function verbalize(results: ClaimResult[]): string {

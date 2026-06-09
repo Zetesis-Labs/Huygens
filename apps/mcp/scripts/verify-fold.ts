@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { StringRecordId, Surreal } from 'surrealdb'
+import { type RecordId, StringRecordId, Surreal } from 'surrealdb'
 import { closeDb, getDb } from '../src/surreal'
 import { buildReplayTx } from '../src/tools/proposal/commit'
+import type { StoredProposalPayload } from '../src/tools/proposal/schemas'
 
 /**
  * ACCEPTANCE TEST for the event-sourcing invariant: "the live graph is a
@@ -26,10 +27,11 @@ const PROJECTION = ['part_of', 'blocked_by', 'mentions', 'about', 'affects', 'de
 const main = await getDb()
 
 // ── read the log + the live state from main ───────────────────────────────
-const [proposals] = await main.query<[Array<{ id: unknown; payload: any; _ca: unknown }>]>(
+// `_ca` / `created_at` only drive the SQL ORDER BY; the script never reads them.
+const [proposals] = await main.query<[Array<{ id: RecordId; payload: StoredProposalPayload }>]>(
   "SELECT id, payload, result.committed_at AS _ca FROM proposal WHERE status = 'committed' ORDER BY _ca ASC"
 )
-const [retractions] = await main.query<[Array<{ payload: any; created_at: unknown }>]>(
+const [retractions] = await main.query<[Array<{ payload: { notes?: string[]; blocks?: string[] } }>]>(
   "SELECT payload, created_at FROM agent_event WHERE kind = 'retracted' ORDER BY created_at ASC"
 )
 
@@ -72,7 +74,10 @@ function stable(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(stable).join(',')}]`
   if (typeof v === 'object') {
     const o = v as Record<string, unknown>
-    return `{${Object.keys(o).sort().map(k => `${k}:${stable(o[k])}`).join(',')}}`
+    return `{${Object.keys(o)
+      .sort()
+      .map(k => `${k}:${stable(o[k])}`)
+      .join(',')}}`
   }
   return String(v)
 }
@@ -114,7 +119,9 @@ async function snapshot(db: Surreal): Promise<{
   }
   const edges = new Map<string, string>()
   for (const t of EDGE_TABLES) {
-    const [rows] = await db.query<[Array<Record<string, unknown>>]>(`SELECT in, out, via_proposal${edgeMeta[t]} FROM ${t}`)
+    const [rows] = await db.query<[Array<Record<string, unknown>>]>(
+      `SELECT in, out, via_proposal${edgeMeta[t]} FROM ${t}`
+    )
     for (const e of rows ?? []) {
       const meta: Record<string, unknown> = { via: String(e.via_proposal) }
       for (const f of ['reason', 'action', 'summary', 'transformation']) if (f in e) meta[f] = e[f] ?? null
@@ -158,18 +165,24 @@ function diffMap(a: Map<string, string>, b: Map<string, string>, label: string):
   console.log(
     `  ${label.padEnd(14)} live=${a.size} shadow=${b.size} | onlyLive=${onlyLive.length} onlyShadow=${onlyShadow.length} mismatch=${mismatch.length}`
   )
-  if (onlyLive.length) console.log(`      onlyLive: ${onlyLive.slice(0, 5).join(', ')}${onlyLive.length > 5 ? ' …' : ''}`)
-  if (onlyShadow.length) console.log(`      onlyShadow: ${onlyShadow.slice(0, 5).join(', ')}${onlyShadow.length > 5 ? ' …' : ''}`)
+  if (onlyLive.length)
+    console.log(`      onlyLive: ${onlyLive.slice(0, 5).join(', ')}${onlyLive.length > 5 ? ' …' : ''}`)
+  if (onlyShadow.length)
+    console.log(`      onlyShadow: ${onlyShadow.slice(0, 5).join(', ')}${onlyShadow.length > 5 ? ' …' : ''}`)
   return total
 }
 function diffSet(a: Set<string>, b: Set<string>, label: string): number {
   const onlyLive = [...a].filter(k => !b.has(k))
   const onlyShadow = [...b].filter(k => !a.has(k))
-  console.log(`  ${label.padEnd(14)} live=${a.size} shadow=${b.size} | onlyLive=${onlyLive.length} onlyShadow=${onlyShadow.length}`)
+  console.log(
+    `  ${label.padEnd(14)} live=${a.size} shadow=${b.size} | onlyLive=${onlyLive.length} onlyShadow=${onlyShadow.length}`
+  )
   return onlyLive.length + onlyShadow.length
 }
 
-console.log(`\n[verify-fold] replayed ${(proposals ?? []).length} proposals + ${(retractions ?? []).length} retractions into ${SHADOW}\n`)
+console.log(
+  `\n[verify-fold] replayed ${(proposals ?? []).length} proposals + ${(retractions ?? []).length} retractions into ${SHADOW}\n`
+)
 let diff = 0
 diff += diffMap(live.notes, shad.notes, 'notes')
 diff += diffMap(live.narr, shad.narr, 'narrative')

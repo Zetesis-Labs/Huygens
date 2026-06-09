@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import type { RecordId } from 'surrealdb'
 import { captureImpl } from '../src/tools/capture'
-import { commitProposalImpl, createProposalImpl, type ProposalPayload } from '../src/tools/proposal'
+import { createProposalImpl, type ProposalPayload } from '../src/tools/proposal'
 import { setRawStatusImpl } from '../src/tools/set-raw-status'
-import { type TestDb, withFreshDb } from './_fixtures'
+import { commitPreviewed, type TestDb, withFreshDb } from './_fixtures'
 
 type EventRow = {
   kind: string
@@ -67,7 +67,7 @@ describe('agent_event — emission and persistence', () => {
   test("commit_proposal emits 'proposal_committed' with actor user and the proposal as subject", async () => {
     const { raw_id } = await captureImpl({ content: 'fuente', source_kind: 'chat' })
     const created = await createProposalImpl({ raw_ids: [raw_id], payload: payload([raw_id]) })
-    await commitProposalImpl({ proposal_id: created.id })
+    await commitPreviewed({ proposal_id: created.id })
 
     const evs = await events(ctx, 'proposal_committed')
     expect(evs).toHaveLength(1)
@@ -81,7 +81,7 @@ describe('agent_event — emission and persistence', () => {
   test('a full capture → commit flow accumulates one event per mutating step', async () => {
     const { raw_id } = await captureImpl({ content: 'flujo', source_kind: 'chat' })
     const created = await createProposalImpl({ raw_ids: [raw_id], payload: payload([raw_id]) })
-    await commitProposalImpl({ proposal_id: created.id })
+    await commitPreviewed({ proposal_id: created.id })
 
     const all = await events(ctx)
     const kinds = all.map(e => e.kind).sort()
