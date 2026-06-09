@@ -4,7 +4,7 @@ import { captureImpl } from '../src/tools/capture'
 import { chunkMarkdownImpl } from '../src/tools/chunk-markdown'
 import { embedTextImpl } from '../src/tools/embed-text'
 import { indexBlockImpl } from '../src/tools/index-block'
-import { commitProposalImpl, createProposalImpl } from '../src/tools/proposal'
+import { commitProposalImpl, createProposalImpl, getProposalImpl } from '../src/tools/proposal'
 import { vectorSearchImpl } from '../src/tools/vector-search'
 
 const db = await getDb()
@@ -101,6 +101,7 @@ try {
     }
   })
   proposalId = proposal.id
+  await getProposalImpl({ proposal_id: proposal.id }) // preview muro: render before commit
   commit = await commitProposalImpl({ proposal_id: proposal.id })
 
   const blocksToIndex = [...commit.descriptive_blocks_created, ...commit.narrative_blocks_created]

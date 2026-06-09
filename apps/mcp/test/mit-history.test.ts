@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { captureImpl } from '../src/tools/capture'
-import { commitProposalImpl, createProposalImpl, type ProposalPayload } from '../src/tools/proposal'
+import { createProposalImpl, type ProposalPayload } from '../src/tools/proposal'
 import { mitHistoryImpl } from '../src/tools/views'
-import { type TestDb, withFreshDb } from './_fixtures'
+import { commitPreviewed, type TestDb, withFreshDb } from './_fixtures'
 
 /**
  * mit_history derives the per-note MIT timeline from the commit log alone — no
@@ -38,7 +38,7 @@ describe('mitHistoryImpl', () => {
       affects: []
     }
     const proposal = await createProposalImpl({ raw_ids: [raw], payload })
-    const res = await commitProposalImpl({ proposal_id: proposal.id })
+    const res = await commitPreviewed({ proposal_id: proposal.id })
     const id = res.notes_created[0]
     if (!id) throw new Error('no note created')
     return id
@@ -57,7 +57,7 @@ describe('mitHistoryImpl', () => {
       affects: []
     } as unknown as ProposalPayload
     const proposal = await createProposalImpl({ raw_ids: [raw], payload })
-    await commitProposalImpl({ proposal_id: proposal.id })
+    await commitPreviewed({ proposal_id: proposal.id })
   }
 
   test('reconstructs assigned → moved → cleared in commit order', async () => {
@@ -83,7 +83,14 @@ describe('mitHistoryImpl', () => {
       raw_ids: [raw],
       narrative_blocks: [{ temp_id: 'n1', content: 'born planned', raw_ids: [raw] }],
       note_creates: [
-        { temp_id: 't1', type_slug: 'task', title: 'Born planned', state: 'ACTIVE', mit_for: '2026-06-09', descriptive_blocks: [] }
+        {
+          temp_id: 't1',
+          type_slug: 'task',
+          title: 'Born planned',
+          state: 'ACTIVE',
+          mit_for: '2026-06-09',
+          descriptive_blocks: []
+        }
       ],
       note_updates: [],
       edges: [],
@@ -91,7 +98,7 @@ describe('mitHistoryImpl', () => {
       affects: []
     } as unknown as ProposalPayload
     const proposal = await createProposalImpl({ raw_ids: [raw], payload })
-    const res = await commitProposalImpl({ proposal_id: proposal.id })
+    const res = await commitPreviewed({ proposal_id: proposal.id })
     const noteId = res.notes_created[0] as string
 
     const r = await mitHistoryImpl(noteId)
@@ -116,7 +123,7 @@ describe('mitHistoryImpl', () => {
       affects: []
     } as unknown as ProposalPayload
     const proposal = await createProposalImpl({ raw_ids: [raw], payload })
-    await commitProposalImpl({ proposal_id: proposal.id })
+    await commitPreviewed({ proposal_id: proposal.id })
 
     const all = await mitHistoryImpl()
     expect(all.timeline.some(t => t.note_id === planned)).toBe(true)
