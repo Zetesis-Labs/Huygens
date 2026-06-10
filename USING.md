@@ -1,7 +1,10 @@
 # Using Huygens
 
 Huygens is a personal structured memory: you talk to a conversational agent,
-the agent uses the MCP, the MCP persists in SurrealDB. The conceptual model
+the agent uses the MCP, the MCP persists in SurrealDB. **If you are the user
+(not the operator), start with the user guide: [`docs/GUIDE.md`](./docs/GUIDE.md)**
+— how to talk to the agent and the organizational methodology, no tooling
+knowledge required. The conceptual model
 lives in [`docs/MODEL.md`](./docs/MODEL.md); how an agent must behave lives in
 the **operating doctrine** ([`apps/mcp/src/lore/operating-doctrine.md`](./apps/mcp/src/lore/operating-doctrine.md),
 served as the `huygens://lore/operating-doctrine` resource); the physical

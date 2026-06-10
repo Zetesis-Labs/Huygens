@@ -4,6 +4,11 @@ Memoria estructurada personal para Rubén. Es un MCP server basado en
 **SurrealDB** que sirve como capa de memoria para agentes conversacionales
 como Claude Code, Codex o Hermes.
 
+**¿Cómo se usa?** → [`docs/GUIDE.md`](./docs/GUIDE.md) — la guía del usuario:
+cómo hablar con el agente (capturar, ordenar, preguntar), la jornada y la
+semana, y la metodología organizativa (MITs, ejes temporales, estados,
+jerarquía). Sin tecnicismos.
+
 ## Modelo
 
 El modelo conceptual canónico vive en [`docs/MODEL.md`](./docs/MODEL.md).

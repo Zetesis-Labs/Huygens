@@ -46,9 +46,13 @@ ships at least one broken recursion recipe, see Part I §3), and
 
 The doctrine's load-bearing rules:
 
-- **Approval boundary** — nothing structural mutates outside an approved proposal;
-  `commit_proposal` only with the user's explicit OK. SurrealQL is read-only (the
-  reader is a VIEWER; writes are rejected by the DB).
+- **Approval boundary** — nothing structural mutates outside an approved/authorized
+  proposal. A correction/order stated explicitly by the user authorizes a minimal
+  faithful proposal + commit without re-asking; interpretation, new topology, MITs
+  and rituals require preview/approval, and rituals specifically require
+  `approved: true`. Every commit requires the proposal to have been previewed
+  (`get_proposal` stamps it; `update_proposal` invalidates it; server-enforced).
+  SurrealQL is read-only (the reader is a VIEWER; writes are rejected by the DB).
 - **Decision tree** — capture vs process-inbox vs ritual; default to a normal
   informe with **no `kind`**.
 - **Kind discipline** — tag `kind: plan_day`/`review_day` **only** inside that
@@ -169,6 +173,11 @@ Drop to raw `query_query` only for **ad-hoc** exploration — then §3's gotchas
   `SELECT id, updated_at … ORDER BY updated_at`.
 - **`SELECT field FROM $ids`** (bound array) fails ("Specify a database") → use
   `SELECT * FROM block WHERE id IN $ids` or `SELECT VALUE field FROM $ids`.
+- **Record-id parameters may arrive as strings.** If `WHERE id IN $ids` unexpectedly
+  returns `[]` for known ids, do not report absence. Re-run with literal record ids
+  (`[block:..., note:...]`) or use typed tools / saved queries instead of hand-casting
+  record ids. If a casting recipe is genuinely needed, it belongs in the runtime
+  `huygens://lore/surrealql-cookbook`, not as a local skill-only rule.
 - **Diagrams**: the Hermes client drops `type:image` → use `format_d2: "code"`.
 
 ---
