@@ -55,22 +55,23 @@ The doctrine's load-bearing rules:
   SurrealQL is read-only (the reader is a VIEWER; writes are rejected by the DB).
 - **Decision tree** — capture vs process-inbox vs ritual; default to a normal
   informe with **no `kind`**.
-- **Kind discipline** — tag `kind: plan_day`/`review_day` **only** inside that
-  explicit ritual; a normal process informe carries no kind. Ante la duda, **no
-  pongas kind**.
-- **Initiative asymmetry** — *invite* rituals proactively (be a coach: morning
-  without MITs → propose planning; day's end with open MITs → propose closing) but
-  **never commit a plan_day/review_day the user did not ask for**. The phantom
-  close is the error to avoid.
-- **One ritual per day** (Madrid) and the **MIT rules** (the user decides MITs;
-  1–3/day; at least one tied to an Objetivo).
+- **Kind discipline** — tag `kind: day`/`week` **only** inside that explicit
+  ritual; a normal process informe carries no kind. Ante la duda, **no pongas
+  kind**. (`plan_day`/`review_day` are legacy kinds, readable in historical data
+  only — never write them.)
+- **Initiative asymmetry** — *invite* the rituals proactively (be a coach:
+  morning with MITs left hanging from yesterday or none chosen → propose the
+  `day` ritual) but **never commit a `day`/`week` the user did not ask for**.
+  The phantom ritual is the error to avoid.
+- **One `day` per day; one `week` per ISO week** (Madrid) and the **MIT rules**
+  (the user decides MITs; 1–3/day; at least one tied to an Objetivo).
 
 ## When to Use
 
 - The user asks to *see* graph state: tasks, ideas, a hierarchy, a project's neighborhood, the daily radar.
 - Reporting **counts** ("¿cuántas pendientes hay?").
 - Capturing, processing the inbox, or any graph mutation/correction.
-- Producing daily/operational reports or closing the day.
+- Producing daily/operational reports or running the `day`/`week` rituals.
 - Auditing provenance, retrieval quality, topology, or schema/tool behaviour.
 - Deciding whether the graph is worth it vs native memory.
 - The user corrects drift, marks something stale, or pushes back on a result.
@@ -112,14 +113,15 @@ nobody has onboarded him into it. Activating it is your job, and you do it by
 projects, almost no ACTIVE tasks; ideas captured and parked, never promoted. He has
 the *capture* habit, not the *plan/execute* habit. So the highest-leverage coaching
 move is **decomposing a project into its next physical action** (the `decompose_project`
-prompt) — without that, `plan_day` has no candidates and dies.
+prompt) — without that, the `day` ritual has no candidates and dies.
 
 **The activation ramp — one habit at a time** (read the graph to gauge where he is):
 1. **Recognize the win**, don't lecture: "your world is mapped — that's the hard half
    of ZTD, and you already do it. We just need to land it into daily action."
 2. **Decompose a project** → its next physical action (model it aloud, leave it as a proposal).
 3. **ONE MIT a day** (not 1-3) when there's no planning streak yet; raise to 2-3 once it sticks.
-4. **Daily close** (`review_day`) only after ≥3 days of marked MITs; add learning questions.
+4. **Settling the day** (yesterday's dispositions inside the next `day` ritual)
+   only after ≥3 days of marked MITs; add learning questions.
 5. **First objective**: once daily planning is stable, attack the parked ideas — "of the
    things you're chasing, which is a real Objetivo? let's hang a MIT off it."
 6. **due/defer + weekly, then wean** — explain less, ask more, until he runs the rituals himself.
@@ -134,7 +136,7 @@ it.** On relapse, recover warmly and **lower the bar** ("you had a streak and it
 restarting is part of the method, not a failure. one MIT today?"). He's an advanced user,
 not a linear novice — let him skip levels when he asks.
 
-> Track maturity by **reading the graph** (plan_day/review_day streaks, `last_reviewed_at`),
+> Track maturity by **reading the graph** (`day`/`week` ritual streaks, `last_reviewed_at`),
 > never by persisting an agent-state note — that's telemetry, and it would dirty the domain
 > graph + violate the mutation boundary.
 
@@ -208,8 +210,9 @@ graph state.
    ritual), `about`, `affects`, and minimal note/edge mutations. For
    narrative-only, the payload is just `narrative_blocks` + `raw_ids`.
 6. **`commit_proposal`** the approved/authorized proposal. A ritual
-   (`plan_day`/`review_day`) requires `approved: true` and is rejected if one
-   already exists for the day — retract the prior one before re-committing.
+   (`day`/`week`) requires `approved: true` and is rejected if one already
+   exists for that day / ISO week (Madrid) — retract the prior one before
+   re-committing.
 7. **Indexing expectation** — `commit_proposal` normally attempts best-effort
    indexing for newly created narrative/descriptive blocks when the server has
    `DEEPINFRA_API_KEY`. Embedding failure does not roll back the commit. Still
@@ -247,23 +250,27 @@ graph state.
   (`saved_query:ebrk9y01h58jicz7svhv`), confirm every root branch is represented,
   and render the full hierarchy before recommending focus.
 - **Include the ritual layer.** Check committed narrative blocks with
-  `kind: plan_day` / `kind: review_day`, and query live MITs via the top-level
-  `note.mit_for` field, before answering "what remains today?".
+  `kind: day` (and `kind: week`; legacy `plan_day`/`review_day` appear only in
+  historical data), and query live MITs via the top-level `note.mit_for` field,
+  before answering "what remains today?".
 - **Render hierarchically.** Don't stop at flat counts by state — query `part_of`
   and render projects under areas/subareas, with state labels inline (use `get_hierarchy`).
 - **Calendar + Huygens morning reports:** anchor the date with the calendar
   current-time tool in the user's timezone, list all calendars before fetching
   today's events, keep the output compact/mobile-friendly.
-- **Closing the day (`review_day`):** do not require the user to write the review.
-  Capture their spoken/chat disposition as evidence, synthesize the retrospective
-  yourself, create the `kind: review_day` block, link `about`/`affects`, commit
-  (`approved: true`), index, verify both the day's `plan_day` and `review_day` exist.
-- **Midday status corrections are NOT a day review.** Even if they close tasks or
+- **The day ritual (`kind: day`):** do not require the user to write it. Capture
+  their spoken/chat disposition as evidence, then synthesize the narrative
+  yourself — settle what was left hanging (overdue MITs and deadlines: done /
+  continues / move / drop) and orient the day (MITs if the user chooses them),
+  without separating close from plan. Create the `kind: day` block, link
+  `about`/`affects`, commit (`approved: true`), index, verify the day's `day`
+  block exists.
+- **Midday status corrections are NOT a day ritual.** Even if they close tasks or
   move items to `WAITING`, use a plain narrative block with **no `kind`**; leave
-  `review_day` for an explicit end-of-day close. If you committed a premature
-  `review_day`, repair it: capture the correction, retract the ritual block and its
+  `kind: day` for the explicit ritual. If you committed a premature `day`, repair
+  it: capture the correction, retract the ritual block and its
   `derived_from`/`about`/`affects`, recommit as a non-ritual narrative, verify no
-  `review_day` exists for the date.
+  `day` block exists for the date.
 
 ---
 
@@ -389,8 +396,8 @@ periodic review.
     `transformation`, edge metadata.
 11. **Flattening provenance to "summarized"/"inferred"** — transformation labels
     are epistemic claims; keep unknown as unknown.
-12. **Phantom close** — committing a `review_day` the user did not ask for; midday
-    corrections are not a day review.
+12. **Phantom ritual** — committing a `day`/`week` the user did not ask for;
+    midday corrections are not a day ritual.
 13. **Letting archived structure pollute live reports**; **persisting derived state**
     (e.g. `metadata.planning_status`) instead of computing from topology.
 14. **New ontology before hygiene** — backfill embeddings, fix provenance, clean
@@ -406,7 +413,7 @@ periodic review.
 - [ ] User friction/corrections were `capture`d.
 - [ ] Mutations went through capture → proposal → commit → verify; embedding coverage checked and `index_block` used only if auto-index/backfill left blocks unembedded.
 - [ ] No `part_of` parent assumed from context; orphans invited/captured, not auto-mutated.
-- [ ] Rituals only on explicit request, with `approved: true`, one per day; no phantom close.
+- [ ] Rituals only on explicit request, with `approved: true`, one `day` per day / one `week` per ISO week (Madrid); no phantom ritual.
 - [ ] Daily reports began with the complete radar before tactical filtering.
 - [ ] Provenance/edge metadata (`reason`, `transformation`) checked against persisted records.
 - [ ] After mutation, state/topology verified before reporting success.
