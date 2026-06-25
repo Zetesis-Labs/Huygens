@@ -1,0 +1,2 @@
+[mcp_servers.huygens]
+url = "http://huygens-mcp:3030/mcp"
