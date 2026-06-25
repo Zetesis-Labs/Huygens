@@ -165,8 +165,8 @@ del dashboard; el commit lo hace el humano desde la UI). Para ellos la regla
 - Todo lo demás de esta doctrina aplica sin cambios: disciplina del `kind`,
   asimetría de iniciativa, MITs, grounding.
 - Si el usuario te pide commitear y no tienes la tool, dilo y señala dónde se
-  commitea (el botón de la proposal en el dashboard); no lo intentes por otra
-  vía.
+  commitea (hoy: una sesión MCP completa, p. ej. Claude Code; el draft queda
+  visible en *Borradores* del dashboard); no lo intentes por otra vía.
 
 ## Los rituales (day / week) y su disciplina
 
