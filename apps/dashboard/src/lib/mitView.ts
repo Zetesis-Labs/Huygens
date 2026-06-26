@@ -1,5 +1,6 @@
 import type { FlowEdge, FlowGraph, FlowNode } from './graph'
 import { type LaidOutGraph, layoutGraph } from './layout'
+import { withNodeChangeHistory } from './nodeHistory'
 import { existingEdgesAmong, listMits, type MitRow, relatedNoteIds, resolveNoteCards } from './surreal'
 
 export type MitView = {
@@ -62,5 +63,5 @@ export async function buildMitView(todayMadrid: string): Promise<MitView | null>
   }))
 
   const flow: FlowGraph = { nodes, edges }
-  return { date: todayMadrid, laidOut: await layoutGraph(flow), mits }
+  return { date: todayMadrid, laidOut: await withNodeChangeHistory(await layoutGraph(flow)), mits }
 }

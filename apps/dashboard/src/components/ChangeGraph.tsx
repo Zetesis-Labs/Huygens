@@ -6,7 +6,7 @@ import { GraphViewProvider } from './graph/GraphViewContext'
  * Entry point for the proposal change-graph island. Provides the shared view
  * state (legend toggles) and renders the interactive canvas.
  */
-export default function ChangeGraph(graph: LaidOutGraph) {
+export default function ChangeGraph(graph: LaidOutGraph & { initialNodeId?: string | null }) {
   return (
     <GraphViewProvider>
       <GraphCanvas {...graph} />

@@ -21,7 +21,8 @@ const NODE_WIDTH = 240
 // wraps (no truncation), so account for its line count too.
 function nodeHeight(d: FlowNodeData): number {
   const titleLines = Math.max(1, Math.ceil(d.title.length / 24))
-  return 34 + titleLines * 20 + d.lines.length * 18 + (d.descriptives.length > 0 ? 20 : 0)
+  const hasFooter = d.descriptives.length > 0 || (d.changeHistory?.length ?? 0) > 0
+  return 34 + titleLines * 20 + d.lines.length * 18 + (hasFooter ? 20 : 0)
 }
 
 /**

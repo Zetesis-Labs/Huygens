@@ -7,6 +7,15 @@
  * an edge) → dashed. */
 export type NodeStatus = 'created' | 'updated' | 'context'
 
+export type ChangeHistoryItem = {
+  proposalId: string
+  title: string
+  status: string
+  at: string | null
+  action: string
+  summary?: string
+}
+
 export type FlowNodeData = {
   title: string
   /** Note type slug (task|project|area|routine|idea|reference|person|objetivo)
@@ -27,6 +36,8 @@ export type FlowNodeData = {
   lines: string[]
   /** Full content of the note's descriptive blocks (markdown), shown on click. */
   descriptives: string[]
+  /** Proposals that changed this node, newest first. */
+  changeHistory?: ChangeHistoryItem[]
 }
 
 export type FlowNode = { id: string; data: FlowNodeData }
@@ -46,7 +57,8 @@ export type ExistingEdge = { source: string; target: string; kind: string }
  * payload types are structurally assignable to this. */
 export type GraphPayload = {
   note_creates: {
-    id: string
+    id?: string
+    temp_id?: string
     type_slug: string
     title: string
     state: string
@@ -66,7 +78,17 @@ export type GraphPayload = {
   /** Semantic edges this proposal retires (the inverse of `edges`). Optional:
    * older payloads predate the feature. Read by foldTopology, not proposalToFlow. */
   edges_remove?: { kind: string; from: string; to: string }[]
-  narrative_blocks: { id: string }[]
+  narrative_blocks: { id?: string; temp_id?: string }[]
+}
+
+type GraphPayloadInput = GraphPayload | { payload: GraphPayload }
+
+function payloadOf(input: GraphPayloadInput): GraphPayload {
+  return 'payload' in input ? input.payload : input
+}
+
+function payloadNodeId(n: { id?: string; temp_id?: string }): string | null {
+  return n.id ?? n.temp_id ?? null
 }
 
 function createAttrLines(n: GraphPayload['note_creates'][number]): string[] {
@@ -101,7 +123,8 @@ function typeFromId(id: string): string {
  * dropped. Referenced records outside the proposal become `context` nodes,
  * labelled+typed from `labels`. Pure.
  */
-export function proposalToFlow(payload: GraphPayload, labels: Record<string, RefInfo> = {}): FlowGraph {
+export function proposalToFlow(input: GraphPayloadInput, labels: Record<string, RefInfo> = {}): FlowGraph {
+  const payload = payloadOf(input)
   const nodes = new Map<string, FlowNode>()
   const edges: FlowEdge[] = []
 
@@ -127,8 +150,10 @@ export function proposalToFlow(payload: GraphPayload, labels: Record<string, Ref
   }
 
   for (const n of payload.note_creates) {
-    nodes.set(n.id, {
-      id: n.id,
+    const id = payloadNodeId(n)
+    if (!id) continue
+    nodes.set(id, {
+      id,
       data: {
         title: n.title,
         type: n.type_slug,
@@ -154,7 +179,7 @@ export function proposalToFlow(payload: GraphPayload, labels: Record<string, Ref
     })
   }
 
-  const narrativeIds = new Set(payload.narrative_blocks.map(b => b.id))
+  const narrativeIds = new Set(payload.narrative_blocks.map(payloadNodeId).filter(id => id != null))
   for (const e of payload.edges) {
     if (narrativeIds.has(e.from) || narrativeIds.has(e.to)) continue
     addEdge(e.from, e.to, e.kind)
@@ -266,7 +291,7 @@ export function foldTopology(items: FuseItem[]): ExistingEdge[] {
   for (const it of items) {
     const tm = it.tempMap ?? {}
     const remap = (id: string): string => tm[id] ?? id
-    const narrative = new Set(it.payload.narrative_blocks.map(b => b.id))
+    const narrative = new Set(it.payload.narrative_blocks.map(payloadNodeId).filter(id => id != null))
 
     for (const e of it.payload.edges_remove ?? []) {
       if (narrative.has(e.from) || narrative.has(e.to)) continue

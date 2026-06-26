@@ -1,5 +1,6 @@
 import { foldTopology, mergeExistingEdges, proposalToFlow } from './graph'
 import { type LaidOutGraph, layoutGraph } from './layout'
+import { withNodeChangeHistory } from './nodeHistory'
 import { existingEdgesAmong, getProposal, listCommittedProposalsBefore, resolveLabels } from './surreal'
 import { commitTime } from './temporal'
 
@@ -64,7 +65,7 @@ export async function buildProposalView(id: string): Promise<ProposalView> {
   const existing = committedAt
     ? foldTopology(await listCommittedProposalsBefore(committedAt))
     : await existingEdgesAmong(realIds)
-  const laidOut = await layoutGraph(mergeExistingEdges(flow, existing))
+  const laidOut = await withNodeChangeHistory(await layoutGraph(mergeExistingEdges(flow, existing)))
 
   return { proposal, laidOut, historical, legacy: false, narratives, counts }
 }

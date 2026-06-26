@@ -1,5 +1,5 @@
 import { Handle, type NodeProps, Position } from '@xyflow/react'
-import { FileText } from 'lucide-react'
+import { FileText, History } from 'lucide-react'
 import type { FlowNodeData } from '../../lib/graph'
 import { TYPE_STYLE } from './styles'
 
@@ -15,9 +15,39 @@ function badgeLabel(status: string, isMit: boolean, overdue: boolean): string | 
   return null
 }
 
+function nodeShadow(selected: boolean | undefined, dimmed: boolean, accent: string): string {
+  if (selected) return `0 0 0 3px color-mix(in srgb, ${accent} 25%, transparent), 0 2px 8px rgba(0,0,0,.18)`
+  return dimmed ? 'none' : '0 1px 4px rgba(0,0,0,.12)'
+}
+
+function OpenFooter({ hasDesc, count, color }: { hasDesc: boolean; count: number; color: string }) {
+  return (
+    <div
+      style={{
+        marginTop: 6,
+        fontSize: 11,
+        fontWeight: 600,
+        color,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4
+      }}
+    >
+      {hasDesc ? <FileText size={12} /> : <History size={12} />}
+      {hasDesc ? (
+        <>
+          ver {count} bloque{count > 1 ? 's' : ''}
+        </>
+      ) : (
+        <>ver historial</>
+      )}
+    </div>
+  )
+}
+
 /** A note/context card: type icon (corner chip), provenance badge + border,
  * change lines, and a footer hinting at descriptive blocks when present. */
-function CardNode({ data }: NodeProps) {
+function CardNode({ data, selected }: NodeProps) {
   const d = data as FlowNodeData
   const t = TYPE_STYLE[d.type] ?? TYPE_STYLE._
   const Icon = t.Icon
@@ -31,6 +61,8 @@ function CardNode({ data }: NodeProps) {
   const dimmed = !isMit && (isContext || done)
   const dashed = !isMit && isContext && !done
   const hasDesc = d.descriptives.length > 0
+  const hasHistory = (d.changeHistory?.length ?? 0) > 0
+  const canOpen = hasDesc || hasHistory || d.lines.length > 0
   // Overdue MITs swap the type colour for amber on the border + badge so an
   // unfinished MIT from a past day reads as "vencido" at a glance.
   const accent = overdue ? OVERDUE_COLOR : t.color
@@ -40,15 +72,15 @@ function CardNode({ data }: NodeProps) {
       style={{
         position: 'relative',
         background: t.bg,
-        border: `2px ${dashed ? 'dashed' : 'solid'} ${accent}`,
+        border: `${selected ? 3 : 2}px ${dashed ? 'dashed' : 'solid'} ${accent}`,
         borderRadius: 10,
         padding: '16px 13px 11px',
         width: 240,
         boxSizing: 'border-box',
         fontSize: 12,
         color: '#1f2530',
-        cursor: hasDesc ? 'pointer' : 'default',
-        boxShadow: dimmed ? 'none' : '0 1px 4px rgba(0,0,0,.12)',
+        cursor: canOpen ? 'pointer' : 'default',
+        boxShadow: nodeShadow(selected, dimmed, accent),
         // context (referenced, unchanged) AND done notes are dimmed so the active
         // creates/updates stand out; done keeps the solid border (see above).
         opacity: dimmed ? 0.6 : 1
@@ -102,21 +134,7 @@ function CardNode({ data }: NodeProps) {
           ))}
         </ul>
       )}
-      {hasDesc && (
-        <div
-          style={{
-            marginTop: 6,
-            fontSize: 11,
-            fontWeight: 600,
-            color: t.color,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4
-          }}
-        >
-          <FileText size={12} /> ver {d.descriptives.length} bloque{d.descriptives.length > 1 ? 's' : ''}
-        </div>
-      )}
+      {(hasDesc || hasHistory) && <OpenFooter hasDesc={hasDesc} count={d.descriptives.length} color={t.color} />}
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
     </div>
   )

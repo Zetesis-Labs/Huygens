@@ -1,5 +1,6 @@
 import { type FuseItem, fuseProposals, mergeExistingEdges } from './graph'
 import { type LaidOutGraph, layoutGraph } from './layout'
+import { withNodeChangeHistory } from './nodeHistory'
 import {
   type CommittedProposal,
   existingEdgesAmong,
@@ -71,7 +72,11 @@ async function fuseCommitted(committed: CommittedProposal[]): Promise<Fused> {
   const realIds = flow.nodes.map(n => n.id).filter(id => id.includes(':'))
   flow = mergeExistingEdges(flow, await existingEdgesAmong(realIds))
 
-  return { laidOut: await layoutGraph(flow), counts: { creates, updates, edges: edgeCount, raws }, narratives }
+  return {
+    laidOut: await withNodeChangeHistory(await layoutGraph(flow)),
+    counts: { creates, updates, edges: edgeCount, raws },
+    narratives
+  }
 }
 
 export type DayView = {

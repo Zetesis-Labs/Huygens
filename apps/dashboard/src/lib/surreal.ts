@@ -123,6 +123,8 @@ export type Proposal = {
       title: string
       state: string
       mit_for?: string
+      due_at?: string
+      defer_until?: string
       metadata?: Record<string, unknown>
       descriptive_blocks: { content: string }[]
     }[]
@@ -131,11 +133,15 @@ export type Proposal = {
       title?: string
       state?: string
       mit_for?: string | null
+      due_at?: string | null
+      defer_until?: string | null
       metadata_merge?: Record<string, unknown>
       descriptive_blocks_append: { content: string }[]
     }[]
     edges: { kind: string; from: string; to: string; reason?: string }[]
     edges_remove?: { kind: string; from: string; to: string }[]
+    about?: { block_id: string; note_id: string }[]
+    affects?: { block_id: string; note_id: string; action: string; summary?: string }[]
   }
   /** Materialized commit result (committed proposals only). `committed_at` is the
    * time anchor for historical reconstruction (the SSOT fold); `versionstamp` is
@@ -577,6 +583,140 @@ export async function existingEdgesAmong(ids: string[]): Promise<ExistingEdge[]>
     params
   )
   return (rows ?? []).map(r => ({ source: String(r.in), target: String(r.out), kind: r.kind }))
+}
+
+export type NodeChangeHistoryEntry = {
+  proposalId: string
+  title: string
+  status: string
+  at: string | null
+  action: string
+  summary?: string
+}
+
+type HistoryBucket = {
+  actions: Set<string>
+  summaries: string[]
+  graphNode: boolean
+}
+
+function noteRef(v: string | undefined): string | null {
+  return v?.startsWith('note:') ? v : null
+}
+
+function actionLabel(action: string): string {
+  switch (action) {
+    case 'created':
+      return 'creada'
+    case 'updated':
+      return 'actualizada'
+    case 'state_changed':
+      return 'estado'
+    case 'linked':
+      return 'vinculada'
+    case 'archived':
+      return 'archivada'
+    case 'edge_removed':
+      return 'relacion retirada'
+    default:
+      return action.replaceAll('_', ' ')
+  }
+}
+
+function addHistoryAction(
+  buckets: Map<string, HistoryBucket>,
+  noteId: string | null,
+  action: string,
+  graphNode: boolean,
+  summary?: string
+): void {
+  if (!noteId) return
+  const bucket = buckets.get(noteId) ?? { actions: new Set<string>(), summaries: [], graphNode: false }
+  bucket.actions.add(actionLabel(action))
+  bucket.graphNode ||= graphNode
+  if (summary) bucket.summaries.push(summary)
+  buckets.set(noteId, bucket)
+}
+
+function proposalHistoryBuckets(payload: Proposal['payload']): Map<string, HistoryBucket> {
+  const buckets = new Map<string, HistoryBucket>()
+  const narrativeIds = new Set((payload.narrative_blocks ?? []).map(b => b.id))
+
+  for (const n of payload.note_creates ?? []) addHistoryAction(buckets, noteRef(n.id), 'created', true)
+  for (const n of payload.note_updates ?? []) {
+    const stateOnly =
+      n.state != null &&
+      n.title == null &&
+      n.mit_for === undefined &&
+      n.due_at === undefined &&
+      n.defer_until === undefined &&
+      n.metadata_merge == null &&
+      (n.descriptive_blocks_append?.length ?? 0) === 0
+    addHistoryAction(buckets, noteRef(n.id), stateOnly ? 'state_changed' : 'updated', true)
+  }
+
+  for (const e of payload.edges ?? []) {
+    if (narrativeIds.has(e.from) || narrativeIds.has(e.to)) continue
+    addHistoryAction(buckets, noteRef(e.from), 'linked', true)
+    addHistoryAction(buckets, noteRef(e.to), 'linked', true)
+  }
+  for (const e of payload.edges_remove ?? []) {
+    addHistoryAction(buckets, noteRef(e.from), 'edge_removed', true)
+    addHistoryAction(buckets, noteRef(e.to), 'edge_removed', true)
+  }
+  for (const a of payload.affects ?? []) addHistoryAction(buckets, noteRef(a.note_id), a.action, false, a.summary)
+
+  return buckets
+}
+
+/** Committed/draft proposal history for a set of note ids, newest first. The
+ * preview link is useful only when the proposal graph contains the node, so
+ * affects-only rows enrich existing buckets but do not create one by themselves. */
+export async function changeHistoryForNotes(noteIds: string[]): Promise<Record<string, NodeChangeHistoryEntry[]>> {
+  const wanted = new Set(noteIds.filter(id => id.startsWith('note:')))
+  if (wanted.size === 0) return {}
+
+  const db = await getDb()
+  const [rows] = await db.query<
+    [
+      Array<{
+        id: unknown
+        status: string
+        payload: Proposal['payload']
+        landed?: unknown
+        narrative?: string
+        first_note?: string
+      }>
+    ]
+  >(
+    `SELECT meta::id(id) AS id, status, payload,
+            (result.committed_at ?? updated_at) AS landed,
+            payload.narrative_blocks[0].content AS narrative,
+            payload.note_creates[0].title AS first_note
+     FROM proposal
+     WHERE status IN ['committed', 'draft']
+     ORDER BY landed DESC`
+  )
+
+  const out = Object.fromEntries([...wanted].map(id => [id, [] as NodeChangeHistoryEntry[]]))
+  for (const p of rows ?? []) {
+    const buckets = proposalHistoryBuckets(p.payload)
+    const title = oneLine(p.narrative, 140) || oneLine(p.first_note, 140) || String(p.id)
+    const summaryFallback = oneLine(p.narrative, 160)
+    for (const [noteId, bucket] of buckets) {
+      if (!wanted.has(noteId) || !bucket.graphNode) continue
+      out[noteId]?.push({
+        proposalId: String(p.id),
+        title,
+        status: p.status,
+        at: p.landed == null ? null : toIso(p.landed),
+        action: [...bucket.actions].join(' · '),
+        summary: oneLine(bucket.summaries[0], 160) || summaryFallback || undefined
+      })
+    }
+  }
+
+  return out
 }
 
 // ── Time-travel reads (historical context for committed proposals) ───────────

@@ -23,6 +23,7 @@ const from = params.get('from')
 const to = params.get('to')
 const rangeMode = !mitsView && !bitacoraView && !inboxView && !selectedDay && Boolean(from && to)
 const selectedId = mitsView || bitacoraView || inboxView || selectedDay || rangeMode ? null : params.get('proposal')
+const selectedNodeId = params.get('node')
 
 let proposals = [] as Awaited<ReturnType<typeof listProposals>>
 let listError: string | null = null
@@ -514,7 +515,7 @@ const hasGraph = Boolean(proposalView?.proposal || dayView || rangeView || mitVi
           <div class="placeholder">Proposal aplanada en el génesis (formato legacy) — sin grafo. El informe está a la derecha.</div>
         )}
         {!viewError && hasGraph && laidOut && !proposalView?.legacy && (
-          <ChangeGraph client:only="react" nodes={laidOut.nodes} edges={laidOut.edges} />
+          <ChangeGraph client:only="react" nodes={laidOut.nodes} edges={laidOut.edges} initialNodeId={selectedNodeId} />
         )}
       </div>
 
