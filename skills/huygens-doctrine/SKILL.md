@@ -53,40 +53,68 @@ The doctrine's load-bearing rules:
   `approved: true`. Every commit requires the proposal to have been previewed
   (`get_proposal` stamps it; `update_proposal` invalidates it; server-enforced).
   SurrealQL is read-only (the reader is a VIEWER; writes are rejected by the DB).
-- **Decision tree** — capture vs process-inbox vs ritual; default to a normal
-  informe with **no `kind`**.
+- **Respect task modality overrides** — if the user redirects away from Huygens/MCP
+  toward a git/project investigation, or explicitly says not to use the Huygens MCP,
+  stop the capture/proposal/report path immediately. Use the appropriate class tool
+  (filesystem/git/GitHub) instead; do not create proposals, reports, or skill edits
+  unless the user explicitly asks for those persistent changes.
+- **Promotion boundary for exploratory chat** — ordinary conversation,
+  brainstorming, critique, abduction, and "thinking aloud" are **ephemeral by
+  default**. Do not capture/propose/commit just because the content is important.
+  Use Huygens only on a literal mandate: "usa Huygens", "mira el grafo",
+  "guárdalo", "asienta esto", "haz una proposal", "commitéalo", "actualiza X",
+  or "procesa la inbox". If unsure whether to use Huygens, do not use it.
+- **Decision tree** — consult vs promoted intake vs graph mutation. Default for
+  exploratory conversation is **no MCP**. If the user explicitly promotes material,
+  use a normal informe with **no `kind`** unless they explicitly invoke a ritual.
 - **Kind discipline** — tag `kind: day`/`week` **only** inside that explicit
   ritual; a normal process informe carries no kind. Ante la duda, **no pongas
   kind**. (`plan_day`/`review_day` are legacy kinds, readable in historical data
   only — never write them.)
-- **Initiative asymmetry** — *invite* the rituals proactively (be a coach:
-  morning with MITs left hanging from yesterday or none chosen → propose the
-  `day` ritual) but **never commit a `day`/`week` the user did not ask for**.
-  The phantom ritual is the error to avoid.
+- **No periodic corset by default** — do not frame the user in daily/weekly/routine
+  concepts unless they explicitly ask. Prefer fluid, situated "pasadas" or
+  orientation conversations that may produce zero proposals.
+- **Initiative asymmetry** — *invite* support, but **never commit a `day`/`week`
+  or any other durable review artifact the user did not ask for**. The phantom
+  ritual/proposal is the error to avoid.
 - **One `day` per day; one `week` per ISO week** (Madrid) and the **MIT rules**
-  (the user decides MITs; 1–3/day; at least one tied to an Objetivo).
+  apply only when the user explicitly chooses that mode (the user decides MITs;
+  1–3/day; at least one tied to an Objetivo).
 
 ## When to Use
 
-- The user asks to *see* graph state: tasks, ideas, a hierarchy, a project's neighborhood, the daily radar.
-- Reporting **counts** ("¿cuántas pendientes hay?").
-- Capturing, processing the inbox, or any graph mutation/correction.
-- Producing daily/operational reports or running the `day`/`week` rituals.
-- Auditing provenance, retrieval quality, topology, or schema/tool behaviour.
-- Deciding whether the graph is worth it vs native memory.
-- The user corrects drift, marks something stale, or pushes back on a result.
+Use Huygens tools only when the user explicitly asks to consult or mutate the
+graph, or when the task itself is a Huygens operation. Strong triggers:
 
-Do not use for: ordinary note editing in another vault; generic vector-DB advice
-with no graph/provenance; protected Hermes-agent config (load `hermes-agent`).
+- The user asks to *see* graph state: tasks, ideas, a hierarchy, a project's neighborhood, the daily radar.
+- Reporting **counts** from the graph ("¿cuántas pendientes hay?").
+- Capturing, processing the inbox, or any graph mutation/correction **when the
+  user explicitly promotes it to Huygens**.
+- Producing an operational report or running a `day`/`week` ritual **only on explicit request**.
+- Auditing provenance, retrieval quality, topology, or schema/tool behaviour.
+- Deciding whether the graph is worth it vs native memory, **when the user asks for graph inspection**.
+
+Do **not** use Huygens merely because the discussion is about Huygens. Do not use
+it during exploratory chat, critique, brainstorming, abduction, or product
+thinking unless the user says to record/consult/update it. Do not use for:
+ordinary note editing in another vault; generic vector-DB advice with no
+graph/provenance; protected Hermes-agent config (load `hermes-agent`).
 
 ## Operating Principles
 
-0. **Doctrine first.** It governs and overrides this skill on conflict.
-1. **Evidence before interpretation.** Pull raws, notes, neighborhoods, provenance, and query outputs before asserting graph state.
-2. **Proposal boundary.** For mutations, keep capture → proposal → commit → index → verify; never bypass with direct writes.
-3. **Topology over derived flags.** Compute operational status from current graph structure, not from stale metadata.
-4. **Verify after mutating.** Use `check_claim`, `neighborhood`, `get_proposal_changes`, or read-only SurrealQL before reporting success.
-5. **Honest reads.** Never present `[]`/`0`/a guess as fact; see the Read Discipline below.
+0. **Doctrine first, but honor explicit user boundary corrections.** If the user
+   says Huygens/MCP is being overused, stop using it immediately; do not "save a
+   note" about the complaint unless explicitly told to.
+1. **Ephemeral by default.** Conversation is not intake. Important exploratory
+   thinking can remain outside the graph; only promoted material enters Huygens.
+2. **Evidence before interpretation when you are actually operating the graph.**
+   Pull raws, notes, neighborhoods, provenance, and query outputs before asserting graph state.
+3. **Proposal boundary.** For mutations, keep promoted evidence → proposal → commit → index → verify; never bypass with direct writes.
+4. **Proposal is not a report.** Proposals are rare mutation envelopes, not the
+   unit of thought, review, or conversation cleanup.
+5. **Topology over derived flags.** Compute operational status from current graph structure, not from stale metadata.
+6. **Verify after mutating.** Use `check_claim`, `neighborhood`, `get_proposal_changes`, or read-only SurrealQL before reporting success.
+7. **Honest reads.** Never present `[]`/`0`/a guess as fact; see the Read Discipline below.
 
 ---
 
@@ -189,11 +217,14 @@ Drop to raw `query_query` only for **ad-hoc** exploration — then §3's gotchas
 Use when the user asks to create, update, reparent, archive, regularize, or correct
 graph state.
 
-1. **Capture** the literal user input with `capture` (no interpretation, no
-   segmentation). Capture is evidence, not commitment — do it without ceremony.
-   **Capture the user's friction/corrections too** ("no veo nada", "está mal") —
-   it is first-class operability signal. *(Across 9 sessions the agent captured 0
-   friction signals; don't repeat that.)*
+1. **Require explicit promotion.** Do not capture exploratory conversation by
+   default. The user must explicitly ask to persist, consult, or mutate Huygens
+   ("guárdalo", "asienta esto", "usa Huygens", "haz una proposal", etc.). When
+   promoted, capture the literal user input with `capture` (no interpretation, no
+   segmentation). Capture is evidence, not commitment.
+   - **Do not auto-capture user friction/corrections during brainstorming.** If the
+     user complains that MCP/proposals are saturating the graph, stop using MCP;
+     do not prove the complaint by capturing it. Record it only if explicitly told.
 2. **Classify the output shape** before creating topology:
    - **Narrative-only / informe narrativo** — create only a narrative block from
      the raw(s). Do **not** add notes, descriptive blocks, `about`, `affects`,
@@ -240,9 +271,24 @@ graph state.
   user calls it an "informe narrativo" or starts a meeting-prep note, keep it
   narrative — do not turn it into an idea/task/reference by default.
 
+### Huygens 2 topology direction
+
+The live schema may still expose legacy `mentions`, `about`, and `affects` edges.
+For the operational-graph refactor, treat `mentions` as a legacy fallback only:
+Huygens 2 prefers `relates_to` for sparse, explicitly useful soft links, and does
+not use `about`/`affects` as everyday navigation. When promoting a note/idea/task
+into the graph, make topology part of the proposal: if the parent area/project or
+objective is clear from the user's mandate, create the `part_of` link; if it is
+not clear, ask or leave the item in an explicit inbox/pending state rather than
+creating lazy orphans.
+
 ---
 
 # Part III — Daily Reports & Operational Radar
+
+Use this section only when the user explicitly asks for a report, radar, ritual,
+or graph review. Do not impose daily/weekly/MIT framing during ordinary
+exploration or rescue/autopsy conversations.
 
 - **Start from the complete radar, not tactical filters.** A report built only
   from `mit_for`/deadlines/recent-updates is locally useful but globally blind.
@@ -271,6 +317,101 @@ graph state.
   it: capture the correction, retract the ritual block and its
   `derived_from`/`about`/`affects`, recommit as a non-ritual narrative, verify no
   `day` block exists for the date.
+
+## Review rescue / autopsy mode
+
+If the user says Huygens feels useless, irrescatable, or that reviews became
+irresoluble, treat this as a first-class structural incident — not as a prompt to
+add product architecture and not as a reason to create more proposals. **Do not
+lead with Baúles, OKF, exports, dashboards, or more schema.** Lead with the
+abductive question: what design assumption is producing the failure?
+
+Structural failure signs observed in real use:
+
+- The agent emits proposals "como churros" during conversation.
+- The graph accumulates narrative/provenance/proposal machinery faster than domain
+  semantics.
+- Reviews become irresoluble because captured material creates obligations to
+  process, close, dedupe, or review.
+- The user experiences daily/weekly/routine/MIT language as a corset around chaos.
+
+Switch to rescue/autopsy mode:
+
+- Stop MCP unless explicitly asked; continue the conversation outside the graph.
+- Do not run full weekly/daily reviews unless explicitly requested; prefer tiny,
+  value-proving review slices over totalizing sweeps. Keep a local
+  `reviewed_this_session` set, do not re-ask about items already reviewed, and
+  drive each reviewed item toward a concrete disposition (`keep`, `drop`,
+  `someday`, `next action`, `waiting`, `archive`).
+- Do not pivot to Baúles/product-layer expansion during rescue unless the user
+  explicitly asks; first prove Huygens can produce operational clarity.
+- Prefer a fluid, situated "pasada" of orientation over a ritual: it may produce
+  zero graph changes.
+- If graph inspection is requested, measure the ratio of domain semantics to
+  machinery: notes by type/state, narrative vs descriptive blocks, proposals, and
+  `part_of`/`blocked_by`/`mentions` vs `derived_from`/`about`/`affects`.
+- Treat the success condition as orientation, not graph cleanup.
+- If any mutation is needed, generate small promoted proposals only after the user
+  asks to promote a conclusion.
+
+The `reviewed_this_session` set is agent discipline, not graph state. Persist it
+only if the user explicitly mandates a durable review artifact.
+
+### Operational-graph refactor mode
+
+When the user is debating a Huygens reset/refactor, keep the exchange
+**conversational and short**. Do not bury them in a full design document unless
+they explicitly ask for an informe/markdown file. Treat frustration with text
+volume ("me estás enterrando a texto", "no me lapides a papel") as a task-level
+signal: switch to one decision at a time, remember the settled conclusions, and
+save the long structure for the requested final report.
+
+If the user chooses **operational graph** over epistemological/auditable graph,
+optimize for what helps act, decide, coordinate, or retain stable context. Strong
+refactor defaults from the Huygens 2 discussion:
+
+- Canonical hot-graph types: **Area, Objective, Project, Task, Idea, Reference,
+  Agent, Tool**.
+- **Agent** is an actor/counterparty, with `agent_kind`: `friend`, `family`,
+  `client`, `contact`, `team`, `ai_agent`, `institution`. Do not use Agent as the
+  bucket for software/infrastructure.
+- **Tool** is a GTD-style instrument/system/software/service concept, with no
+  required subtype: Hermes, Huygens, GitHub, Calendar, Telegram, PostgreSQL, etc.
+- Operational states:
+  - `Task`, `Project`, `Objective`: `ACTIVE`, `WAITING`, `SOMEDAY`, `DONE`, `ARCHIVED`.
+  - `Area`, `Agent`, `Tool`, `Reference`: `ACTIVE`, `ARCHIVED` only.
+  - `Idea`: `ACTIVE`, `SOMEDAY`, `ARCHIVED`.
+  - `CLARIFIED` is not an operational state; map it to active/waiting/someday/archive or leave the item in inbox.
+- Minimal Jira-inspired operational relations: `part_of`, `blocked_by`,
+  `depends_on`, `owned_by`, `relates_to`, `duplicates`. Avoid reviving `mentions`
+  as an infinite junk drawer; use `relates_to` only when it has operational value.
+- For Huygens 2, prefer a **new clean database/schema** over in-place purging when
+  the user accepts loss: it avoids dragging legacy types, edges, raws, narratives,
+  and proposal machinery into the operational graph.
+- Do **not** create a living cold archive. If the user rejects even a snapshot,
+  accept real data loss and do not keep proposing markdown/JSON safety exports.
+- Migration target is **only compact structural nodes + operational edges**:
+  current title/name, type, state, minimal metadata, and useful topology. Do not
+  migrate semantic/history payloads by default: old blocks, narrative history,
+  raws, full proposals, `about`/`affects`/`derived_from`, provenance chains, or
+  historical summaries.
+- Proposals are the controlled mutation / event-sourcing mechanism, not
+  operational memory. Keep draft proposals while pending; after commit, the useful
+  durable artifact is a minimal commit log. Default minimum: `commit_id`,
+  `timestamp`, `summary`, `affected_ids`. `submitted_by`/`approved_by` are optional
+  implementation details, not conceptual requirements.
+- Survivorship rule: **KEEP if it operates; DROP if it only explains history.** A
+  survivor must be live, actionable, blocking something live, stable reusable
+  context, a relevant Agent/Tool, or a strong Idea linked to an Area/Project/Objective.
+- An `ACTIVE` project with no live tasks is not automatically stale or archival;
+  interpret it as "no next action / needs planning" until other evidence shows it
+  is dead.
+- Reports/informes belong outside the hot graph (markdown/file layer unless
+  explicitly promoted); processed raws, narrative history, `about`/`affects`
+  machinery, and full proposals should not shape everyday navigation.
+
+See `references/huygens-promotion-boundary-and-report-layer.md` for the session
+that established this correction and for the OKF-report hypothesis.
 
 ---
 
@@ -305,7 +446,7 @@ than a single forced `part_of`).
 
 # Part V — Health Queries
 
-Run these to find real hygiene problems (adapt field names to the live schema).
+Run these to find real hygiene problems (adapt field names to the live schema). For complete whole-graph/topology study requests, use the expanded sequence in `references/graph-health-audit-playbook.md` before interpreting the graph.
 
 ### Embedding coverage
 ```surql
@@ -396,11 +537,14 @@ periodic review.
     `transformation`, edge metadata.
 11. **Flattening provenance to "summarized"/"inferred"** — transformation labels
     are epistemic claims; keep unknown as unknown.
-12. **Phantom ritual** — committing a `day`/`week` the user did not ask for;
-    midday corrections are not a day ritual.
-13. **Letting archived structure pollute live reports**; **persisting derived state**
+12. **Phantom ritual/proposal** — committing a `day`/`week` or any proposal the
+    user did not explicitly promote; midday corrections are not a day ritual.
+13. **Using Huygens while discussing whether Huygens overuses Huygens** — if the
+    user is critiquing MCP/proposal saturation, stop MCP. Do not capture the
+    critique unless explicitly told.
+14. **Letting archived structure pollute live reports**; **persisting derived state**
     (e.g. `metadata.planning_status`) instead of computing from topology.
-14. **New ontology before hygiene** — backfill embeddings, fix provenance, clean
+15. **New ontology before hygiene** — backfill embeddings, fix provenance, clean
     orphans first.
 
 ## Verification Checklist
@@ -410,8 +554,8 @@ periodic review.
 - [ ] No read task ended by asking the user for a query already in context.
 - [ ] Every reported number came from `count()`/`array::len`.
 - [ ] `save_query` create omitted `id`; tool errors surfaced, not hidden.
-- [ ] User friction/corrections were `capture`d.
-- [ ] Mutations went through capture → proposal → commit → verify; embedding coverage checked and `index_block` used only if auto-index/backfill left blocks unembedded.
+- [ ] Huygens was used only after explicit request/promotion; exploratory chat was not captured.
+- [ ] Mutations went through promoted evidence → proposal → commit → verify; embedding coverage checked and `index_block` used only if auto-index/backfill left blocks unembedded.
 - [ ] No `part_of` parent assumed from context; orphans invited/captured, not auto-mutated.
 - [ ] Rituals only on explicit request, with `approved: true`, one `day` per day / one `week` per ISO week (Madrid); no phantom ritual.
 - [ ] Daily reports began with the complete radar before tactical filtering.
