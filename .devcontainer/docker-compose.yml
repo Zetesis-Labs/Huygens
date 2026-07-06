@@ -30,7 +30,7 @@ services:
     user: "0:0"
     command: ["sh", "-c", "chown -R 65532:65532 /data/db && chmod 700 /data/db"]
     volumes:
-      - surrealkv_data_v3:/data/db
+      - surrealkv_data_v2:/data/db
     restart: "no"
 
   surrealdb:
@@ -56,7 +56,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - surrealkv_data_v3:/data/db
+      - surrealkv_data_v2:/data/db
     depends_on:
       surrealdb-init:
         condition: service_completed_successfully
@@ -160,8 +160,8 @@ volumes:
   claude_memory:
   surrealdb_data:    # RocksDB legacy: conservado intacto para rollback
   surrealkv_data:    # SurrealKV CORRUPTO (compactación, 2026-05-28): conservado como respaldo
-  surrealkv_data_v2: # SurrealKV CORRUPTO (compactación, 2026-06-25): conservado como respaldo
-  surrealkv_data_v3: # SurrealKV (versionado), motor activo tras nueva recuperación
+  surrealkv_data_v2: # SurrealKV (versionado): MOTOR ACTIVO — contiene el grafo vivo migrado a Huygens 2 (2026-07-06)
+  surrealkv_data_v3: # SurrealKV: volumen vacío (la recuperación a v3 nunca se pobló); el dato vivo quedó en v2
 
 networks:
   default_network:
