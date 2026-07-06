@@ -91,6 +91,14 @@ DEFINE FIELD OVERWRITE source_ref  ON note TYPE option<string>;
 DEFINE FIELD OVERWRITE created_at  ON note TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE updated_at  ON note TYPE datetime VALUE time::now();
 -- Huygens 2: reviews are ritual/proposal events, not live note state.
+-- Purge orphaned stored values BEFORE dropping the field. REMOVE FIELD alone
+-- leaves the physical value on existing records, and a SCHEMAFULL note table then
+-- rejects EVERY future update to those rows ("Found field 'last_reviewed_at', but
+-- no such field exists"). Re-define it so the UNSET is valid under SCHEMAFULL, then
+-- purge ONLY the rows that carry it (the WHERE guard avoids bumping updated_at on
+-- the rest — updated_at is now the staleness signal), then drop index + field.
+DEFINE FIELD OVERWRITE last_reviewed_at ON note TYPE option<datetime>;
+UPDATE note UNSET last_reviewed_at WHERE last_reviewed_at IS NOT NONE;
 REMOVE INDEX IF EXISTS note_reviewed ON TABLE note;
 REMOVE FIELD IF EXISTS last_reviewed_at ON TABLE note;
 -- Tres ejes temporales DISTINTOS (no confundir), todos campos top-level día-granulares
