@@ -53,8 +53,9 @@ filtrando en cada salto y **anidando subqueries**.
 - **Vencimiento/aplazamiento son campos top-level datetime** (`due_at`, `defer_until`), como `mit_for` — compara/ordena directo, **no** en `metadata`. (Una fecha suelta en `metadata` sería string y habría que castearla `<datetime>metadata.x`, pero no es el patrón.)
 - **Conjuntos**: `OUTSIDE` es de geometría (no "no contenido" → usa `NONEINSIDE`/`NOT IN`);
   `*=` sobre conjunto vacío es `true` (verdad vacua) → guárdalo con `array::len(…)>0`.
-- **Destinos polimórficos**: `->blocked_by->(note,block)`, `->mentions->(note,block)`. El
-  multi-edge `->(about,affects)->note` NO deduplica → envuelve en `array::distinct(...)`.
+- **Edges operativos note→note**: `part_of`, `blocked_by`, `depends_on`, `owned_by`,
+  `relates_to`, `duplicates`. El multi-edge `->(about,affects)->note` (trace técnico) NO
+  deduplica → envuelve en `array::distinct(...)`. (`mentions` es legacy; usa `relates_to`.)
 - **KNN vectorial**: `<|K,EF|>` (HNSW, p.ej. `<|5,100|>`) o `<|K,COSINE|>` (fuerza bruta);
   `<|K|>` solo da error, y el KNN va con `AND`, nunca en `OR`/`NOT`. Embeber texto→vector es del
   modelo (tool `embed_text`); el KNN y `vector::similarity::cosine` son SurrealQL.
@@ -105,7 +106,7 @@ WHERE <filtros AND… / traversal-filtrado>
 - **stale / reciente** — `updated_at < time::now()-2w` · `created_at > time::now()-1w`.
 - **cadencia** — `time::group(x,'day')` / `time::floor(x,1w)` · día de semana `time::wday(x)`, `time::format(x,'%A')`.
 - **último toque de un traversal** — `time::max(<-part_of<-note.updated_at)`.
-- **fallback de nulos** — `(last_reviewed_at IS NONE OR last_reviewed_at < time::now()-4w)`.
+- **fallback de nulos** — `(defer_until IS NONE OR defer_until <= time::now())`.
 
 **Traversal + filtrado entre saltos**
 - **direcciones** — part_of: `->part_of->note`=padres, `<-part_of<-note`=hijos. blocked_by: `->blocked_by->`=mis bloqueantes. about/affects/derived_from nacen del block; desde la note son entrantes (`<-about<-block`).
@@ -169,7 +170,7 @@ SELECT id, title FROM note WHERE type.slug='area' AND count(->part_of)=0;
 ```
 Accionables de un tipo (lo vivo, lo más reciente arriba):
 ```surql
-SELECT id, title, state, updated_at FROM note WHERE type.slug='task' AND state IN ['CLARIFIED','ACTIVE','WAITING'] AND (defer_until IS NONE OR defer_until <= time::now()) ORDER BY updated_at DESC LIMIT 20;
+SELECT id, title, state, updated_at FROM note WHERE type.slug='task' AND state IN ['ACTIVE','WAITING'] AND (defer_until IS NONE OR defer_until <= time::now()) ORDER BY updated_at DESC LIMIT 20;
 ```
 Notas ordenadas por nº de hijos (vía subquery):
 ```surql
@@ -192,7 +193,7 @@ SELECT @.{..4}.{ title, state, children: <-part_of<-note[WHERE state NOT IN ['DO
 ```
 Accionables de un área dos saltos abajo (vía proyectos vivos):
 ```surql
-SELECT title, <-part_of<-note[WHERE type.slug='project' AND state='ACTIVE']<-part_of<-note[WHERE type.slug='task' AND state IN ['ACTIVE','CLARIFIED']].title AS live_tasks FROM note:abc;
+SELECT title, <-part_of<-note[WHERE type.slug='project' AND state='ACTIVE']<-part_of<-note[WHERE type.slug='task' AND state IN ['ACTIVE','WAITING']].title AS live_tasks FROM note:abc;
 ```
 Ramas muertas — proyecto ACTIVE con hijos, pero 0 vivos:
 ```surql
@@ -205,13 +206,13 @@ Desatendido — vivo pero sin tocar en >2 semanas:
 ```surql
 SELECT id, title, state, updated_at FROM note WHERE state IN ['ACTIVE','WAITING'] AND (defer_until IS NONE OR defer_until <= time::now()) AND updated_at < time::now()-2w ORDER BY updated_at ASC LIMIT 15;
 ```
-Cola de revisión — vivo y nunca/hace mucho revisado:
+Cola de revisión — vivo y sin tocar hace mucho (Huygens 2: la revisión es evento de proposal/ritual, no un field; se usa `updated_at` como proxy de frescura):
 ```surql
-SELECT id, title, updated_at FROM note WHERE state IN ['ACTIVE','WAITING'] AND (defer_until IS NONE OR defer_until <= time::now()) AND (last_reviewed_at IS NONE OR last_reviewed_at < time::now()-4w) ORDER BY updated_at ASC;
+SELECT id, title, updated_at FROM note WHERE state IN ['ACTIVE','WAITING'] AND (defer_until IS NONE OR defer_until <= time::now()) AND updated_at < time::now()-4w ORDER BY updated_at ASC;
 ```
 Proyectos "fantasma" — ACTIVE, pero su hijo vivo más fresco lleva días helado:
 ```surql
-SELECT title, state, duration::days(time::now()-time::max(<-part_of<-note[WHERE state IN ['ACTIVE','WAITING','CLARIFIED']].updated_at)) AS days_since_live_kid_touch FROM note WHERE type.slug='project' AND state='ACTIVE' AND count(<-part_of<-note[WHERE state IN ['ACTIVE','WAITING','CLARIFIED']])>0 ORDER BY days_since_live_kid_touch DESC;
+SELECT title, state, duration::days(time::now()-time::max(<-part_of<-note[WHERE state IN ['ACTIVE','WAITING']].updated_at)) AS days_since_live_kid_touch FROM note WHERE type.slug='project' AND state='ACTIVE' AND count(<-part_of<-note[WHERE state IN ['ACTIVE','WAITING']])>0 ORDER BY days_since_live_kid_touch DESC;
 ```
 Salud temporal — media/mediana/p90 de días sin tocar (lo vivo):
 ```surql
@@ -226,7 +227,7 @@ SELECT id, title, ->blocked_by->(note,block).title AS blocked_by FROM note WHERE
 ```
 Cuello de botella REAL — qué bloquea a más notas vivas:
 ```surql
-SELECT title, count(<-blocked_by<-note[WHERE state IN ['ACTIVE','CLARIFIED','WAITING']]) AS bloquea_vivas FROM note WHERE count(<-blocked_by<-note[WHERE state IN ['ACTIVE','CLARIFIED','WAITING']])>0 ORDER BY bloquea_vivas DESC;
+SELECT title, count(<-blocked_by<-note[WHERE state IN ['ACTIVE','WAITING']]) AS bloquea_vivas FROM note WHERE count(<-blocked_by<-note[WHERE state IN ['ACTIVE','WAITING']])>0 ORDER BY bloquea_vivas DESC;
 ```
 Bloqueo zombie — el bloqueante ya está DONE (desatascar):
 ```surql
@@ -315,11 +316,11 @@ Queries **válidas (STATUS OK)** que hoy devuelven `[]` porque el campo aún no 
 "encienden" solas cuando lleguen datos.
 
 - **MITs de un día** (`mit_for` sin poblar): `SELECT id, title, mit_for FROM note WHERE mit_for IN d'2026-05-28'..d'2026-05-29';`
-- **Nunca revisado** (`last_reviewed_at` sin poblar → hoy matchea casi todo): `SELECT id, title FROM note WHERE last_reviewed_at IS NONE AND state NOT IN ['DONE','ARCHIVED'];`
+- **Sin tocar hace mucho** (Huygens 2 no tiene `last_reviewed_at`: la revisión es evento de proposal/ritual; se usa `updated_at`): `SELECT id, title FROM note WHERE updated_at < time::now()-4w AND state NOT IN ['DONE','ARCHIVED'];`
 - **Evidencia inferida que cambió un estado** (riesgo de fidelidad; `transformation` hoy 100% 'summarized'): `SELECT title FROM note WHERE count(<-affects[WHERE action='state_changed']<-block->derived_from[WHERE transformation='inferred']->raw_capture)>0;`
 - **Bloqueos sin razón** (`reason` 100% vacío hoy): `SELECT in.title AS blocked, out.title AS blocker, since FROM blocked_by WHERE reason IS NONE;`
 - **Vencidas por deadline** (`due_at` campo real; vencida = día **estrictamente anterior** a hoy, no "hoy mismo a las 00:00" — `due_at` está a medianoche): `SELECT id, title, due_at FROM note WHERE due_at IS NOT NONE AND due_at < time::floor(time::now(), 1d) AND state NOT IN ['DONE','ARCHIVED'] ORDER BY due_at ASC;`
 - **Próximos vencimientos**: `SELECT id, title, due_at FROM note WHERE due_at IS NOT NONE AND state NOT IN ['DONE','ARCHIVED'] ORDER BY due_at ASC;`
 - **Aplazadas / dormidas** (tickler activo): `SELECT id, title, defer_until FROM note WHERE defer_until IS NOT NONE AND defer_until > time::now() ORDER BY defer_until ASC;`
-- **Radar activo** (vivas y NO dormidas — el patrón canónico del digest/dashboard): `SELECT id, title, state FROM note WHERE state IN ['ACTIVE','WAITING','CLARIFIED'] AND (defer_until IS NONE OR defer_until <= time::now());`
+- **Radar activo** (vivas y NO dormidas — el patrón canónico del digest/dashboard): `SELECT id, title, state FROM note WHERE state IN ['ACTIVE','WAITING'] AND (defer_until IS NONE OR defer_until <= time::now());`
   (para "día Madrid" exacto, compara `time::format(defer_until + 2h, '%Y-%m-%d') <= '<día>'`, como el digest.)

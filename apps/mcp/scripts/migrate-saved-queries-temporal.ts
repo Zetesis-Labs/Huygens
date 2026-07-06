@@ -16,7 +16,7 @@ const IDS = [
   'saved_query:1ik8bjetg5nm1yond1kq', // Tareas → deadlines próximos
   'saved_query:gysnjflby2omsk3flbsb' // Tareas pendientes → mapa por proyecto/área
 ]
-const LIVE_FILTER = "state IN ['CLARIFIED', 'ACTIVE', 'WAITING']"
+const LIVE_FILTER = "state IN ['ACTIVE', 'WAITING']"
 const DORMANT = `${LIVE_FILTER} AND (defer_until IS NONE OR defer_until <= time::now())`
 
 function migrate(q: string): string {

@@ -172,7 +172,10 @@ const EXPECTED_TABLES = [
   'agent_event',
   'part_of',
   'blocked_by',
-  'mentions',
+  'depends_on',
+  'owned_by',
+  'relates_to',
+  'duplicates',
   'about',
   'affects',
   'derived_from'

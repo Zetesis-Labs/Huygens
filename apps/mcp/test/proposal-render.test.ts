@@ -46,7 +46,7 @@ function fullPayload(): StoredProposalPayload {
     ],
     edges: [
       { kind: 'part_of', from: 'note:task1', to: 'note:project1', anchored: true },
-      { kind: 'mentions', from: 'block:narr1', to: 'note:existing' }
+      { kind: 'relates_to', from: 'note:task1', to: 'note:existing' }
     ],
     edges_remove: [],
     about: [{ block_id: 'block:narr1', note_id: 'note:task1' }],
@@ -98,7 +98,7 @@ describe('renderProposalDiff', () => {
   test('labels created notes by title in edges; real ids stay as-is', () => {
     const out = renderProposalDiff(detail(fullPayload()))
     expect(out).toContain('"Call Ana" —part_of→ "Huygens migration"')
-    expect(out).toContain('[informe] —mentions→ note:existing')
+    expect(out).toContain('"Call Ana" —relates_to→ note:existing')
   })
 
   test('renders about/affects topology with action and summary', () => {
@@ -153,7 +153,7 @@ describe('renderProposalDiff', () => {
     const payload = minimalPayload()
     payload.edges_remove = [
       { kind: 'blocked_by', from: 'note:a', to: 'note:b' },
-      { kind: 'mentions', from: 'note:a', to: 'note:c' }
+      { kind: 'relates_to', from: 'note:a', to: 'note:c' }
     ]
     const out = renderProposalDiff(detail(payload))
     expect(out).toContain('Edges removed (2):')

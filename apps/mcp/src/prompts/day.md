@@ -32,7 +32,7 @@ commit.
    si el usuario quiere dejar algo en ámbar, se queda en ámbar.
 3. **Orienta el día** — surfacea candidatas a MIT, no decidas: tareas `ACTIVE`
    sin MIT (usa `get_hierarchy` o `daily_radar`), con su contexto, excluyendo
-   las dormidas (`defer_until > hoy`). Señala las ligadas a un `objetivo` y los
+   las dormidas (`defer_until > hoy`). Señala las ligadas a un `objective` y los
    `due_at` cercanos. **Si NO hay tareas accionables** (solo proyectos), no
    fuerces: faltan próximas acciones → ofrece **`decompose_project`** primero
    ("antes de elegir foco, aterricemos un proyecto en una acción concreta").
@@ -54,8 +54,8 @@ commit.
    top-level, **nunca en `metadata`**) y **repásala con `get_proposal`** (el
    server exige el preview antes del commit).
 7. **Commit solo con OK explícito** (`approved: true` — el server lo exige y
-   rechaza una 2ª jornada hoy). Las notas dispuestas quedan estampadas con
-   `last_reviewed_at` automáticamente. Audita con `get_proposal_changes`.
+   rechaza una 2ª jornada hoy). La disposición queda registrada como evento de
+   commit (Huygens 2 ya no estampa `last_reviewed_at`). Audita con `get_proposal_changes`.
 
 ## Guardarraíles (no negociables)
 

@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { ALL_EDGE_TABLES } from '../domain'
+import { EDGE_KINDS, TRACE_EDGE_KINDS } from '../domain'
 import { getDb } from '../surreal'
 import { defineTool } from './define-tool'
 
@@ -14,7 +14,10 @@ export type CollectionStats = {
   raw_captures: { total: number; by_status: Record<string, number> }
   notes: { total: number; by_state: Record<string, number> }
   blocks: { total: number; embedded: number; unembedded: number; by_kind: Record<string, number> }
+  /** Canonical operational relations (the Huygens 2 topology). */
   edges: Record<string, number>
+  /** Technical proposal plumbing (about/affects/derived_from) — not domain topology. */
+  trace_edges: Record<string, number>
   proposals: { total: number; by_status: Record<string, number> }
 }
 
@@ -33,8 +36,8 @@ type StatsResults = [GroupRow[], GroupRow[], GroupRow[], CountRow[], GroupRow[],
 /**
  * Pure shaping of the already-fetched query tuple into CollectionStats. The
  * positional contract is fragile: edgeRows is the rest of the tuple and lines
- * up index-for-index with ALL_EDGE_TABLES because edgeSelects is appended in
- * that same order. Kept testable without a DB.
+ * up index-for-index with EDGE_KINDS then TRACE_EDGE_KINDS because edgeSelects
+ * is appended in that same order. Kept testable without a DB.
  */
 function assembleCollectionStats(results: StatsResults): CollectionStats {
   const [rawRows, noteRows, blockKindRows, embeddedRows, proposalRows, ...edgeRows] = results
@@ -45,7 +48,10 @@ function assembleCollectionStats(results: StatsResults): CollectionStats {
   const embedded = embeddedRows[0]?.count ?? 0
   const proposal = distribution(proposalRows)
 
-  const edges = Object.fromEntries(ALL_EDGE_TABLES.map((table, i) => [table, edgeRows[i]?.[0]?.count ?? 0]))
+  const edges = Object.fromEntries(EDGE_KINDS.map((table, i) => [table, edgeRows[i]?.[0]?.count ?? 0]))
+  const trace_edges = Object.fromEntries(
+    TRACE_EDGE_KINDS.map((table, i) => [table, edgeRows[EDGE_KINDS.length + i]?.[0]?.count ?? 0])
+  )
 
   return {
     raw_captures: { total: raw.total, by_status: raw.by },
@@ -57,13 +63,16 @@ function assembleCollectionStats(results: StatsResults): CollectionStats {
       by_kind: blockKind.by
     },
     edges,
+    trace_edges,
     proposals: { total: proposal.total, by_status: proposal.by }
   }
 }
 
 export async function collectionStatsImpl(): Promise<CollectionStats> {
   const db = await getDb()
-  const edgeSelects = ALL_EDGE_TABLES.map(t => `SELECT count() AS count FROM ${t} GROUP ALL`).join(';\n')
+  const edgeSelects = [...EDGE_KINDS, ...TRACE_EDGE_KINDS]
+    .map(t => `SELECT count() AS count FROM ${t} GROUP ALL`)
+    .join(';\n')
   const sql = `SELECT status AS key, count() AS count FROM raw_capture GROUP BY key;
 SELECT state AS key, count() AS count FROM note GROUP BY key;
 SELECT block_kind AS key, count() AS count FROM block GROUP BY key;
@@ -83,6 +92,7 @@ function summarize(s: CollectionStats): string {
     `notes: ${s.notes.total}  ${JSON.stringify(s.notes.by_state)}`,
     `blocks: ${s.blocks.total} (embedded ${s.blocks.embedded}, unembedded ${s.blocks.unembedded} — ${coverage}% indexed)`,
     `edges: ${edgeTotal}  ${JSON.stringify(s.edges)}`,
+    `trace edges: ${JSON.stringify(s.trace_edges)}`,
     `proposals: ${s.proposals.total}  ${JSON.stringify(s.proposals.by_status)}`
   ].join('\n')
 }
@@ -91,7 +101,7 @@ export function registerCollectionStats(server: McpServer): void {
   defineTool(
     server,
     'collection_stats',
-    'Operational health of the graph: counts of raw_captures (by status), notes (by state), blocks (total + how many are embedded vs unembedded), edges per type, and proposals (by status). The unembedded count is the key signal — those blocks are invisible to vector_search/hybrid_search until index_block runs. Read-only.',
+    'Operational health of the graph: counts of raw_captures (by status), notes (by state), blocks (total + how many are embedded vs unembedded), operational edges per kind (technical trace edges reported separately), and proposals (by status). The unembedded count is the key signal — those blocks are invisible to vector_search/hybrid_search until index_block runs. Read-only.',
     collectionStatsShape,
     async () => {
       const stats = await collectionStatsImpl()

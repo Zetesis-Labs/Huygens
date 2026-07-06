@@ -23,15 +23,14 @@ propuesta → commit.
 4. **Deadlines** de la semana entrante (`due_at`): ¿está encarrilado cada uno?
 5. **SOMEDAY** — ¿alguna merece promoción a ACTIVE? ¿Alguna ACTIVE debería
    bajar a SOMEDAY o ARCHIVED? (Honestidad > optimismo.)
-6. **Lo nunca revisado** — notas con `last_reviewed_at` viejo o ausente: un
-   vistazo rápido por si algo se pudre en silencio.
+6. **Lo estancado** — notas vivas sin tocar hace mucho (`updated_at` viejo; Huygens 2
+   ya no tiene `last_reviewed_at`): un vistazo rápido por si algo se pudre en silencio.
 7. **Inbox diferido** — raws en `deferred`: ¿procesar, ignorar, seguir
    esperando?
 8. **Captura el pulso de la semana** (una o dos frases) con `capture`, redacta
    el informe **`kind: 'week'`** trazado a esa raw, **propón** todo en una sola
    propuesta, **repásala con `get_proposal`** y commitea **solo con
-   `approved: true`**. Las notas dispuestas quedan con `last_reviewed_at`
-   estampado.
+   `approved: true`**. La disposición queda registrada como evento de commit.
 
 ## Guardarraíles (no negociables)
 

@@ -72,7 +72,7 @@ describe('index_block contextual embeddings (A2)', () => {
   test('narrative block embeds the context of the notes it is about', async () => {
     const about = await insertNote(ctx.db, {
       title: 'Relación con Stripe',
-      type_slug: 'person',
+      type_slug: 'agent',
       state: 'ACTIVE',
       blocks: ['placeholder']
     })
@@ -87,7 +87,7 @@ describe('index_block contextual embeddings (A2)', () => {
     await indexBlockImpl({ block_ids: [narrativeId] })
 
     const embedded = spy.inputs[0] ?? ''
-    expect(embedded).toBe('person · Relación con Stripe (ACTIVE)\n\nInterpretación del intercambio.')
+    expect(embedded).toBe('agent · Relación con Stripe (ACTIVE)\n\nInterpretación del intercambio.')
   })
 
   test('a block with no owner/about embeds bare content (no header)', async () => {
@@ -125,7 +125,10 @@ describe('neighborhood edge cases', () => {
     expect(r?.nodes).toEqual([{ id: 'note:nc_lonely', label: 'idea · Solo (ACTIVE)' }])
   })
 
-  test('a raw_capture seed expands through its derived_from block', async () => {
+  test('a raw_capture seed does not expand through trace edges (derived_from is plumbing, not topology)', async () => {
+    // Huygens 2: neighborhood traverses only operational edges. The derived_from
+    // block-provenance link is technical plumbing, so a raw_capture whose only
+    // relation is derived_from stays isolated.
     await ctx.db.query(`
       CREATE raw_capture:nc_raw SET content = 'captura cruda', source_kind = 'chat', status = 'processed';
       CREATE block:nc_blk SET block_kind = 'narrative', content = 'informe derivado';
@@ -133,37 +136,36 @@ describe('neighborhood edge cases', () => {
     `)
     const r = await neighborhoodImpl({ seed_id: 'raw_capture:nc_raw', hops: 1, max_nodes: 30 })
     expect(r?.seed).toBe('raw_capture:nc_raw')
-    expect(r?.node_count).toBe(2)
-    expect(r?.triples).toContain('—derived_from(summarized)→')
-    expect(r?.triples).toContain('raw · captura cruda')
-    expect(r?.triples).toContain('narrative · informe derivado')
+    expect(r?.node_count).toBe(1)
+    expect(r?.triples).toBe('')
   })
 
-  test('mixes every edge kind, each with the right qualifier or none', async () => {
+  test('mixes every operational edge kind', async () => {
     await ctx.db.query(`
       CREATE note:nc_task SET title = 'Tarea', type = note_type:task, state = 'ACTIVE';
       CREATE note:nc_proj SET title = 'Proyecto', type = note_type:project, state = 'ACTIVE';
       CREATE note:nc_block_src SET title = 'Bloqueante', type = note_type:task, state = 'WAITING';
-      CREATE note:nc_person SET title = 'Persona', type = note_type:person, state = 'ACTIVE';
-      CREATE raw_capture:nc_src SET content = 'origen', source_kind = 'manual', status = 'processed';
-      CREATE block:nc_narr SET block_kind = 'narrative', content = 'narrativa';
+      CREATE note:nc_dep SET title = 'Dependencia', type = note_type:task, state = 'ACTIVE';
+      CREATE note:nc_agent SET title = 'Responsable', type = note_type:agent, state = 'ACTIVE';
+      CREATE note:nc_rel SET title = 'Relacionada', type = note_type:idea, state = 'ACTIVE';
+      CREATE note:nc_dup SET title = 'Duplicada', type = note_type:task, state = 'ACTIVE';
       RELATE note:nc_task->part_of->note:nc_proj;
       RELATE note:nc_task->blocked_by->note:nc_block_src;
-      RELATE note:nc_task->mentions->note:nc_person;
-      RELATE block:nc_narr->about->note:nc_task;
-      RELATE block:nc_narr->affects->note:nc_task CONTENT { action: 'updated' };
-      RELATE block:nc_narr->derived_from->raw_capture:nc_src CONTENT { transformation: 'extracted' };
+      RELATE note:nc_task->depends_on->note:nc_dep;
+      RELATE note:nc_task->owned_by->note:nc_agent;
+      RELATE note:nc_task->relates_to->note:nc_rel;
+      RELATE note:nc_task->duplicates->note:nc_dup;
     `)
     const r = await neighborhoodImpl({ seed_id: 'note:nc_task', hops: 2, max_nodes: 60 })
     const t = r?.triples ?? ''
     expect(t).toContain('—part_of→')
     expect(t).toContain('—blocked_by→')
-    expect(t).toContain('—mentions→')
-    expect(t).toContain('—about→')
-    expect(t).toContain('—affects(updated)→')
-    expect(t).toContain('—derived_from(extracted)→')
-    // 4 notes + 1 block + 1 raw all reachable within 2 hops of the task.
-    expect(r?.node_count).toBe(6)
+    expect(t).toContain('—depends_on→')
+    expect(t).toContain('—owned_by→')
+    expect(t).toContain('—relates_to→')
+    expect(t).toContain('—duplicates→')
+    // 7 notes all reachable within 2 hops of the task.
+    expect(r?.node_count).toBe(7)
   })
 
   test('a cycle terminates and is deduped (no infinite expansion)', async () => {

@@ -15,7 +15,7 @@ en español. Es coaching: **enseñas** a descomponer, no descompones por el usua
 ## Flujo
 
 1. **Elige un proyecto vivo sin (o con pocas) tareas accionables.** `get_hierarchy`
-   o una query: `project` en `ACTIVE` cuyos hijos `task` en `['ACTIVE','CLARIFIED']`
+   o una query: `project` en `ACTIVE` cuyos hijos `task` en `['ACTIVE','WAITING']`
    sean 0. Trae 1, con su contexto (de qué área cuelga).
 2. **Enseña el concepto, una frase:** "un proyecto no se 'hace'; se hace su **próxima
    acción física** — la cosa más pequeña y concreta que lo mueve. ¿Cuál es la de

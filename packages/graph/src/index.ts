@@ -18,11 +18,11 @@ export type ChangeHistoryItem = {
 
 export type FlowNodeData = {
   title: string
-  /** Note type slug (task|project|area|routine|idea|reference|person|objetivo)
+  /** Note type slug (area|objective|project|task|idea|reference|agent|tool)
    * or 'raw' | 'block' | '?'. Drives the icon and colour. */
   type: string
   status: NodeStatus
-  /** ZTD note state (CLARIFIED|ACTIVE|WAITING|SOMEDAY|DONE|ARCHIVED). Drives the
+  /** ZTD note state (ACTIVE|WAITING|SOMEDAY|DONE|ARCHIVED). Drives the
    * state filter and the DONE styling (dimmed like context, but solid border).
    * Absent for raw/block nodes and notes whose state couldn't be resolved. */
   state?: string
@@ -118,7 +118,8 @@ function typeFromId(id: string): string {
 
 /**
  * Turn a proposal payload into a graph: the notes it creates / updates plus the
- * note↔note topology (`part_of` / `blocked_by` / `mentions`). The narrative block
+ * note↔note topology (`part_of` / `blocked_by` / `depends_on` / `owned_by` /
+ * `relates_to` / `duplicates`). The narrative block
  * lives outside the graph, so its plumbing (about / affects / derived_from) is
  * dropped. Referenced records outside the proposal become `context` nodes,
  * labelled+typed from `labels`. Pure.

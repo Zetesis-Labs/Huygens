@@ -417,7 +417,7 @@ export async function resolveNoteCards(fullIds: string[]): Promise<Record<string
 }
 
 /** The context around a set of MIT notes: their `part_of` ancestry (up to 4 hops:
- * project → area → objetivo) and their OPEN blockers (`blocked_by` to notes not
+ * project → area → objective) and their OPEN blockers (`blocked_by` to notes not
  * DONE/ARCHIVED). Returns full record ids (deduped). Read-only. */
 export async function relatedNoteIds(fullMitIds: string[]): Promise<string[]> {
   if (fullMitIds.length === 0) return []
@@ -567,10 +567,10 @@ export type { ExistingEdge } from '@huygens/graph'
 
 /**
  * Relations that already exist in the KG between the given records — used to
- * hydrate the proposal graph with pre-existing edges (part_of / blocked_by /
- * mentions) that the proposal didn't create, so notes that are related in the
- * graph don't appear disconnected. Only edges with *both* endpoints in the set
- * are returned. Read-only.
+ * hydrate the proposal graph with pre-existing operational edges (part_of /
+ * blocked_by / depends_on / owned_by / relates_to / duplicates) that the
+ * proposal didn't create, so notes that are related in the graph don't appear
+ * disconnected. Only edges with *both* endpoints in the set are returned. Read-only.
  */
 export async function existingEdgesAmong(ids: string[]): Promise<ExistingEdge[]> {
   if (ids.length < 2) return []
@@ -578,7 +578,7 @@ export async function existingEdgesAmong(ids: string[]): Promise<ExistingEdge[]>
   const params = { ids: ids.map(s => new StringRecordId(s)) }
   const [rows] = await db.query<[Array<{ in: unknown; out: unknown; kind: string }>]>(
     `SELECT in, out, meta::tb(id) AS kind
-     FROM part_of, blocked_by, mentions
+     FROM part_of, blocked_by, depends_on, owned_by, relates_to, duplicates
      WHERE in IN $ids AND out IN $ids`,
     params
   )
@@ -787,7 +787,16 @@ export async function replayEdgesAmong(ids: string[], versionstamp: string): Pro
   const target = BigInt(versionstamp)
   const idset = new Set(ids)
   const out: ExistingEdge[] = []
-  for (const kind of ['part_of', 'blocked_by', 'mentions'] as const) {
+  // Operational edges plus legacy `mentions` (historical changefeeds may hold it).
+  for (const kind of [
+    'part_of',
+    'blocked_by',
+    'depends_on',
+    'owned_by',
+    'relates_to',
+    'duplicates',
+    'mentions'
+  ] as const) {
     const [rows] = await db.query<[EdgeRow[]]>(`SHOW CHANGES FOR TABLE ${kind} SINCE d"1970-01-01T00:00:00Z"`)
     for (const e of replayLiveEdges(rows ?? [], target).values())
       if (idset.has(e.source) && idset.has(e.target)) out.push({ ...e, kind })
@@ -805,7 +814,7 @@ export async function scanEdgesAmongAt(ids: string[], committedAt: string): Prom
   const db = await getDb()
   const params = { ids: ids.map(s => new StringRecordId(s)) }
   const [rows] = await db.query<[Array<{ in: unknown; out: unknown; kind: string }>]>(
-    `SELECT in, out, meta::tb(id) AS kind FROM part_of, blocked_by, mentions
+    `SELECT in, out, meta::tb(id) AS kind FROM part_of, blocked_by, depends_on, owned_by, relates_to, duplicates
      WHERE in IN $ids AND out IN $ids VERSION d"${committedAt}"`,
     params
   )

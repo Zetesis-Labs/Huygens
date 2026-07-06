@@ -1,13 +1,14 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StringRecordId, type Surreal } from 'surrealdb'
 import { z } from 'zod'
-import { RECORD_ID_RE } from '../domain'
+import { EDGE_KINDS, RECORD_ID_RE } from '../domain'
 import { noteTypeSlug } from '../serialize'
 import { getDb, selectByIds } from '../surreal'
 import { defineTool, jsonBlock } from './define-tool'
 import { type GraphNodeRecord, idStr, type RecordIdish, tableOf } from './graph-records'
 
-const EDGE_PREDICATES = new Set(['part_of', 'blocked_by', 'mentions', 'about', 'affects', 'derived_from'])
+const EDGE_PREDICATES = new Set<string>(EDGE_KINDS)
+const CLAIM_PREDICATES = [...EDGE_KINDS, 'state', 'type'] as const
 
 export const checkClaimShape = {
   claims: z
@@ -17,9 +18,7 @@ export const checkClaimShape = {
           .string()
           .regex(RECORD_ID_RE, 'Must be a record id')
           .describe('Subject record id (note:/block:/raw_capture:)'),
-        predicate: z
-          .enum(['part_of', 'blocked_by', 'mentions', 'about', 'affects', 'derived_from', 'state', 'type'])
-          .describe('An edge kind, or a note attribute (state | type)'),
+        predicate: z.enum(CLAIM_PREDICATES).describe('An operational edge kind, or a note attribute (state | type)'),
         object: z
           .string()
           .min(1)
@@ -118,7 +117,7 @@ export function registerCheckClaim(server: McpServer): void {
   defineTool(
     server,
     'check_claim',
-    'Faithfulness check: decompose a claim into triples (subject id, predicate from the graph vocabulary part_of/blocked_by/mentions/about/affects/derived_from or attribute state/type, object) and get per triple supported/contradicted/unsupported against the graph. Use it before asserting topology or status to the user.',
+    'Faithfulness check: decompose a claim into triples (subject id, predicate from the operational graph vocabulary part_of/blocked_by/depends_on/owned_by/relates_to/duplicates or attribute state/type, object) and get per triple supported/contradicted/unsupported against the graph. Use it before asserting topology or status to the user.',
     checkClaimShape,
     async args => {
       const results = await checkClaimImpl(args)

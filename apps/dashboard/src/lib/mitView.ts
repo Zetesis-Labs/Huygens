@@ -15,7 +15,7 @@ const DONE_STATES = ['DONE', 'ARCHIVED']
 /**
  * The MITs view as a live graph: today's MITs plus any **overdue** ones (dated
  * before today and never finished), surrounded by their context — the `part_of`
- * ancestry (project → area → objetivo) and their open blockers. MIT nodes are
+ * ancestry (project → area → objective) and their open blockers. MIT nodes are
  * flagged so the canvas renders them as the focus (🎯, solid); overdue MITs get
  * an amber "vencido" accent so they don't silently vanish at midnight; context
  * nodes are plain (dimmed / DONE-styled by CardNode). Edges are the real

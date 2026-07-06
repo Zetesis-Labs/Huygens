@@ -31,15 +31,14 @@ Capture is **not interpretation** — never split, summarise or guess at this st
 ```
 note {
   id, title,
-  type → note_type,   slug: task|project|area|routine|idea|reference|person|objetivo
-  state: CLARIFIED | ACTIVE | WAITING | SOMEDAY | DONE | ARCHIVED,
+  type → note_type,   slug: area|objective|project|task|idea|reference|agent|tool
+  state: ACTIVE | WAITING | SOMEDAY | DONE | ARCHIVED,
   mit_for?: datetime,      ← PRIORITY axis (indexed); YYYY-MM-DD → UTC midnight
   due_at?: datetime,       ← COMMITMENT axis: hard deadline (indexed)
   defer_until?: datetime,  ← TICKLER axis: hidden from the active radar until this day (indexed)
   metadata?: object (flexible),
   block_order: [→block, ...],
   source_kind?, source_ref?,
-  last_reviewed_at?,
   created_at (readonly), updated_at (auto)
 }
 
@@ -87,14 +86,26 @@ to next week (invisible until then). Querying:
 
 All edges are schemafull with CHANGEFEED 10y. Each pair (in, out) is UNIQUE.
 
+**Operational edges** (the domain topology; note→note, materialized by commits):
+
+| Edge | From | To | Extra fields |
+|---|---|---|---|
+| `part_of` | `note` | `note` | — (single parent, anchored, acyclic) |
+| `blocked_by` | `note` | `note` | `reason?`, `since` |
+| `depends_on` | `note` | `note` | `created_at` |
+| `owned_by` | `note` | `note` | `created_at` (target should be an `agent` note) |
+| `relates_to` | `note` | `note` | `created_at` (sparse weak link; replaced `mentions`) |
+| `duplicates` | `note` | `note` | `created_at` |
+
+**Technical trace edges** (proposal/event plumbing, NOT domain topology — operational read tools do not traverse them):
+
 | Edge | From | To | Extra fields |
 |---|---|---|---|
 | `derived_from` | `block` | `raw_capture` | `transformation`: verbatim\|extracted\|summarized\|inferred |
 | `about` | `block` | `note` | — |
 | `affects` | `block` | `note` | `action`: created\|updated\|state_changed\|linked\|archived; `summary?` |
-| `part_of` | `note` | `note` | — |
-| `blocked_by` | `note` | `note\|block` | `reason?`, `since` |
-| `mentions` | `note\|block` | `note\|block` | — |
+
+`mentions` is a **legacy** relation table kept only for old-data/replay compatibility. New proposals, tools, claim predicates and dashboard styling must use `relates_to`, never `mentions`.
 
 Every edge carries **`via_proposal`** (`option<record<proposal>>`): the proposal whose commit
 materialized it. New commits stamp it in `RELATE`; legacy edges (created before the field
@@ -117,7 +128,7 @@ coverage is 100% (0 NONE). `created_at` / `since` are the edge timestamps.
 > destructive (no shadow swap / re-embed) — `db:verify-fold` proves a *correct* rebuild is
 > achievable, but the production button is not that path yet (Option A).
 
-In the proposal payload, `edges` covers `part_of`, `blocked_by`, `mentions`. `about` and `affects` have their own dedicated arrays.
+In the proposal payload, `edges` covers the operational relations `part_of`, `blocked_by`, `depends_on`, `owned_by`, `relates_to`, `duplicates`. `about` and `affects` have their own dedicated arrays.
 
 Structural mutation must go through persisted proposals. `commit_proposal` is the approval boundary.
 
@@ -191,7 +202,7 @@ and raws processed. Visual rendering of the change graph lives in the dashboard
     temp_id: string,
     type_slug: NoteTypeSlug,
     title: string,
-    state?: NoteState,            // default CLARIFIED
+    state?: NoteState,            // default ACTIVE
     mit_for?: string,             // YYYY-MM-DD or ISO → top-level field (priority)
     due_at?: string,              // YYYY-MM-DD or ISO → hard deadline
     defer_until?: string,         // YYYY-MM-DD or ISO → tickler (hide until)
@@ -207,7 +218,8 @@ and raws processed. Visual rendering of the change graph lives in the dashboard
     metadata_merge?: object,
     descriptive_blocks_append?: [{ content }]
   }],
-  edges: [{ kind: part_of|blocked_by|mentions, from, to, reason?, anchored? }],
+  edges: [{ kind: part_of|blocked_by|depends_on|owned_by|relates_to|duplicates, from, to, reason?, anchored? }],
+                                  // note→note only; `reason` persists on blocked_by only.
                                   // part_of REQUIRES anchored:true — assert the user
                                   // explicitly stated this parent (rejected otherwise).
   about: [{ block_temp_id, note_ref }],
@@ -236,7 +248,7 @@ and raws processed. Visual rendering of the change graph lives in the dashboard
 | `hybrid_search` | Fuse `vector_search` (semantic) + `lexical_search` (BM25) via Reciprocal Rank Fusion. Highest-recall default search; same parent-note filters. |
 | `expand_context` | Hybrid retrieval: vector-match notes for a free-form query, then expand their connected subgraph into subject—predicate→object triples (with node legend). Default way to pull relevant context as text. |
 | `get_hierarchy` | The `part_of` hierarchy as structured { nodes, edges } — areas → projects → tasks. Pass `root` for a subtree; omit for the whole forest. Read-only. |
-| `daily_radar` | The live operational radar: ACTIVE/WAITING/CLARIFIED notes not deferred (the active surface), with parent and temporal axes. Read-only. |
+| `daily_radar` | The live operational radar: ACTIVE/WAITING notes not deferred (the active surface), with parent and temporal axes. Read-only. |
 | `count_notes` | Count notes from count() (never eyeballed), filterable by type/states, with a by-(type,state) breakdown. Read-only. |
 | `mit_history` | The MIT timeline derived from the commit log (assigned → moved → cleared per note, with proposal + timestamp). Survives `mit_for: null`. Source of truth for streaks. Read-only. |
 | `neighborhood` | Expand the graph around a note/block/raw N hops; returns the connected subgraph as triples plus a node legend. |

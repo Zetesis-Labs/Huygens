@@ -54,7 +54,7 @@ try {
           temp_id: 'applicative',
           title: 'Functores aplicativos',
           type_slug: 'idea',
-          state: 'CLARIFIED',
+          state: 'ACTIVE',
           descriptive_blocks: [
             {
               content:
@@ -70,7 +70,7 @@ try {
           temp_id: 'builder',
           title: 'Patron builder en lenguajes mainstream',
           type_slug: 'reference',
-          state: 'CLARIFIED',
+          state: 'ACTIVE',
           descriptive_blocks: [
             {
               content:
@@ -79,7 +79,7 @@ try {
           ]
         }
       ],
-      edges: [{ kind: 'mentions', from: 'builder', to: 'applicative' }],
+      edges: [{ kind: 'relates_to', from: 'builder', to: 'applicative' }],
       about: [
         { block_temp_id: 'narrative', note_ref: 'applicative' },
         { block_temp_id: 'narrative', note_ref: 'builder' }
@@ -112,7 +112,7 @@ try {
   const searchFiltered = await vectorSearchImpl({
     query: 'category theory composition',
     k: 5,
-    state_in: ['CLARIFIED'],
+    state_in: ['ACTIVE'],
     type_slugs: ['idea']
   })
 
@@ -155,9 +155,9 @@ try {
     }
     for (const noteId of commit.notes_created) {
       const note = new StringRecordId(noteId)
-      await db.query('DELETE mentions WHERE in = $note OR out = $note', { note })
-      await db.query('DELETE part_of WHERE in = $note OR out = $note', { note })
-      await db.query('DELETE blocked_by WHERE in = $note OR out = $note', { note })
+      for (const edge of ['part_of', 'blocked_by', 'depends_on', 'owned_by', 'relates_to', 'duplicates']) {
+        await db.query(`DELETE ${edge} WHERE in = $note OR out = $note`, { note })
+      }
       await db.query('DELETE $note', { note })
     }
   }

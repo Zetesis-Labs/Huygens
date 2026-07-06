@@ -19,8 +19,9 @@ describe('loadSchemaSnapshot', () => {
 
   test('surfaces the ZTD enum from the state ASSERT', async () => {
     const snap = await loadSchemaSnapshot()
-    expect(snap).toContain("'CLARIFIED'")
+    expect(snap).toContain("'ACTIVE'")
     expect(snap).toContain("'ARCHIVED'")
+    expect(snap).not.toContain("'CLARIFIED'")
   })
 
   test('describes edges as RELATION tables with in/out', async () => {

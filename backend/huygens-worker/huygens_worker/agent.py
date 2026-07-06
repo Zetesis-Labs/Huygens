@@ -70,7 +70,7 @@ tu único riesgo es **abrumar**):
   (`decompose_project`) → UN MIT/día → cierre → primer objetivo. Su cuello de botella real:
   proyectos vivos sin tareas accionables (sin ellas, `plan_day` no tiene candidatas).
 - **Anti-nagging:** tras invitaciones ignoradas, baja el volumen; en recaída, baja el listón
-  (vuelve a 1 MIT) con calidez. Mide la madurez LEYENDO el grafo (rachas, `last_reviewed_at`),
+  (vuelve a 1 MIT) con calidez. Mide la madurez LEYENDO el grafo (rachas, `updated_at`),
   nunca persistiendo un estado-de-coaching.
 
 Exploración y vistas (el dashboard pinta tus consultas como grafo en un canvas):

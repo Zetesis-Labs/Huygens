@@ -54,10 +54,14 @@ export function nodeLine(node: GraphNodeRecord): string {
 const EDGE_LABELS: Record<string, string> = {
   part_of: 'parte de',
   blocked_by: 'bloqueada por',
-  mentions: 'menciona',
+  depends_on: 'depende de',
+  owned_by: 'responsable',
+  relates_to: 'relacionada con',
+  duplicates: 'duplica',
   derived_from: 'deriva de',
   about: 'sobre',
-  affects: 'afecta a'
+  affects: 'afecta a',
+  mentions: 'menciona (legacy)'
 }
 
 /** Human label for a relation kind ("part_of" → "parte de"). */

@@ -1,5 +1,5 @@
 import type { RecordId, StringRecordId } from 'surrealdb'
-import { BLOCK_ID_RE, NOTE_ID_RE } from '../../domain'
+import { AGENT_KINDS, BLOCK_ID_RE, NOTE_ID_RE, type NoteState, type NoteTypeSlug } from '../../domain'
 import { getDb } from '../../surreal'
 import type { ProposalPayload, StoredProposalPayload } from './schemas'
 import { toBlockRef, toNoteRef, toRawRef } from './store'
@@ -126,7 +126,7 @@ function nodeKind(id: string): 'note' | 'block' {
  * Pure derivation of which refs a *stored* payload requires to already exist
  * (the records it does NOT itself create), plus all the topology/kind guards:
  * about/affects block endpoints must be blocks, single-parent per child,
- * part_of/blocked_by endpoints must be notes. No I/O — testable without a DB.
+ * every operational edge is note→note. No I/O — testable without a DB.
  */
 export function collectRequiredRefs(payload: StoredProposalPayload): { notes: Set<string>; blocks: Set<string> } {
   const createdNotes = new Set(payload.note_creates.map(n => n.id))
@@ -141,11 +141,12 @@ export function collectRequiredRefs(payload: StoredProposalPayload): { notes: Se
 
   assertSingleParentPerChild(payload.edges)
   // Per edge (in order): both endpoints must be known refs (nodeKind throws on an
-  // unknown one), and part_of/blocked_by additionally require both to be notes.
+  // unknown one), and every Huygens 2 operational edge is note→note. Block-level
+  // trace stays in about/affects/derived_from, not in the operational topology.
   for (const edge of [...payload.edges, ...payload.edges_remove]) {
     const fromKind = nodeKind(edge.from)
     const toKind = nodeKind(edge.to)
-    if ((edge.kind === 'part_of' || edge.kind === 'blocked_by') && (fromKind !== 'note' || toKind !== 'note')) {
+    if (fromKind !== 'note' || toKind !== 'note') {
       throw new Error(`${edge.kind} requires note refs`)
     }
   }
@@ -178,7 +179,7 @@ export function collectRequiredRefs(payload: StoredProposalPayload): { notes: Se
 /**
  * Validate the *stored* payload (real ids everywhere) before commit: every
  * referenced record that this proposal does NOT create must already exist, and
- * part_of/blocked_by endpoints must be notes. Pure-id; no temp resolution.
+ * every operational edge is note→note. Pure-id; no temp resolution.
  */
 export async function assertProposalRefs(payload: StoredProposalPayload): Promise<void> {
   const { notes, blocks } = collectRequiredRefs(payload)
@@ -230,6 +231,72 @@ function assertNoTemporalLeakInMetadata(payload: ProposalPayload): void {
         `the overdue radar / MITs / tickler — a date in metadata is invisible to them. See ` +
         `huygens://lore/operating-doctrine.`
     )
+  }
+}
+
+const STATE_BY_TYPE: Record<NoteTypeSlug, readonly NoteState[]> = {
+  area: ['ACTIVE', 'ARCHIVED'],
+  objective: ['ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED'],
+  project: ['ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED'],
+  task: ['ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED'],
+  idea: ['ACTIVE', 'SOMEDAY', 'ARCHIVED'],
+  reference: ['ACTIVE', 'ARCHIVED'],
+  agent: ['ACTIVE', 'ARCHIVED'],
+  tool: ['ACTIVE', 'ARCHIVED']
+}
+
+function assertStateAllowedForType(payload: ProposalPayload): void {
+  for (const note of payload.note_creates) {
+    const allowed = STATE_BY_TYPE[note.type_slug]
+    if (!allowed.includes(note.state)) {
+      throw new Error(`state ${note.state} is not allowed for type ${note.type_slug}; allowed: ${allowed.join(', ')}`)
+    }
+  }
+}
+
+const FORBIDDEN_METADATA_KEYS = new Set([
+  'lastreviewedat',
+  'reviewedby',
+  'planningstatus',
+  'priority',
+  'score',
+  'ranking',
+  'rank',
+  'confidence',
+  'provenance',
+  'sourcekind',
+  'sourceref',
+  'createdfrom',
+  'derivedfrom',
+  'rawid',
+  'rawids'
+])
+
+function forbiddenMetadataPaths(meta: Record<string, unknown> | undefined, where: string): string[] {
+  return Object.keys(meta ?? {})
+    .filter(key => FORBIDDEN_METADATA_KEYS.has(normalizeKey(key)))
+    .map(key => `${where}.metadata.${key}`)
+}
+
+function assertAgentKind(note: ProposalPayload['note_creates'][number]): string[] {
+  const value = note.metadata?.agent_kind
+  if (value == null) return []
+  if (note.type_slug !== 'agent') return [`${note.temp_id}.metadata.agent_kind (only valid for type agent)`]
+  return typeof value === 'string' && (AGENT_KINDS as readonly string[]).includes(value)
+    ? []
+    : [`${note.temp_id}.metadata.agent_kind`]
+}
+
+function assertOperationalMetadata(payload: ProposalPayload): void {
+  const offenders = [
+    ...payload.note_creates.flatMap(note => [
+      ...forbiddenMetadataPaths(note.metadata, note.temp_id),
+      ...assertAgentKind(note)
+    ]),
+    ...payload.note_updates.flatMap(note => forbiddenMetadataPaths(note.metadata_merge, note.id))
+  ]
+  if (offenders.length > 0) {
+    throw new Error(`metadata fields are not part of the Huygens 2 operational model: ${offenders.join(', ')}`)
   }
 }
 
@@ -294,6 +361,8 @@ export function validatePayload(rawIds: string[], payload: ProposalPayload): Pro
   assertUniqueTempIds(payload)
   assertNarrativeRawIdsAreDeclared(payload)
   assertNoTemporalLeakInMetadata(payload)
+  assertStateAllowedForType(payload)
+  assertOperationalMetadata(payload)
   assertPartOfAnchored(payload)
   return payload
 }

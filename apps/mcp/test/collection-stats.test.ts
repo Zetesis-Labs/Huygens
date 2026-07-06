@@ -23,7 +23,8 @@ describe('collectionStatsImpl', () => {
     const s = await collectionStatsImpl()
     expect(s.notes.total).toBe(0)
     expect(s.blocks).toEqual({ total: 0, embedded: 0, unembedded: 0, by_kind: {} })
-    expect(s.edges.about).toBe(0)
+    expect(s.edges.part_of).toBe(0)
+    expect(s.trace_edges.about).toBe(0)
   })
 
   test('counts notes by state and blocks by embedding coverage', async () => {
@@ -49,7 +50,7 @@ describe('collectionStatsImpl', () => {
 
     const s = await collectionStatsImpl()
     expect(s.edges.part_of).toBe(1)
-    expect(s.edges.about).toBe(0)
+    expect(s.trace_edges.about).toBe(0)
   })
 
   test('counts raw_captures by status', async () => {

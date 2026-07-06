@@ -29,7 +29,6 @@ function payload(rawIds: string[], overrides: Partial<ProposalPayload> = {}): Pr
         type_slug: 'task',
         title: 'Call Ana',
         state: 'ACTIVE',
-        metadata: { priority: 'high' },
         descriptive_blocks: [{ content: 'Next action: call Ana this week.' }]
       },
       {
@@ -43,7 +42,7 @@ function payload(rawIds: string[], overrides: Partial<ProposalPayload> = {}): Pr
     note_updates: [],
     edges: [
       { kind: 'part_of', from: 'task1', to: 'project1', anchored: true },
-      { kind: 'mentions', from: 'narrative1', to: 'task1' }
+      { kind: 'relates_to', from: 'project1', to: 'task1' }
     ],
     about: [{ block_temp_id: 'narrative1', note_ref: 'task1' }],
     affects: [{ block_temp_id: 'narrative1', note_ref: 'task1', action: 'created', summary: 'Created task.' }],
@@ -188,7 +187,7 @@ describe('assertProposalRefs (at commit, after a draft is stored)', () => {
     await expect(commitPreviewed({ proposal_id: created.id })).rejects.toThrow('note not found: note:ghost')
   })
 
-  test('commit rejects an edge referencing a nonexistent block record id', async () => {
+  test('commit rejects an operational edge with a block endpoint (edges are note→note)', async () => {
     const rawIds = await captureMany(['a'])
     const real = await insertNote(ctx.db, { title: 'Real', type_slug: 'task' })
     const created = await createProposalImpl({
@@ -197,10 +196,10 @@ describe('assertProposalRefs (at commit, after a draft is stored)', () => {
         note_creates: [],
         about: [],
         affects: [],
-        edges: [{ kind: 'mentions', from: 'block:ghost', to: real.note_id }]
+        edges: [{ kind: 'blocked_by', from: 'block:ghost', to: real.note_id }]
       })
     })
-    await expect(commitPreviewed({ proposal_id: created.id })).rejects.toThrow('block not found: block:ghost')
+    await expect(commitPreviewed({ proposal_id: created.id })).rejects.toThrow('blocked_by requires note refs')
   })
 })
 

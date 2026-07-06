@@ -37,7 +37,7 @@ describe('operating-doctrine — enforcement map', () => {
   test('every "muro (motor)" claim points at real schema enforcement', () => {
     const schema = read('../surreal/schema.surql')
     expect(schema).toContain('part_of_single_parent') // padre único
-    expect(schema).toMatch(/INSIDE \['CLARIFIED'/) // state enum ASSERT
+    expect(schema).toMatch(/INSIDE \['ACTIVE'/) // state enum ASSERT
     const reader = read('../scripts/define-reader.ts')
     expect(reader).toContain('VIEWER') // query_query read-only via RBAC
   })

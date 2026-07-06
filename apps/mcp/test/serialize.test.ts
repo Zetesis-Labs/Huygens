@@ -100,13 +100,23 @@ describe('nodeLine', () => {
 })
 
 describe('edgeLabel', () => {
-  test('maps the six known edge kinds to Spanish', () => {
+  test('maps the operational edge kinds to Spanish', () => {
     expect(edgeLabel('part_of')).toBe('parte de')
     expect(edgeLabel('blocked_by')).toBe('bloqueada por')
-    expect(edgeLabel('mentions')).toBe('menciona')
+    expect(edgeLabel('depends_on')).toBe('depende de')
+    expect(edgeLabel('owned_by')).toBe('responsable')
+    expect(edgeLabel('relates_to')).toBe('relacionada con')
+    expect(edgeLabel('duplicates')).toBe('duplica')
+  })
+
+  test('maps the technical trace kinds to Spanish', () => {
     expect(edgeLabel('derived_from')).toBe('deriva de')
     expect(edgeLabel('about')).toBe('sobre')
     expect(edgeLabel('affects')).toBe('afecta a')
+  })
+
+  test('mentions is a legacy label, marked as such', () => {
+    expect(edgeLabel('mentions')).toBe('menciona (legacy)')
   })
 
   test('unknown kind passes through unchanged', () => {
@@ -136,8 +146,8 @@ describe('blockEmbeddingContext', () => {
 
   test('several subjects (narrative about-notes) → one label per line', () => {
     const about1: GraphNodeRecord = { id: 'note:x', title: 'Tema A', type: 'note_type:idea' }
-    const about2: GraphNodeRecord = { id: 'note:y', title: 'Tema B', type: 'note_type:person' }
-    expect(blockEmbeddingContext([about1, about2], [])).toBe('idea · Tema A\nperson · Tema B')
+    const about2: GraphNodeRecord = { id: 'note:y', title: 'Tema B', type: 'note_type:agent' }
+    expect(blockEmbeddingContext([about1, about2], [])).toBe('idea · Tema A\nagent · Tema B')
   })
 })
 
@@ -174,10 +184,10 @@ describe('serializeTriplesGrouped', () => {
     const edges: EdgeTriple[] = [
       { source: 'note:a', target: 'note:b', kind: 'part_of' },
       { source: 'note:a', target: 'note:c', kind: 'blocked_by' },
-      { source: 'note:d', target: 'note:e', kind: 'mentions' }
+      { source: 'note:d', target: 'note:e', kind: 'relates_to' }
     ]
     expect(serializeTriplesGrouped(edges, label)).toBe(
-      ['L(note:a)', '  —part_of→ L(note:b)', '  —blocked_by→ L(note:c)', 'L(note:d)', '  —mentions→ L(note:e)'].join(
+      ['L(note:a)', '  —part_of→ L(note:b)', '  —blocked_by→ L(note:c)', 'L(note:d)', '  —relates_to→ L(note:e)'].join(
         '\n'
       )
     )

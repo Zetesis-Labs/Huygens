@@ -151,7 +151,7 @@ export function registerFindRelated(server: McpServer): void {
   defineTool(
     server,
     'find_related',
-    'Find existing notes related to a concept. Use BEFORE creating a new note about a topic — if the top hit has score >= ~0.65, reference that existing note in your proposal (link it via part_of / mentions) instead of duplicating. Returns up to K notes, deduped by parent, sorted by descending similarity.',
+    'Find existing notes related to a concept. Use BEFORE creating a new note about a topic — if the top hit has score >= ~0.65, reference that existing note in your proposal (link it via part_of / relates_to) instead of duplicating. Returns up to K notes, deduped by parent, sorted by descending similarity.',
     findRelatedShape,
     async args => {
       const hits = await findRelatedImpl(args)

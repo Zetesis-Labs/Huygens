@@ -5,7 +5,7 @@ import { z } from 'zod'
 // validation, MCP tool schemas, agent prompts and event payloads.
 // KEEP IN SYNC with backend/huygens-worker/huygens_worker/domain.py.
 
-export const NOTE_STATES = ['CLARIFIED', 'ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED'] as const
+export const NOTE_STATES = ['ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED'] as const
 export type NoteState = (typeof NOTE_STATES)[number]
 export const NoteStateSchema = z.enum(NOTE_STATES)
 
@@ -21,20 +21,15 @@ export const PROPOSAL_STATUSES = ['draft', 'committed', 'discarded'] as const
 export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number]
 export const ProposalStatusSchema = z.enum(PROPOSAL_STATUSES)
 
-export const NOTE_TYPE_SLUGS = [
-  'task',
-  'project',
-  'area',
-  'routine',
-  'idea',
-  'reference',
-  'person',
-  'objetivo'
-] as const
+export const NOTE_TYPE_SLUGS = ['area', 'objective', 'project', 'task', 'idea', 'reference', 'agent', 'tool'] as const
 export type NoteTypeSlug = (typeof NOTE_TYPE_SLUGS)[number]
 export const NoteTypeSlugSchema = z.enum(NOTE_TYPE_SLUGS)
 
-export const EDGE_KINDS = ['part_of', 'blocked_by', 'mentions'] as const
+export const AGENT_KINDS = ['friend', 'family', 'client', 'contact', 'team', 'ai_agent', 'institution'] as const
+export type AgentKind = (typeof AGENT_KINDS)[number]
+export const AgentKindSchema = z.enum(AGENT_KINDS)
+
+export const EDGE_KINDS = ['part_of', 'blocked_by', 'depends_on', 'owned_by', 'relates_to', 'duplicates'] as const
 export type EdgeKind = (typeof EDGE_KINDS)[number]
 export const EdgeKindSchema = z.enum(EDGE_KINDS)
 
@@ -42,7 +37,7 @@ export const TRACE_EDGE_KINDS = ['derived_from', 'about', 'affects'] as const
 export type TraceEdgeKind = (typeof TRACE_EDGE_KINDS)[number]
 export const TraceEdgeKindSchema = z.enum(TRACE_EDGE_KINDS)
 
-/** Every edge (RELATION) table in the schema. The graph's full edge vocabulary. */
+/** Every edge (RELATION) table in the schema. Operational first, technical trace second. */
 export const ALL_EDGE_TABLES = [...EDGE_KINDS, ...TRACE_EDGE_KINDS] as const
 
 /** Ritual informe-blocks. When a narrative block is the output of a ritual it

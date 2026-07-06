@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StringRecordId, type Surreal } from 'surrealdb'
 import { z } from 'zod'
-import { RECORD_ID_RE } from '../domain'
+import { EDGE_KINDS, RECORD_ID_RE } from '../domain'
 import { type EdgeTriple, nodeLabel, serializeTriples } from '../serialize'
 import { getDb, selectByIds } from '../surreal'
 import { defineTool, jsonBlock } from './define-tool'
@@ -42,8 +42,8 @@ export type NeighborhoodResult = SubgraphText & { seed: string }
 async function edgesTouching(db: Surreal, frontier: string[]): Promise<EdgeRow[]> {
   const frontierIds = frontier.map(s => new StringRecordId(s))
   const [rows] = await db.query<[EdgeRow[]]>(
-    `SELECT id, in, out, meta::tb(id) AS kind, action, transformation
-     FROM part_of, blocked_by, mentions, about, affects, derived_from
+    `SELECT id, in, out, meta::tb(id) AS kind
+     FROM ${EDGE_KINDS.join(', ')}
      WHERE in IN $f OR out IN $f`,
     { f: frontierIds }
   )

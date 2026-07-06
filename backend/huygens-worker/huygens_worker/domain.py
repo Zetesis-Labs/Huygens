@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Final, Literal, get_args
 
-NoteState = Literal["CLARIFIED", "ACTIVE", "WAITING", "SOMEDAY", "DONE", "ARCHIVED"]
+NoteState = Literal["ACTIVE", "WAITING", "SOMEDAY", "DONE", "ARCHIVED"]
 NOTE_STATES: Final[tuple[str, ...]] = get_args(NoteState)
 
 RawStatus = Literal["pending", "processed", "ignored", "deferred"]
@@ -22,18 +22,21 @@ ProposalStatus = Literal["draft", "committed", "discarded"]
 PROPOSAL_STATUSES: Final[tuple[str, ...]] = get_args(ProposalStatus)
 
 NoteTypeSlug = Literal[
-    "task",
-    "project",
     "area",
-    "routine",
+    "objective",
+    "project",
+    "task",
     "idea",
     "reference",
-    "person",
-    "objetivo",
+    "agent",
+    "tool",
 ]
 NOTE_TYPE_SLUGS: Final[tuple[str, ...]] = get_args(NoteTypeSlug)
 
-EdgeKind = Literal["part_of", "blocked_by", "mentions"]
+AgentKind = Literal["friend", "family", "client", "contact", "team", "ai_agent", "institution"]
+AGENT_KINDS: Final[tuple[str, ...]] = get_args(AgentKind)
+
+EdgeKind = Literal["part_of", "blocked_by", "depends_on", "owned_by", "relates_to", "duplicates"]
 EDGE_KINDS: Final[tuple[str, ...]] = get_args(EdgeKind)
 
 TraceEdgeKind = Literal["derived_from", "about", "affects"]

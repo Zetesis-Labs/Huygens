@@ -131,7 +131,7 @@ export async function withFreshDbAndReader(): Promise<TestDbWithReader> {
 export async function insertNote(db: Surreal, input: InsertNoteInput): Promise<InsertNoteResult> {
   const data: Record<string, unknown> = {
     title: input.title,
-    state: input.state ?? 'CLARIFIED'
+    state: input.state ?? 'ACTIVE'
   }
   if (input.type_slug) data.type = new StringRecordId(`note_type:${input.type_slug}`)
   if (input.mit_for) data.mit_for = new Date(input.mit_for)

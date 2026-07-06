@@ -136,7 +136,7 @@ export async function dailyRadarImpl(): Promise<{
   >(
     `SELECT id, title, type.slug AS type, state, ->part_of->note.title AS parent, mit_for, due_at
      FROM note
-     WHERE state IN ['ACTIVE','WAITING','CLARIFIED']
+     WHERE state IN ['ACTIVE','WAITING']
        AND (defer_until IS NONE OR defer_until <= time::now())
      ORDER BY type, state`
   )
@@ -339,7 +339,7 @@ export function registerViews(server: McpServer): void {
   defineTool(
     server,
     'daily_radar',
-    'The live operational radar: notes in ACTIVE/WAITING/CLARIFIED that are not deferred (the active surface), with their parent and temporal axes. The canonical "what is live right now" view. Read-only.',
+    'The live operational radar: notes in ACTIVE/WAITING that are not deferred (the active surface), with their parent and temporal axes. The canonical "what is live right now" view. Read-only.',
     {},
     async () => {
       const r = await dailyRadarImpl()

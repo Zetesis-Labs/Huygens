@@ -84,11 +84,6 @@ class CommitTx {
   readonly params: Record<string, unknown> = {}
   readonly lines: string[] = ['BEGIN;']
   private paramCount = 0
-  /** True when this commit is a ritual that disposes notes (the `day` jornada,
-   * the `week` review, or their legacy review_* forms): its note_updates are
-   * dispositions, so we stamp last_reviewed_at on them (settling a note =
-   * reviewing it). Set in build(); replay leaves it false. */
-  private reviewRitual = false
   /** Ids of descriptive blocks created in this tx (generated here; nothing refs them). */
   readonly descriptiveIds: string[] = []
   /** The proposal whose commit/replay this tx materializes — stamped as
@@ -162,10 +157,7 @@ class CommitTx {
         if (value != null) return `${field} = ${this.addParam(toDayUtcMidnight(value))}`
         return false
       }),
-      note.metadata_merge != null && `metadata = object::extend(metadata ?? {}, ${this.addParam(note.metadata_merge)})`,
-      // A review_day disposition reviews the note → stamp it (closes apuesta B,
-      // makes the "never reviewed" radar actually work).
-      this.reviewRitual && 'last_reviewed_at = time::now()'
+      note.metadata_merge != null && `metadata = object::extend(metadata ?? {}, ${this.addParam(note.metadata_merge)})`
     ].filter((clause): clause is string => Boolean(clause))
   }
 
@@ -252,9 +244,6 @@ class CommitTx {
 
   build(payload: StoredProposalPayload, proposalId: RecordId): { query: string; params: Record<string, unknown> } {
     this.proposalId = String(proposalId)
-    this.reviewRitual = payload.narrative_blocks.some(
-      b => b.kind === 'day' || b.kind === 'week' || b.kind === 'review_day' || b.kind === 'review_week'
-    )
     this.creates(payload)
     this.updates(payload)
     this.narratives(payload)

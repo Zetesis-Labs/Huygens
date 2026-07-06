@@ -19,7 +19,18 @@ type TableInfo = { fields?: Record<string, string> }
 
 /** Tables whose every field (and enum values) must appear in the doc. */
 const CORE_TABLES = ['raw_capture', 'note', 'block']
-const EDGE_TABLES = ['derived_from', 'about', 'affects', 'part_of', 'blocked_by', 'mentions']
+const EDGE_TABLES = [
+  'part_of',
+  'blocked_by',
+  'depends_on',
+  'owned_by',
+  'relates_to',
+  'duplicates',
+  'derived_from',
+  'about',
+  'affects',
+  'mentions'
+]
 
 function mentions(doc: string, token: string): boolean {
   return new RegExp(`\\b${token}\\b`).test(doc)

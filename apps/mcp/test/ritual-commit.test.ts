@@ -150,7 +150,7 @@ describe('ritual commits — approval + one-per-period gate', () => {
     }
   })
 
-  test('a jornada commit stamps last_reviewed_at on the notes it disposes', async () => {
+  test('a jornada commit applies the disposition without stamping a review field (Huygens 2 removed last_reviewed_at)', async () => {
     const { note_id } = await insertNote(ctx.db, { title: 'Tarea dispuesta', type_slug: 'task', state: 'ACTIVE' })
     const rawId = await captureRaw('jornada con disposición')
     const created = await createProposalImpl({
@@ -166,10 +166,13 @@ describe('ritual commits — approval + one-per-period gate', () => {
       }
     })
     await commitPreviewed({ proposal_id: created.id, approved: true })
-    const [rows] = await ctx.db.query<[Array<{ last_reviewed_at: unknown }>]>(
-      'SELECT last_reviewed_at FROM note WHERE id = $id',
+    const [rows] = await ctx.db.query<[Array<{ state: string; last_reviewed_at: unknown }>]>(
+      'SELECT state, last_reviewed_at FROM note WHERE id = $id',
       { id: new StringRecordId(note_id) }
     )
-    expect(rows[0]?.last_reviewed_at).toBeTruthy()
+    // The disposition lands (state → DONE) …
+    expect(rows[0]?.state).toBe('DONE')
+    // … but review is a proposal/ritual event now, not a live note field.
+    expect(rows[0]?.last_reviewed_at).toBeUndefined()
   })
 })

@@ -8,7 +8,11 @@ import type { ProposalRow } from './schemas'
 const PROJECTION_TABLES = [
   'part_of',
   'blocked_by',
-  'mentions',
+  'depends_on',
+  'owned_by',
+  'relates_to',
+  'duplicates',
+  'mentions', // legacy replay compatibility only
   'about',
   'affects',
   'derived_from',

@@ -129,12 +129,13 @@ referencias.
 ```text
 note {
   id
-  type               // task | project | area | routine | idea | reference | person | objetivo
+  type               // area | objective | project | task | idea | reference | agent | tool
   title
-  state              // CLARIFIED | ACTIVE | WAITING | SOMEDAY | DONE | ARCHIVED
+  state              // ACTIVE | WAITING | SOMEDAY | DONE | ARCHIVED
   block_order        // blocks descriptivos que forman su cuerpo
   mit_for?           // option<datetime> — MIT (Most Important Task) para ese día (ADR-0023)
-  last_reviewed_at?  // option<datetime>
+  due_at?            // option<datetime> — deadline duro (indexed)
+  defer_until?       // option<datetime> — tickler: oculto del radar hasta ese día (indexed)
   metadata?
   source_kind?       // para notas que no vienen de raw_capture
   source_ref?
@@ -143,10 +144,12 @@ note {
 }
 ```
 
-Los estados son ZTD como field. En esta fase casi todo puede vivir en
-`CLARIFIED`; no hay que construir el sistema completo de productividad todavía.
-Se mantiene el slug real `objetivo` durante esta migracion. No renombrarlo a
-`objective` sin una migracion especifica.
+Los estados son ZTD como field; el default de una note nueva es `ACTIVE`. La
+matriz type↔state y los guardarraíles de metadata se especifican en
+[`HUYGENS-2-FUNCTIONAL-SPEC.md`](./HUYGENS-2-FUNCTIONAL-SPEC.md), la autoridad del
+grafo operativo Huygens 2. Los slugs son en inglés (`objective`, `agent`, `tool`);
+la revisión ya no es un field (`last_reviewed_at` retirado) sino un evento de
+proposal/ritual.
 
 `mit_for` es campo top-level indexado (no `metadata`). Convención ZTD: 1-3 MITs
 por día decididos por el usuario; el agente no los marca autonomamente. Un valor
@@ -187,37 +190,48 @@ block {
 Un `block` descriptivo es el cuerpo de una `note`. Un `block` narrativo es un
 informe-block: una interpretacion breve, aprobada y trazable de un raw.
 
-## Edges minimos objetivo
+## Edges operativos (Huygens 2)
 
-Solo estos edges son objetivo para v2.1-lite:
+Edges **operativos** (la topología del dominio; todos `note -> note`, materializados por commits):
+
+| Edge | Forma | Para que sirve |
+|---|---|---|
+| `part_of` | `note -> note` | Jerarquia: task/project/area/objective. Padre unico, anchored, aciclico. |
+| `blocked_by` | `note -> note` | Dependencias y esperas. Tiene campos `since` y `reason` opcional. |
+| `depends_on` | `note -> note` | Dependencia no-bloqueante. |
+| `owned_by` | `note -> note` | Responsabilidad/asignacion (el destino deberia ser una note de type `agent`). |
+| `relates_to` | `note -> note` | Relacion debil cuando no merece un edge mas especifico (reemplaza `mentions`). |
+| `duplicates` | `note -> note` | Declaracion explicita de duplicado. |
+
+Edges **técnicos de traza** (plumbing de proposals/eventos, NO topología del dominio; las tools operativas no los recorren):
 
 | Edge | Forma | Para que sirve |
 |---|---|---|
 | `derived_from` | `block -> raw_capture` | Probar de que raw o raws salio una interpretacion. Tiene campo `transformation` opcional (`verbatim | extracted | summarized | inferred`). |
 | `about` | `block -> note` | Decir sobre que sujetos habla un informe-block. |
 | `affects` | `block -> note` | Registrar que cambios causo o justifico el block. Tiene campo `action` obligatorio (`created | updated | state_changed | linked | archived`) y `summary` opcional. |
-| `part_of` | `note -> note` | Jerarquia ZTD: task/project/area/objetivo. |
-| `blocked_by` | `note -> note | block` | Dependencias y esperas. Tiene campos `since` y `reason` opcional. |
-| `mentions` | `note|block -> note|block` | Relacion debil cuando no merece un edge mas especifico. |
 
-`mentions` es el fallback deliberado. Antes de crear un edge nuevo, primero hay
+`relates_to` es el fallback deliberado. Antes de crear un edge nuevo, primero hay
 que comprobar que aparece en conversaciones reales y responde a una query real.
+`mentions` es una tabla **legacy** (solo compatibilidad de datos antiguos); no la
+uses en propuestas nuevas.
 
 `part_of` es de **padre unico** (una note cuelga de una sola). Por eso es
 **replace-on-write**: declarar un `part_of` para una note que ya tenia padre
 **reemplaza** el anterior — el commit retira el viejo en la misma transaccion
 (queda registrado en `proposal.result.edges_removed`). No hace falta declarar la
-retirada a mano. Para quitar un `blocked_by` o un `mentions` (o declarar el
-reparent de forma explicita para que el preview lo muestre) se usa
-`payload.edges_remove`, el inverso de `edges`. Los trace-edges de procedencia
-(`derived_from` / `about` / `affects`) son **append-only**: no se retiran.
+retirada a mano. Para quitar un `blocked_by`, `depends_on`, `owned_by`,
+`relates_to` o `duplicates` (o declarar el reparent de forma explicita para que el
+preview lo muestre) se usa `payload.edges_remove`, el inverso de `edges`. Los
+trace-edges de procedencia (`derived_from` / `about` / `affects`) son
+**append-only**: no se retiran.
 
 Un block narrativo puede tener varios `derived_from` si sintetiza varios raws
 del inbox en una sola interpretacion.
 
-Nota: `blocked_by` en schema admite `note | block` como destino (no solo note).
-En los ejemplos de este documento el destino suele ser una note, que es el caso
-habitual; pero el schema permite bloqueo por un bloque narrativo concreto.
+Nota: todos los edges operativos son `note -> note`. La relación de un block
+narrativo con las notes vive en los trace-edges `about` / `affects`, no en la
+topología operativa.
 
 ## Fuera de scope por ahora
 
@@ -230,7 +244,6 @@ Estas piezas quedan aparcadas aunque sean compatibles con el modelo grande:
 - Reports como entidad persistida (`note(type=report)`).
 - `compose_report` sofisticado.
 - Routines con RRULE engine.
-- Migraciones de slug `objetivo` -> `objective`.
 
 El criterio es conservador: v2.1-lite mantiene el informe-block, pero reduce
 automatismo y vocabulario.
@@ -369,10 +382,10 @@ Edges minimos:
 block derived_from raw_capture
 block about Project "Huygens"
 block affects Idea "Ontologia minima v2.1-lite"
-Idea "Ontologia minima v2.1-lite" mentions Project "Huygens"
+Idea "Ontologia minima v2.1-lite" relates_to Project "Huygens"
 ```
 
-### 4. Rutina simple
+### 4. Revisión recurrente ligera
 
 Usuario:
 
@@ -384,14 +397,14 @@ todavía un motor de recurrencias.
 Block narrativo:
 
 ```text
-Rubén quiere una rutina ligera de revision semanal de tasks WAITING los viernes
-por la mañana, sin implementar todavía un RRULE engine.
+Rubén quiere una revision semanal ligera de tasks WAITING los viernes por la
+mañana, sin implementar todavía un motor de recurrencias.
 ```
 
-Notes afectadas:
+Notes afectadas (Huygens 2 no tiene type `routine`: se modela como `project` en curso):
 
 ```text
-Routine "Revision semanal de WAITING"
+Project "Revision semanal de WAITING"
 Area "Sistema personal"
 ```
 
@@ -400,8 +413,8 @@ Edges minimos:
 ```text
 block derived_from raw_capture
 block about Area "Sistema personal"
-block affects Routine "Revision semanal de WAITING"
-Routine "Revision semanal de WAITING" part_of Area "Sistema personal"
+block affects Project "Revision semanal de WAITING"
+Project "Revision semanal de WAITING" part_of Area "Sistema personal"
 ```
 
 ### 5. Referencia externa
@@ -432,7 +445,7 @@ Edges minimos:
 block derived_from raw_capture
 block about Project "Huygens"
 block affects Reference "Paper sobre graph databases"
-Reference "Paper sobre graph databases" mentions Project "Huygens"
+Reference "Paper sobre graph databases" relates_to Project "Huygens"
 ```
 
 ## Contrato implementado
@@ -452,7 +465,7 @@ Reference "Paper sobre graph databases" mentions Project "Huygens"
 | `chunk_markdown` | Trocea markdown en blocks. |
 | `query_query` | Query SurrealQL de lectura (read-only). |
 | `huygens-worker` | Shell MCP para futuros workers especializados; no procesa inbox ni llama Agno/OpenAI. |
-| `note_type:objetivo` | Slug real actual. No renombrar en esta migracion. |
+| `note_type:*` | Slugs Huygens 2 en inglés: `area`, `objective`, `project`, `task`, `idea`, `reference`, `agent`, `tool`. |
 | `processed_at` en `raw_capture` | Compatibilidad. La fuente de verdad del inbox es `status`. |
 
 El flujo antiguo `raw -> clarify -> notes` fue eliminado:

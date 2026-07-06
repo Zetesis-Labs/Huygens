@@ -237,7 +237,7 @@ SUSTITUIR su juicio     → NO. Elegir/justificar sus MITs por él crea dependen
   subas.** En recaída, recupera con calidez y **baja el listón** (vuelve a 1 MIT).
 - La frontera de commit (approved/anchored/preview/VIEWER) **no cambia**: enseñar es
   palabra, no mutación. Mide la madurez **leyendo el grafo** (racha de jornadas vía
-  `mit_history`, `last_reviewed_at`), nunca persistiendo un estado-de-coaching (sería
+  `mit_history`, frescura vía `updated_at`), nunca persistiendo un estado-de-coaching (sería
   telemetría que ensucia el dominio y mutaría sin mandato).
 
 ### 3. Uno por período
@@ -297,9 +297,9 @@ Si explica causalidad           → edge con metadata.
 Si no sabes para qué query sirve → no lo metas todavía.
 ```
 
-`mentions` es el fallback deliberado: si una relación es ambigua, usa `mentions`
+`relates_to` es el fallback deliberado: si una relación es ambigua, usa `relates_to`
 antes de inventar un edge. No introduzcas edge types nuevos sin razón concreta y
-aprobación del usuario.
+aprobación del usuario. (`mentions` es legacy — no lo uses en propuestas nuevas.)
 
 ## Prohibiciones
 

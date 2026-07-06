@@ -76,9 +76,10 @@ DEFINE FIELD OVERWRITE type        ON note TYPE option<record<note_type>>;
 REMOVE FIELD IF EXISTS pillars ON TABLE note;
 -- INBOX ya no es estado de note: una Note existe porque ya fue procesada
 -- desde un raw_capture. El "estar pendiente" ahora vive en raw_capture.
+UPDATE note SET state = 'ACTIVE' WHERE state = 'CLARIFIED' OR state IS NONE;
 DEFINE FIELD OVERWRITE state       ON note TYPE string
-  DEFAULT 'CLARIFIED'
-  ASSERT $value INSIDE ['CLARIFIED', 'ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED'];
+  DEFAULT 'ACTIVE'
+  ASSERT $value INSIDE ['ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED'];
 DEFINE FIELD OVERWRITE block_order ON note TYPE array<record<block>> DEFAULT [];
 DEFINE FIELD OVERWRITE metadata    ON note TYPE option<object> FLEXIBLE;
 -- source_kind y source_ref se mantienen para notas que NO vienen de raw_capture
@@ -89,7 +90,9 @@ DEFINE FIELD OVERWRITE source_kind ON note TYPE option<string>;
 DEFINE FIELD OVERWRITE source_ref  ON note TYPE option<string>;
 DEFINE FIELD OVERWRITE created_at  ON note TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE updated_at  ON note TYPE datetime VALUE time::now();
-DEFINE FIELD OVERWRITE last_reviewed_at ON note TYPE option<datetime>;
+-- Huygens 2: reviews are ritual/proposal events, not live note state.
+REMOVE INDEX IF EXISTS note_reviewed ON TABLE note;
+REMOVE FIELD IF EXISTS last_reviewed_at ON TABLE note;
 -- Tres ejes temporales DISTINTOS (no confundir), todos campos top-level día-granulares
 -- (fecha-sola → medianoche UTC; ver normalización en commit.ts):
 --   mit_for     — PRIORIDAD: esta task es MIT (Most Important Task) para ese día.
@@ -105,7 +108,6 @@ DEFINE FIELD OVERWRITE defer_until ON note TYPE option<datetime>;
 DEFINE INDEX OVERWRITE note_state    ON note FIELDS state;
 DEFINE INDEX OVERWRITE note_type_idx ON note FIELDS type;
 DEFINE INDEX OVERWRITE note_updated  ON note FIELDS updated_at;
-DEFINE INDEX OVERWRITE note_reviewed ON note FIELDS last_reviewed_at;
 DEFINE INDEX OVERWRITE note_mit_for     ON note FIELDS mit_for;
 DEFINE INDEX OVERWRITE note_due_at      ON note FIELDS due_at;
 DEFINE INDEX OVERWRITE note_defer_until ON note FIELDS defer_until;
@@ -189,20 +191,44 @@ DEFINE FIELD OVERWRITE via_proposal ON part_of TYPE option<record<proposal>>;
 DEFINE INDEX OVERWRITE part_of_unique ON part_of FIELDS in, out UNIQUE;
 DEFINE INDEX OVERWRITE part_of_single_parent ON part_of FIELDS in UNIQUE;
 
--- blocked_by: una task/proyecto bloqueado por algo concreto (puede ser un bloque).
-DEFINE TABLE OVERWRITE blocked_by TYPE RELATION FROM note TO note | block SCHEMAFULL CHANGEFEED 10y;
+-- blocked_by: una note bloqueada por otra note concreta. Opcionalmente guarda reason.
+DEFINE TABLE OVERWRITE blocked_by TYPE RELATION FROM note TO note SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE since  ON blocked_by TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE reason ON blocked_by TYPE option<string>;
 DEFINE FIELD OVERWRITE via_proposal ON blocked_by TYPE option<record<proposal>>;
 DEFINE INDEX OVERWRITE blocked_by_unique ON blocked_by FIELDS in, out UNIQUE;
 
--- mentions: referencia narrativa cualquier-a-cualquier.
+-- depends_on: dependencia no-bloqueante entre notes.
+DEFINE TABLE OVERWRITE depends_on TYPE RELATION FROM note TO note SCHEMAFULL CHANGEFEED 10y;
+DEFINE FIELD OVERWRITE created_at ON depends_on TYPE datetime DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE via_proposal ON depends_on TYPE option<record<proposal>>;
+DEFINE INDEX OVERWRITE depends_on_unique ON depends_on FIELDS in, out UNIQUE;
+
+-- owned_by: responsabilidad/asignación. El target operacional debe ser una note de type agent.
+DEFINE TABLE OVERWRITE owned_by TYPE RELATION FROM note TO note SCHEMAFULL CHANGEFEED 10y;
+DEFINE FIELD OVERWRITE created_at ON owned_by TYPE datetime DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE via_proposal ON owned_by TYPE option<record<proposal>>;
+DEFINE INDEX OVERWRITE owned_by_unique ON owned_by FIELDS in, out UNIQUE;
+
+-- relates_to: relación débil y escasa entre notes. Reemplaza mentions como vocabulario operativo.
+DEFINE TABLE OVERWRITE relates_to TYPE RELATION FROM note TO note SCHEMAFULL CHANGEFEED 10y;
+DEFINE FIELD OVERWRITE created_at ON relates_to TYPE datetime DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE via_proposal ON relates_to TYPE option<record<proposal>>;
+DEFINE INDEX OVERWRITE relates_to_unique ON relates_to FIELDS in, out UNIQUE;
+
+-- duplicates: declaración explícita de duplicado entre notes.
+DEFINE TABLE OVERWRITE duplicates TYPE RELATION FROM note TO note SCHEMAFULL CHANGEFEED 10y;
+DEFINE FIELD OVERWRITE created_at ON duplicates TYPE datetime DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE via_proposal ON duplicates TYPE option<record<proposal>>;
+DEFINE INDEX OVERWRITE duplicates_unique ON duplicates FIELDS in, out UNIQUE;
+
+-- mentions: legacy compatibility table only. New proposals/tools must use relates_to.
 DEFINE TABLE OVERWRITE mentions TYPE RELATION FROM note | block TO note | block SCHEMAFULL CHANGEFEED 10y;
 DEFINE FIELD OVERWRITE created_at ON mentions TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE via_proposal ON mentions TYPE option<record<proposal>>;
 DEFINE INDEX OVERWRITE mentions_unique ON mentions FIELDS in, out UNIQUE;
 
--- Limpieza de edges legacy que no forman parte de v2.1-lite.
+-- Limpieza de edges legacy que no forman parte del modelo operativo Huygens 2.
 REMOVE TABLE IF EXISTS supports;
 REMOVE TABLE IF EXISTS refutes;
 REMOVE TABLE IF EXISTS authored_by;
@@ -335,7 +361,7 @@ DEFINE INDEX OVERWRITE mcp_tool_call_created   ON mcp_tool_call FIELDS created_a
 --
 -- Tablas con CHANGEFEED 10y activo:
 --   - raw_capture, note, block
---   - derived_from, part_of, blocked_by, mentions, about, affects
+--   - derived_from, part_of, blocked_by, depends_on, owned_by, relates_to, duplicates, mentions, about, affects
 --   - proposal
 --
 -- Tablas SIN CHANGEFEED (deliberado):

@@ -70,13 +70,13 @@ try {
       {
         title: 'Probar fisio recomendado por Ana en Bilbao',
         type: note_type:task,
-        state: 'CLARIFIED',
+        state: 'ACTIVE',
         mit_for: $today
       },
       {
         title: 'Applicative functors para composicion de queries del agente',
         type: note_type:idea,
-        state: 'CLARIFIED'
+        state: 'ACTIVE'
       }
     ]`,
     { today }
@@ -149,7 +149,7 @@ try {
     task: task.id,
     project: project.id
   })
-  await db.query('RELATE $idea->mentions->$project', {
+  await db.query('RELATE $idea->relates_to->$project', {
     idea: idea.id,
     project: project.id
   })
@@ -216,9 +216,9 @@ try {
     await db.query('DELETE blocked_by WHERE in = $block OR out = $block', { block })
   }
   for (const note of createdNotes) {
-    await db.query('DELETE part_of WHERE in = $note OR out = $note', { note })
-    await db.query('DELETE mentions WHERE in = $note OR out = $note', { note })
-    await db.query('DELETE blocked_by WHERE in = $note OR out = $note', { note })
+    for (const edge of ['part_of', 'blocked_by', 'depends_on', 'owned_by', 'relates_to', 'duplicates']) {
+      await db.query(`DELETE ${edge} WHERE in = $note OR out = $note`, { note })
+    }
   }
   for (const block of createdBlocks) await db.query('DELETE $block', { block })
   for (const note of createdNotes) await db.query('DELETE $note', { note })

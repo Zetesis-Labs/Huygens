@@ -21,7 +21,6 @@ function payload(rawIds: string[], overrides: Partial<ProposalPayload> = {}): Pr
         type_slug: 'task',
         title: 'Call Ana',
         state: 'ACTIVE',
-        metadata: { priority: 'high' },
         descriptive_blocks: [{ content: 'Next action: call Ana this week.' }]
       },
       {
@@ -35,7 +34,7 @@ function payload(rawIds: string[], overrides: Partial<ProposalPayload> = {}): Pr
     note_updates: [],
     edges: [
       { kind: 'part_of', from: 'task1', to: 'project1', anchored: true },
-      { kind: 'mentions', from: 'narrative1', to: 'task1' }
+      { kind: 'relates_to', from: 'project1', to: 'task1' }
     ],
     about: [{ block_temp_id: 'narrative1', note_ref: 'task1' }],
     affects: [{ block_temp_id: 'narrative1', note_ref: 'task1', action: 'created', summary: 'Created task.' }],
@@ -177,7 +176,9 @@ describe('proposal v2.1-lite flow', () => {
     expect(changes.changes.descriptive_blocks_created).toBe(1)
     // real record ids everywhere — no temp ids
     expect(changes.changes.notes_created[0]?.id).toMatch(/^note:/)
-    expect(changes.changes.edges_added[0]?.kind).toMatch(/^(part_of|blocked_by|mentions)$/)
+    expect(changes.changes.edges_added[0]?.kind).toMatch(
+      /^(part_of|blocked_by|depends_on|owned_by|relates_to|duplicates)$/
+    )
   })
 
   test('get_proposal_changes on a draft: changes from payload, committed_at null', async () => {

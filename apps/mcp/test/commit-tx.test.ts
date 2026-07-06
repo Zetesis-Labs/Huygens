@@ -50,8 +50,11 @@ describe('buildCommitTx — máximo-limpio', () => {
     expect(query).toContain('AND out != ') // idempotent: don't churn the same parent
   })
 
-  test('does not emit a replace DELETE for blocked_by / mentions', () => {
-    const { query } = buildCommitTx(payload({ edges: [{ kind: 'mentions', from: 'note:a', to: 'note:b' }] }), PROPOSAL)
+  test('does not emit a replace DELETE for blocked_by / relates_to', () => {
+    const { query } = buildCommitTx(
+      payload({ edges: [{ kind: 'relates_to', from: 'note:a', to: 'note:b' }] }),
+      PROPOSAL
+    )
     expect(query).not.toContain('DELETE part_of')
   })
 
@@ -67,12 +70,12 @@ describe('buildCommitTx — máximo-limpio', () => {
   test('removals run before additions', () => {
     const { query } = buildCommitTx(
       payload({
-        edges: [{ kind: 'mentions', from: 'note:a', to: 'note:c' }],
-        edges_remove: [{ kind: 'mentions', from: 'note:a', to: 'note:b' }]
+        edges: [{ kind: 'relates_to', from: 'note:a', to: 'note:c' }],
+        edges_remove: [{ kind: 'relates_to', from: 'note:a', to: 'note:b' }]
       }),
       PROPOSAL
     )
-    expect(query.indexOf('DELETE mentions WHERE in =')).toBeLessThan(query.indexOf('->mentions->'))
+    expect(query.indexOf('DELETE relates_to WHERE in =')).toBeLessThan(query.indexOf('->relates_to->'))
   })
 
   test('stamps only the anchor on the proposal — no materialized id-lists', () => {

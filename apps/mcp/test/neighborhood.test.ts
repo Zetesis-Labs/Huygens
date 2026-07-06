@@ -32,20 +32,22 @@ describe('neighborhood', () => {
     }
   })
 
-  test('affects edge carries its action as a predicate qualifier', async () => {
+  test('traverses operational edges only — trace edges (affects) are not surfaced', async () => {
     const ctx = await withFreshDb()
     try {
       await ctx.db.query(`
         CREATE note:nb_n SET title = 'N', type = note_type:task, state = 'ACTIVE';
+        CREATE note:nb_d SET title = 'D', type = note_type:task, state = 'ACTIVE';
         CREATE block:nb_blk SET block_kind = 'narrative', content = 'informe';
+        RELATE note:nb_n->depends_on->note:nb_d;
         RELATE block:nb_blk->affects->note:nb_n CONTENT { action: 'state_changed' };
       `)
       const r = await neighborhoodImpl({ seed_id: 'note:nb_n', hops: 1, max_nodes: 30 })
+      // Only the operational depends_on neighbour is reached; the affects trace block is not.
       expect(r?.node_count).toBe(2)
-      expect(r?.triples).toContain('—affects(state_changed)→')
-      expect(r?.edges).toEqual([
-        { source: 'block:nb_blk', target: 'note:nb_n', kind: 'affects', qualifier: 'state_changed' }
-      ])
+      expect(r?.triples).toContain('—depends_on→')
+      expect(r?.triples).not.toContain('affects')
+      expect(r?.edges).toEqual([{ source: 'note:nb_n', target: 'note:nb_d', kind: 'depends_on', qualifier: undefined }])
     } finally {
       await ctx.cleanup()
     }

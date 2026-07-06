@@ -147,7 +147,7 @@ describe('due_at / defer_until', () => {
 
     const [radar] = await ctx.db.query<[Array<{ title: string }>]>(
       `SELECT title FROM note
-       WHERE type.slug = 'task' AND state IN ['ACTIVE','WAITING','CLARIFIED']
+       WHERE type.slug = 'task' AND state IN ['ACTIVE','WAITING']
          AND (defer_until IS NONE OR defer_until <= time::now())`
     )
     const titles = (radar ?? []).map(r => r.title)

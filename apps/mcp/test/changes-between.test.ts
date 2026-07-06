@@ -60,7 +60,7 @@ describe('aggregateChanges', () => {
         landedAt: '2026-05-24T10:00:00.000Z',
         payload: payload({
           note_updates: [{ id: 'note:x', descriptive_blocks_append: [] }],
-          edges: [{ kind: 'mentions', from: 'note:x', to: 'note:y' }]
+          edges: [{ kind: 'relates_to', from: 'note:x', to: 'note:y' }]
         }),
         tempMap: {}
       },
@@ -69,7 +69,7 @@ describe('aggregateChanges', () => {
         landedAt: '2026-05-24T12:00:00.000Z',
         payload: payload({
           note_updates: [{ id: 'note:x', descriptive_blocks_append: [] }],
-          edges: [{ kind: 'mentions', from: 'note:x', to: 'note:y' }]
+          edges: [{ kind: 'relates_to', from: 'note:x', to: 'note:y' }]
         }),
         tempMap: {}
       }

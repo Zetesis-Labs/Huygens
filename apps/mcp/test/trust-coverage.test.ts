@@ -3,31 +3,31 @@ import { checkClaimImpl } from '../src/tools/check-claim'
 import { provenanceByBlock, traceProvenanceImpl } from '../src/tools/trace-provenance'
 import { withFreshDb } from './_fixtures'
 
-describe('check_claim — edge predicates beyond part_of', () => {
-  test('mentions / about / affects / derived_from: supported when the edge exists, unsupported otherwise', async () => {
+describe('check_claim — operational edge predicates beyond part_of', () => {
+  test('blocked_by / depends_on / owned_by / relates_to / duplicates: supported when the edge exists, unsupported otherwise', async () => {
     const ctx = await withFreshDb()
     try {
       await ctx.db.query(`
-        CREATE raw_capture:tc_r SET content = 'fuente', source_kind = 'chat', status = 'processed';
         CREATE note:tc_n SET title = 'Nota', type = note_type:task, state = 'ACTIVE';
         CREATE note:tc_n2 SET title = 'Otra', type = note_type:project, state = 'ACTIVE';
-        CREATE block:tc_b SET block_kind = 'narrative', content = 'informe';
-        RELATE block:tc_b->derived_from->raw_capture:tc_r CONTENT { transformation: 'verbatim' };
-        RELATE block:tc_b->about->note:tc_n;
-        RELATE block:tc_b->affects->note:tc_n CONTENT { action: 'updated' };
-        RELATE block:tc_b->mentions->note:tc_n2;
+        CREATE note:tc_ag SET title = 'Agente', type = note_type:agent, state = 'ACTIVE';
+        RELATE note:tc_n->blocked_by->note:tc_n2;
+        RELATE note:tc_n->depends_on->note:tc_n2;
+        RELATE note:tc_n->owned_by->note:tc_ag;
+        RELATE note:tc_n->relates_to->note:tc_n2;
+        RELATE note:tc_n->duplicates->note:tc_n2;
       `)
 
       const r = await checkClaimImpl({
         claims: [
-          { subject: 'block:tc_b', predicate: 'mentions', object: 'note:tc_n2' }, // supported
-          { subject: 'block:tc_b', predicate: 'mentions', object: 'note:tc_n' }, // unsupported (no mentions edge)
-          { subject: 'block:tc_b', predicate: 'about', object: 'note:tc_n' }, // supported
-          { subject: 'block:tc_b', predicate: 'about', object: 'note:tc_n2' }, // unsupported
-          { subject: 'block:tc_b', predicate: 'affects', object: 'note:tc_n' }, // supported
-          { subject: 'block:tc_b', predicate: 'affects', object: 'note:tc_n2' }, // unsupported
-          { subject: 'block:tc_b', predicate: 'derived_from', object: 'raw_capture:tc_r' }, // supported
-          { subject: 'block:tc_b', predicate: 'derived_from', object: 'raw_capture:nope' } // unsupported
+          { subject: 'note:tc_n', predicate: 'blocked_by', object: 'note:tc_n2' }, // supported
+          { subject: 'note:tc_n', predicate: 'blocked_by', object: 'note:tc_ag' }, // unsupported
+          { subject: 'note:tc_n', predicate: 'depends_on', object: 'note:tc_n2' }, // supported
+          { subject: 'note:tc_n', predicate: 'owned_by', object: 'note:tc_ag' }, // supported
+          { subject: 'note:tc_n', predicate: 'owned_by', object: 'note:tc_n2' }, // unsupported
+          { subject: 'note:tc_n', predicate: 'relates_to', object: 'note:tc_n2' }, // supported
+          { subject: 'note:tc_n', predicate: 'duplicates', object: 'note:tc_n2' }, // supported
+          { subject: 'note:tc_n', predicate: 'duplicates', object: 'note:tc_ag' } // unsupported
         ]
       })
 
@@ -35,35 +35,14 @@ describe('check_claim — edge predicates beyond part_of', () => {
         'supported',
         'unsupported',
         'supported',
-        'unsupported',
         'supported',
         'unsupported',
+        'supported',
         'supported',
         'unsupported'
       ])
       // multi-valued edges never contradict: absence is unsupported, not contradicted
       expect(r.every(x => x.verdict !== 'contradicted')).toBe(true)
-    } finally {
-      await ctx.cleanup()
-    }
-  })
-
-  test('subject can be a block (not only a note): mentions block→block', async () => {
-    const ctx = await withFreshDb()
-    try {
-      await ctx.db.query(`
-        CREATE block:tc_src SET block_kind = 'narrative', content = 'origen';
-        CREATE block:tc_dst SET block_kind = 'narrative', content = 'destino';
-        RELATE block:tc_src->mentions->block:tc_dst;
-      `)
-
-      const r = await checkClaimImpl({
-        claims: [
-          { subject: 'block:tc_src', predicate: 'mentions', object: 'block:tc_dst' }, // supported
-          { subject: 'block:tc_dst', predicate: 'mentions', object: 'block:tc_src' } // unsupported (other direction)
-        ]
-      })
-      expect(r.map(x => x.verdict)).toEqual(['supported', 'unsupported'])
     } finally {
       await ctx.cleanup()
     }
@@ -211,7 +190,7 @@ describe('trace_provenance — seeds, empties and fan-out', () => {
     const ctx = await withFreshDb()
     try {
       await ctx.db.query(`
-        CREATE note:tp_lonely SET title = 'Sola', type = note_type:idea, state = 'CLARIFIED';
+        CREATE note:tp_lonely SET title = 'Sola', type = note_type:idea, state = 'ACTIVE';
         CREATE block:tp_lonelyb SET block_kind = 'narrative', content = 'huérfano';
       `)
       const note = await traceProvenanceImpl({ id: 'note:tp_lonely' })

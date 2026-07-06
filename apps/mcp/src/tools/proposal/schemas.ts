@@ -75,7 +75,7 @@ export const NoteCreateSchema = z.object({
   temp_id: z.string().regex(TEMP_ID_RE),
   type_slug: NoteTypeSlugSchema,
   title: z.string().min(1),
-  state: NoteStateSchema.default('CLARIFIED'),
+  state: NoteStateSchema.default('ACTIVE'),
   mit_for: DayDateSchema.optional(),
   due_at: DayDateSchema.optional(),
   defer_until: DayDateSchema.optional(),
@@ -105,10 +105,10 @@ const ProposalEdgeSchema = z.object({
   anchored: z.boolean().optional()
 })
 
-// Retirada explícita de un edge semántico (part_of / blocked_by / mentions): el
-// inverso de `edges`. No lleva `reason` — el porqué vive en el informe-block. El
-// reparent de part_of NO necesita declararse aquí: el commit hace replace
-// implícito (borra el padre anterior). Declararlo aquí solo mejora el preview.
+// Retirada explícita de un edge operativo (part_of / blocked_by / depends_on /
+// owned_by / relates_to / duplicates): el inverso de `edges`. No lleva `reason`
+// — el porqué vive en el informe-block. El reparent de part_of NO necesita
+// declararse aquí: el commit hace replace implícito (borra el padre anterior).
 const EdgeRemoveSchema = z.object({
   kind: EdgeKindSchema,
   from: NodeRefSchema,

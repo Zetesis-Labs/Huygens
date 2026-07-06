@@ -75,20 +75,36 @@ describe('schema constraints (SurrealDB-enforced)', () => {
     expect(await rejection(db, 'RELATE note:p2->part_of->block:bn;')).toMatch(/Expected `record<note>`.*found `block/)
   })
 
-  // ── blocked_by: note -> note | block ────────────────────────────────────
+  // ── blocked_by: note -> note (Huygens 2: no block endpoints) ────────────
 
   test('blocked_by accepts note -> note', async () => {
     const [rows] = await db.query<[unknown[]]>('RELATE note:p1->blocked_by->note:p2;')
     expect(Array.isArray(rows) && rows.length).toBe(1)
   })
 
-  test('blocked_by accepts note -> block (target may be a block)', async () => {
-    const [rows] = await db.query<[unknown[]]>('RELATE note:n1->blocked_by->block:bn;')
-    expect(Array.isArray(rows) && rows.length).toBe(1)
+  test('blocked_by to a block is rejected (TO note only)', async () => {
+    expect(await rejection(db, 'RELATE note:n1->blocked_by->block:bn;')).toMatch(
+      /Expected `record<note>`.*found `block/
+    )
   })
 
   test('blocked_by from a block is rejected (FROM note only)', async () => {
     expect(await rejection(db, 'RELATE block:bn->blocked_by->note:p1;')).toMatch(
+      /Expected `record<note>`.*found `block/
+    )
+  })
+
+  // ── depends_on / owned_by / relates_to / duplicates: note -> note ───────
+
+  test('the Huygens 2 operational edges accept note -> note', async () => {
+    for (const kind of ['depends_on', 'owned_by', 'relates_to', 'duplicates']) {
+      const [rows] = await db.query<[unknown[]]>(`RELATE note:n1->${kind}->note:n2;`)
+      expect(Array.isArray(rows) && rows.length).toBe(1)
+    }
+  })
+
+  test('an operational edge to a block is rejected (TO note only)', async () => {
+    expect(await rejection(db, 'RELATE note:n1->relates_to->block:bn;')).toMatch(
       /Expected `record<note>`.*found `block/
     )
   })
@@ -121,21 +137,25 @@ describe('schema constraints (SurrealDB-enforced)', () => {
     expect(await rejection(db, 'RELATE block:bn->about->note:n1;')).toMatch(/about_unique|already contains/)
   })
 
-  test('mentions rejects a duplicate edge (mentions_unique on (in,out))', async () => {
-    await db.query('RELATE note:n1->mentions->block:bn;')
-    expect(await rejection(db, 'RELATE note:n1->mentions->block:bn;')).toMatch(/mentions_unique|already contains/)
+  test('relates_to rejects a duplicate edge (relates_to_unique on (in,out))', async () => {
+    await db.query('RELATE note:p1->relates_to->note:n2;')
+    expect(await rejection(db, 'RELATE note:p1->relates_to->note:n2;')).toMatch(/relates_to_unique|already contains/)
   })
 
   // ── Field-level ASSERT enums ────────────────────────────────────────────
 
   test('note.state outside NOTE_STATES is rejected (ASSERT INSIDE)', async () => {
     expect(await rejection(db, "CREATE note:bad_state SET title = 'x', state = 'NOPE';")).toMatch(
-      /must conform to.*CLARIFIED.*ACTIVE/
+      /must conform to.*ACTIVE.*WAITING/
     )
   })
 
+  test('the retired CLARIFIED state is rejected', async () => {
+    expect(await rejection(db, "CREATE note:clar SET title = 'x', state = 'CLARIFIED';")).toMatch(/must conform to/)
+  })
+
   test('note.state accepts every value in NOTE_STATES', async () => {
-    for (const s of ['CLARIFIED', 'ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED']) {
+    for (const s of ['ACTIVE', 'WAITING', 'SOMEDAY', 'DONE', 'ARCHIVED']) {
       const [rows] = await db.query<[unknown[]]>(`CREATE note SET title = 'st', state = '${s}';`)
       expect(Array.isArray(rows) && rows.length).toBe(1)
     }
