@@ -23,7 +23,7 @@ env:
 
 jobs:
   build:
-    runs-on: cardano-runners
+    runs-on: herschel-runners
     permissions:
       contents: write
 

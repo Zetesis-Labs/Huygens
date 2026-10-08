@@ -9,7 +9,7 @@ jobs:
   # Fast, self-contained gate: no database, no secrets. Catches type and style
   # regressions on every PR.
   static:
-    runs-on: cardano-runners
+    runs-on: herschel-runners
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -32,7 +32,7 @@ jobs:
   # is hermetic — embeddings are stubbed via setEmbedderOverride — so no external
   # provider or API key is needed.
   test:
-    runs-on: cardano-runners
+    runs-on: herschel-runners
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -80,7 +80,7 @@ jobs:
   # DB, no secrets, no network (the OpenAI client is only constructed at runtime).
   # Lint + types + unit tests, all via uv against the committed lockfile.
   worker:
-    runs-on: cardano-runners
+    runs-on: herschel-runners
     defaults:
       run:
         working-directory: backend/huygens-worker
