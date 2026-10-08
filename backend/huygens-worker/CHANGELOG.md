@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/Zetesis-Labs/Huygens/compare/worker-v0.3.1...worker-v0.3.2) (2026-10-08)
+
+
+### Features
+
+* align Huygens with the operational graph model ([e7eb737](https://github.com/Zetesis-Labs/Huygens/commit/e7eb737fbac9a7fc11c4c243adfb9a9c25d2fa8a))
+
 ## [0.3.1](https://github.com/Zetesis-Labs/Huygens/compare/worker-v0.3.0...worker-v0.3.1) (2026-06-09)
 
 
