@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.1](https://github.com/Zetesis-Labs/Huygens/compare/mcp-v0.7.0...mcp-v0.7.1) (2026-10-08)
+
+
+### Features
+
+* align Huygens with the operational graph model ([e7eb737](https://github.com/Zetesis-Labs/Huygens/commit/e7eb737fbac9a7fc11c4c243adfb9a9c25d2fa8a))
+
+
+### Bug Fixes
+
+* **mcp:** purge orphaned last_reviewed_at values when dropping the field ([4063310](https://github.com/Zetesis-Labs/Huygens/commit/4063310cec861b9d4979f0cbbd286eda02296e83))
+
+
+### Documentation
+
+* **mcp:** clarify where the human commit happens in the operating doctrine ([e1178eb](https://github.com/Zetesis-Labs/Huygens/commit/e1178eb0e337cff30d75aabe08574d9ed65731ee))
+
 ## [0.7.0](https://github.com/Zetesis-Labs/Huygens/compare/mcp-v0.6.0...mcp-v0.7.0) (2026-06-09)
 
 
